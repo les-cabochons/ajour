@@ -25,6 +25,11 @@ import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { localStore } from "@/lib/local-store";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
+  makeScrollable,
+  scrollElement,
+  sizeElements,
+} from "@/test-support/virtual-geometry";
+import {
   codeHostOverview,
   pullRequestFacts,
 } from "../../../tests/fixtures/pull-requests";
@@ -43,8 +48,15 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   openDeckPullRequest: vi.fn(),
   readPullRequestConversation: vi.fn(),
   readPullRequestChecks: vi.fn(),
+  readPullRequestVersions: vi.fn(),
+  readDeckSinceReview: vi.fn(),
 }));
-vi.mock("@pierre/diffs/react", () => ({
+// Highlighting runs in the window here: jsdom has no workers.
+vi.mock("@/components/diff-highlighter", () => ({
+  diffWorkerPool: () => undefined,
+}));
+vi.mock("@pierre/diffs/react", async () => ({
+  WorkerPoolContext: (await import("react")).createContext(undefined),
   PatchDiff: ({
     patch,
     options,
@@ -263,6 +275,7 @@ beforeEach(() => {
 beforeEach(() => {
   vi.mocked(api.readPullRequestConversation).mockResolvedValue(CONVERSATION);
   vi.mocked(api.readPullRequestChecks).mockResolvedValue({ checks: [] });
+  vi.mocked(api.readPullRequestVersions).mockResolvedValue({ versions: [] });
 });
 
 afterEach(() => {
@@ -326,6 +339,32 @@ it("opens the pull request and shows its title and every hunk, files A–Z, with
     number: 1,
     headSha: "one",
   });
+});
+
+it("says the guide isn't built for a pull request with too many hunks, and shows its files A–Z", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue({
+    ...DIFF,
+    guideSkipped: { reason: "too_many_hunks", hunkLimit: 1_000 },
+  });
+
+  await renderReviewPage();
+
+  const changes = screen.getByRole("region", { name: "Changes" });
+  await within(changes).findByRole("heading", { name: "src/api.ts" });
+  expect(within(changes).getByRole("heading", { level: 2 }).textContent).toBe(
+    "Files3",
+  );
+  expect(
+    within(changes).getByText(
+      "This pull request has more than 1,000 hunks, too many to build a guide, so the files show A–Z.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(changes).queryByText(
+      "The guide couldn't be built, so the files show A–Z.",
+    ),
+  ).toBeNull();
+  expect(within(changes).queryByRole("group", { name: "Order" })).toBeNull();
 });
 
 it("mounts nothing per line at rest, and draws a hunk with wrapped lines once it nears the screen", async () => {
@@ -731,7 +770,8 @@ it("floats each thread in the gutter beside its line from 1,100px, and places it
   await waitFor(() => expect(card("on-b").style.top).toBe("136px"));
   expect(hunks[0]!.querySelector("[data-thread-anchor='on-b']")).toBeTruthy();
   expect(within(hunks[0]!).queryByRole("article")).toBeNull();
-  expect(log.join(" ")).toMatch(/^((read )+write write ?)+$/);
+  // Only the connector that moved is written again: the other card stays.
+  expect(log.join(" ")).toMatch(/^((read )+write ?)+$/);
 
   // Hovering a card highlights its line, and its connector.
   fireEvent.mouseEnter(within(card("on-b")).getByRole("article"));
@@ -1233,45 +1273,60 @@ it("opens on the summary, above the description and the guide: the ticket, the k
   ).toEqual(["Dependencies", "Build"]);
 });
 
-it("scrolls to a line's first hunk and focuses it, in the guide and in Files A–Z", async () => {
-  const summary = await openSummarized();
-  const scrolled: string[] = [];
-  const changes = screen.getByRole("region", { name: "Changes" });
-  const watchHunks = () => {
-    for (const hunk of changes.querySelectorAll<HTMLElement>(
-      "[data-hunk-id]",
-    )) {
-      hunk.scrollIntoView = () => {
-        scrolled.push(hunk.dataset.hunkId!);
-      };
-    }
-  };
-  watchHunks();
+it("scrolls to a line's first hunk below the versions bar and focuses it, in the guide and in Files A–Z", async () => {
+  // Each hunk 500px down the page, under a 60px versions bar.
+  const restore = sizeElements([
+    { selector: ".deck-versions", width: 1000, height: 60 },
+  ]);
+  const rect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this.hasAttribute("data-hunk-id")
+        ? DOMRect.fromRect({ x: 0, y: 500, width: 1000, height: 100 })
+        : rect.call(this);
+    },
+  );
+  const scrolled = vi
+    .spyOn(window, "scrollTo")
+    .mockImplementation(() => undefined);
+  try {
+    const summary = await openSummarized();
+    const changes = screen.getByRole("region", { name: "Changes" });
 
-  fireEvent.click(
-    within(summary).getByRole("button", { name: /^TODO in src\/new\.ts/ }),
-  );
-  expect(scrolled).toEqual(["src/new.ts#0"]);
-  expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
-    "src/new.ts#0",
-  );
+    fireEvent.click(
+      within(summary).getByRole("button", { name: /^TODO in src\/new\.ts/ }),
+    );
+    // Its top lands 16px below the bar, as a section's does.
+    expect(scrolled).toHaveBeenLastCalledWith({
+      top: 500 - 60 - 16,
+      behavior: "instant",
+    });
+    expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
+      "src/new.ts#0",
+    );
 
-  fireEvent.click(
-    within(within(changes).getByRole("group", { name: "Order" })).getByRole(
-      "button",
-      { name: "Files A–Z" },
-    ),
-  );
-  watchHunks();
-  fireEvent.click(
-    within(summary).getByRole("button", {
-      name: "Auth and security: src/api.ts",
-    }),
-  );
-  expect(scrolled).toEqual(["src/new.ts#0", "src/api.ts#0"]);
-  expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
-    "src/api.ts#0",
-  );
+    fireEvent.click(
+      within(within(changes).getByRole("group", { name: "Order" })).getByRole(
+        "button",
+        { name: "Files A–Z" },
+      ),
+    );
+    scrolled.mockClear();
+    fireEvent.click(
+      within(summary).getByRole("button", {
+        name: "Auth and security: src/api.ts",
+      }),
+    );
+    expect(scrolled).toHaveBeenCalledExactlyOnceWith({
+      top: 500 - 60 - 16,
+      behavior: "instant",
+    });
+    expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
+      "src/api.ts#0",
+    );
+  } finally {
+    restore();
+  }
 });
 
 it("says there's no linked ticket, or that the tickets couldn't be read", async () => {
@@ -1301,4 +1356,200 @@ it("shows no summary while the guide couldn't be built", async () => {
   await screen.findByRole("heading", { name: "src/api.ts" });
 
   expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
+});
+
+/** One file of 600 one-line hunks, so its rows mount only near the screen (#790). */
+const HUGE: DeckOpenedPullRequest = {
+  headSha: "head",
+  baseSha: "base",
+  guide: null,
+  files: [
+    {
+      path: "src/big.ts",
+      status: "modified",
+      binary: false,
+      hunks: Array.from({ length: 600 }, (_, index) =>
+        hunk(`src/big.ts#${index}`, `@@ -${index + 1},1 +${index + 1},1 @@`, [
+          "-a",
+          "+A",
+        ]),
+      ),
+    },
+  ],
+};
+
+it("shows a huge pull request's threads only while their hunks are mounted, and places them again as they come back", async () => {
+  windowWideEnoughForTheGutter(true);
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(HUGE);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    threads: [
+      reviewThread("first", { path: "src/big.ts", line: 1 }),
+      reviewThread("last", { path: "src/big.ts", line: 600 }),
+    ],
+  });
+  // A 900px scroller whose rows are 100px high: about a dozen mount.
+  const restore = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  try {
+    await renderRoutes({
+      shell: ({ children }) => (
+        <Shell>
+          <div
+            data-testid="scroller"
+            style={{ overflowY: "auto" }}
+            ref={(element) => {
+              if (element) makeScrollable(element);
+            }}
+          >
+            {children}
+          </div>
+        </Shell>
+      ),
+      path: `/deck/${itemId}`,
+      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+    });
+    const scroller = screen.getByTestId("scroller");
+    const gutter = await screen.findByRole("complementary", {
+      name: "Review threads",
+    });
+    // The gutter holds only the cards of mounted hunks: one off screen
+    // isn't there at all.
+    const placed = (id: string) =>
+      gutter
+        .querySelector<HTMLElement>(`[data-card="${id}"]`)
+        ?.hasAttribute("data-placed") ?? false;
+    const connected = (id: string) =>
+      document.querySelector(`[data-connector="${id}"]`)?.hasAttribute("d") ??
+      false;
+    const cards = () =>
+      [...gutter.querySelectorAll<HTMLElement>("[data-card]")].map(
+        (card) => card.dataset.card,
+      );
+    const mounted = (index: number) =>
+      document.querySelector(`[data-hunk="src/big.ts#${index}"]`) !== null;
+
+    // The first hunk is on screen and the last isn't: only the first
+    // thread shows, joined to its line.
+    await waitFor(() => expect(placed("first")).toBe(true));
+    expect(mounted(599)).toBe(false);
+    expect(placed("last")).toBe(false);
+    expect(connected("first")).toBe(true);
+    expect(connected("last")).toBe(false);
+    expect(cards()).toEqual(["first"]);
+
+    // Scrolled to the end, the first hunk unmounts and the last mounts.
+    scrollElement(scroller, { top: 61_000 });
+    await waitFor(() => expect(placed("last")).toBe(true));
+    expect(mounted(0)).toBe(false);
+    expect(placed("first")).toBe(false);
+    expect(connected("first")).toBe(false);
+    expect(connected("last")).toBe(true);
+    expect(cards()).toEqual(["last"]);
+
+    // Back at the top, the first thread shows again.
+    scrollElement(scroller, { top: 0 });
+    await waitFor(() => expect(placed("first")).toBe(true));
+    expect(placed("last")).toBe(false);
+    expect(connected("last")).toBe(false);
+  } finally {
+    restore();
+  }
+});
+
+it("scrolls a huge pull request to a summary line's hunk, mounting it below the versions bar", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue({
+    ...HUGE,
+    guide: {
+      madeWith: "code",
+      concerns: [
+        {
+          id: "g1",
+          title: "Rename the field",
+          rationale: "Every use of it.",
+          hunkIds: HUGE.files[0]!.hunks.map((entry) => entry.id),
+          kinds: [],
+        },
+      ],
+      summary: {
+        ...NO_DECK_SUMMARY,
+        leftovers: [
+          {
+            id: "leftover:0",
+            text: "TODO in src/big.ts:551: // TODO: drop it",
+            hunkIds: ["src/big.ts#550"],
+          },
+        ],
+      },
+    },
+  });
+  // A 900px scroller under a 60px versions bar, whose rows are 100px high
+  // and sit where the virtualizer placed them.
+  const restore = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-versions", width: 1000, height: 60 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  const rect = HTMLElement.prototype.getBoundingClientRect;
+  const rowTop = (row: HTMLElement) =>
+    Number(/translateY\((-?[\d.]+)px\)/.exec(row.style.transform)?.[1] ?? 0) -
+    screen.getByTestId("scroller").scrollTop;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains("deck-review-row")
+        ? DOMRect.fromRect({ x: 0, y: rowTop(this), width: 1000, height: 100 })
+        : rect.call(this);
+    },
+  );
+  try {
+    await renderRoutes({
+      shell: ({ children }) => (
+        <Shell>
+          <div
+            data-testid="scroller"
+            style={{ overflowY: "auto" }}
+            ref={(element) => {
+              if (!element) return;
+              makeScrollable(element);
+              // Tall enough for every row, so a scroll there isn't clamped.
+              Object.defineProperty(element, "scrollHeight", {
+                configurable: true,
+                get: () => 100_000,
+              });
+            }}
+          >
+            {children}
+          </div>
+        </Shell>
+      ),
+      path: `/deck/${itemId}`,
+      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+    });
+    const summary = await screen.findByRole("region", { name: "Summary" });
+    const changes = screen.getByRole("region", { name: "Changes" });
+    const hunkElement = () =>
+      changes.querySelector<HTMLElement>('[data-hunk-id="src/big.ts#550"]');
+    await waitFor(() =>
+      expect(
+        changes.querySelector(".deck-review-sections[data-virtual]"),
+      ).not.toBeNull(),
+    );
+    expect(hunkElement()).toBeNull();
+
+    fireEvent.click(
+      within(summary).getByRole("button", { name: /^TODO in src\/big\.ts/ }),
+    );
+
+    // It mounts, takes the focus, and its row's top holds 16px below the bar.
+    await waitFor(() => expect(document.activeElement).toBe(hunkElement()));
+    await waitFor(() =>
+      expect(
+        rowTop(hunkElement()!.closest<HTMLElement>(".deck-review-row")!),
+      ).toBe(60 + 16),
+    );
+  } finally {
+    restore();
+  }
 });

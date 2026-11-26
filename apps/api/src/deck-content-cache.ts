@@ -6,8 +6,10 @@ import type { CodeHostPullRequestState } from "../../../packages/shared/code-hos
 import {
   deckGuideSchema,
   deckPullRequestDiffSchema,
+  deckSinceReviewSchema,
   type DeckGuide,
   type DeckPullRequestDiff,
+  type DeckSinceReview,
 } from "../../../packages/shared/deck.ts";
 import { writeFileAtomically } from "./atomic-file.ts";
 import type { GuideBuildInput } from "./deck-guide-builds.ts";
@@ -16,14 +18,16 @@ import type { GuideBuildInput } from "./deck-guide-builds.ts";
  * Deck's content cache (#596, #781): what Deck read of a pull request at one
  * base and head, on disk under the local API's data folder, so it opens at
  * once and survives a restart. An entry holds both versions of each changed
- * file, the built diff, and the guide once it is built. A new push makes a
+ * file, the built diff, the guide once it is built, and what changed since
+ * each version the user reviewed (#787), per version pair. A new push makes a
  * new entry; the old one stays until it is evicted. Over the cap, closed
  * pull requests go first, then the least recently used, never the one on
  * screen. Draft reviews never live here: they're the window's.
  *
- * Each entry is three files named by a hash of its key, so no repository,
- * path or commit is in a file name: `<id>.content.json`, `<id>.guide.json`
- * once its guide is built, and `<id>.meta.json`, written last, which says
+ * Each entry is up to four files named by a hash of its key, so no
+ * repository, path or commit is in a file name: `<id>.content.json`,
+ * `<id>.guide.json` once its guide is built, `<id>.since.json` once a
+ * comparison with a reviewed version is, and `<id>.meta.json`, which says
  * the entry is whole. Every file is written whole or not at all. A file that
  * doesn't read back drops its entry, and the pull request is read again.
  * An entry being removed leaves at once, but its files count until they are
@@ -91,6 +95,8 @@ const metaSchema = z.object({
   contentBytes: z.number().int().nonnegative(),
   /** Zero until the guide is built. */
   guideBytes: z.number().int().nonnegative(),
+  /** Zero until a comparison with a reviewed version is saved. Absent before #787. */
+  sinceBytes: z.number().int().nonnegative().default(0),
 });
 type Meta = z.infer<typeof metaSchema>;
 
@@ -108,6 +114,13 @@ const contentSchema = z.object({
 const guideFileSchema = z.object({
   version: z.literal(VERSION),
   guide: deckGuideSchema,
+});
+/** The comparisons kept per entry: the reviewed versions compared last. */
+const SINCE_RESULTS_KEPT = 20;
+const sinceFileSchema = z.object({
+  version: z.literal(VERSION),
+  /** Oldest first, by the reviewed version's head. */
+  results: z.array(deckSinceReviewSchema),
 });
 const ID = /^[0-9a-f]{40}$/;
 const removalsSchema = z.object({
@@ -132,8 +145,8 @@ const idOf = (key: DeckCacheKey) =>
     .digest("hex")
     .slice(0, 40);
 
-const ENTRY_FILE = /^([0-9a-f]{40})\.(meta|content|guide)\.json$/;
-type Part = "meta" | "content" | "guide";
+const ENTRY_FILE = /^([0-9a-f]{40})\.(meta|content|guide|since)\.json$/;
+type Part = "meta" | "content" | "guide" | "since";
 
 /** Delete errors Windows gives for a moment while another process, such as an antivirus scan, holds the file. */
 const TRANSIENT_DELETE_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
@@ -170,10 +183,16 @@ const ofSource = (key: DeckCacheKey, source: DeckCacheForgotten) =>
   (source.connectionId === undefined ||
     key.connectionId === source.connectionId);
 
-const PARTS: Part[] = ["content", "guide", "meta"];
-/** The bytes of an entry's contents and guide files, as counted. */
-type PartSizes = { content?: number; guide?: number };
-const bytesOf = (sizes: PartSizes) => (sizes.content ?? 0) + (sizes.guide ?? 0);
+const PARTS: Part[] = ["content", "guide", "since", "meta"];
+/** The bytes of an entry's contents, guide and comparisons files, as counted. */
+type PartSizes = { content?: number; guide?: number; since?: number };
+const bytesOf = (sizes: PartSizes) =>
+  (sizes.content ?? 0) + (sizes.guide ?? 0) + (sizes.since ?? 0);
+const sizesOf = (meta: Meta): PartSizes => ({
+  content: meta.contentBytes,
+  guide: meta.guideBytes,
+  since: meta.sinceBytes,
+});
 
 /** A file's size, zero once it is gone. */
 const sizeOf = (file: string) =>
@@ -229,6 +248,7 @@ export function createDeckContentCache(options: {
   const sizesOnDisk = async (id: string): Promise<PartSizes> => ({
     content: await sizeOf(fileOf(id, "content")),
     guide: await sizeOf(fileOf(id, "guide")),
+    since: await sizeOf(fileOf(id, "since")),
   });
 
   /**
@@ -276,7 +296,7 @@ export function createDeckContentCache(options: {
   const removeOne = async (id: string) => {
     const meta = entries.get(id);
     const sizes = meta
-      ? { content: meta.contentBytes, guide: meta.guideBytes }
+      ? sizesOf(meta)
       : (leftovers.get(id) ?? (await sizesOnDisk(id)));
     if (meta) {
       entries.delete(id);
@@ -377,6 +397,9 @@ export function createDeckContentCache(options: {
         if (meta.guideBytes > 0 && !found.has("guide")) {
           meta = { ...meta, guideBytes: 0 };
         }
+        if (meta.sinceBytes > 0 && !found.has("since")) {
+          meta = { ...meta, sinceBytes: 0 };
+        }
         entries.set(id, meta);
       }
       if (removing === "all" || removing.size) {
@@ -387,7 +410,7 @@ export function createDeckContentCache(options: {
   /** What the entries and the leftovers hold on disk. */
   const total = () =>
     [...entries.values()].reduce(
-      (sum, meta) => sum + meta.contentBytes + meta.guideBytes,
+      (sum, meta) => sum + bytesOf(sizesOf(meta)),
       0,
     ) + [...leftovers.values()].reduce((sum, sizes) => sum + bytesOf(sizes), 0);
 
@@ -456,6 +479,20 @@ export function createDeckContentCache(options: {
       };
     } catch {
       await remove(id);
+      return undefined;
+    }
+  };
+
+  /** An entry's saved comparisons; undefined when its file doesn't read back. */
+  const readSince = async (
+    id: string,
+  ): Promise<DeckSinceReview[] | undefined> => {
+    try {
+      const parsed = sinceFileSchema.safeParse(
+        JSON.parse(await readFile(fileOf(id, "since"), "utf8")),
+      );
+      return parsed.success ? parsed.data.results : undefined;
+    } catch {
       return undefined;
     }
   };
@@ -546,10 +583,13 @@ export function createDeckContentCache(options: {
             lastUsedAt: now(),
             contentBytes: Buffer.byteLength(text),
             guideBytes: 0,
+            sinceBytes: 0,
           };
-          // A guide an older entry left, without its meta, isn't this one's.
-          if (!(await deleteFile(fileOf(id, "guide")))) {
-            throw new Error("An older guide stays.");
+          // A guide or comparisons an older entry left, without its meta, aren't this one's.
+          for (const part of ["guide", "since"] as const) {
+            if (!(await deleteFile(fileOf(id, part)))) {
+              throw new Error("An older part stays.");
+            }
           }
           await writeMeta(id, meta);
           entries.set(id, meta);
@@ -575,6 +615,53 @@ export function createDeckContentCache(options: {
           const text = JSON.stringify({ version: VERSION, guide });
           await writeFileAtomically(fileOf(id, "guide"), text);
           const next = { ...meta, guideBytes: Buffer.byteLength(text) };
+          await writeMeta(id, next);
+          entries.set(id, next);
+        } catch {
+          return;
+        }
+        await evictNow();
+      });
+    },
+
+    /**
+     * What changed in an entry since the version whose head is
+     * `reviewedHead`, as saved; undefined when it wasn't compared yet, or
+     * its file doesn't read back.
+     */
+    getSince(key: DeckCacheKey, reviewedHead: string) {
+      return serial(async () => {
+        await load();
+        const meta = entries.get(idOf(key));
+        if (!meta || meta.sinceBytes === 0) return undefined;
+        return (await readSince(idOf(key)))?.find(
+          (result) => result.reviewedHead === reviewedHead,
+        );
+      });
+    },
+
+    /**
+     * Saves what changed in an entry still cached since a reviewed
+     * version, replacing an older answer for the same pair. The entry keeps
+     * the last few pairs compared.
+     */
+    putSince(key: DeckCacheKey, result: DeckSinceReview) {
+      return serial(async () => {
+        await load();
+        const id = idOf(key);
+        const meta = entries.get(id);
+        if (!meta || result.head !== key.headSha) return;
+        try {
+          const kept = (meta.sinceBytes > 0 ? await readSince(id) : []) ?? [];
+          const results = [
+            ...kept.filter(
+              (saved) => saved.reviewedHead !== result.reviewedHead,
+            ),
+            result,
+          ].slice(-SINCE_RESULTS_KEPT);
+          const text = JSON.stringify({ version: VERSION, results });
+          await writeFileAtomically(fileOf(id, "since"), text);
+          const next = { ...meta, sinceBytes: Buffer.byteLength(text) };
           await writeMeta(id, next);
           entries.set(id, next);
         } catch {

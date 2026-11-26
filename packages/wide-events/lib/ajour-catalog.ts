@@ -3050,6 +3050,15 @@ export const catalog = defineCatalog({
         pull_request: { ticket_count: operational<number>() },
       },
     },
+    "pull_request.load_versions": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: { version_count: operational<number>() },
+      },
+    },
     "pull_request.browse": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
@@ -3135,8 +3144,43 @@ export const catalog = defineCatalog({
           listed: operational<boolean>(),
           /** The guide's concerns. Absent when no guide was built. */
           concern_count: operational<number>(),
-          /** False when the pipeline failed, and the page shows the files A–Z. */
+          /** False when the pipeline failed or didn't run, and the page shows the files A–Z. */
           guide_built: operational<boolean>(),
+          /** True when the pull request has more hunks than a guide is built for, so the pipeline didn't run. */
+          guide_skipped: operational<boolean>(),
+        },
+      },
+    },
+    /**
+     * Changes since your review (#787): the pull request on screen compared
+     * with the version the user last reviewed, its versions read through
+     * the code host plugin and each older version's files read only when
+     * the content cache doesn't hold its diff. Cached per version pair.
+     */
+    "deck.since_review": {
+      kinds: ["command", "request"],
+      reasons: [
+        ...pluginRequestReasons,
+        /** Deck doesn't hold the pull request at the head the page shows. */
+        "not_open",
+        /** The head reviewed, or the one on screen, is none of the versions. */
+        "unknown_version",
+        /** Its connection was removed during the comparison. */
+        "connection_removed",
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        deck: {
+          hunk_count: operational<number>(),
+          /** The hunks changed since the version reviewed. */
+          changed_count: operational<number>(),
+          /** The answer came from the content cache. */
+          cached: operational<boolean>(),
+          /** Files read through the plugin for the older versions. */
+          file_read_count: operational<number>(),
+          /** The versions whose diffs were compared, the reviewed one included. */
+          compared_count: operational<number>(),
         },
       },
     },
@@ -3162,6 +3206,8 @@ export const catalog = defineCatalog({
           pull_request_count: operational<number>(),
           /** The guide builds queued. A pull request already cached is not read again. */
           queued_count: operational<number>(),
+          /** Pull requests read and kept with no guide build: more hunks than a guide is built for. */
+          guide_skipped_count: operational<number>(),
           file_read_count: operational<number>(),
           /** Pull requests that couldn't be read, and were skipped. */
           failed_count: operational<number>(),

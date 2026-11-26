@@ -114,6 +114,46 @@ Feature: Deck lists the pull requests on your plate
     When I follow the summary's line about the test
     Then the test's hunk is in view and focused
 
+  Scenario: Read a pull request too large for a guide
+    Given the local API answers a pull request with too many hunks for a guide
+    When I open Deck
+    And I open the requested pull request summary
+    Then its files show A–Z with the reason there is no guide
+    And only the rows near the screen are mounted
+    When I press the "j" key
+    And I press the "j" key
+    Then file 2 is focused at the top of the changes
+    When I press the "k" key
+    Then file 1 is focused at the top of the changes
+    When I scroll the guide tree to its end
+    And I go to the last file from its tick
+    Then file 240 is focused at the top of the changes
+    When I mark the last file's first hunk viewed
+    Then the last file's tick counts it viewed
+
+  Scenario: Move through the guide of a pull request with many hunks
+    Given the local API built the guide of a pull request with 600 hunks
+    When I open Deck
+    And I open the requested pull request summary
+    Then only the rows near the screen are mounted
+    When I press the "j" key
+    And I press the "j" key
+    Then concern 2 is focused at the top of the changes
+    When I scroll the changes down by 3000 pixels
+    And I press the "k" key
+    Then concern 2 is focused at the top of the changes
+    When I press the "k" key
+    Then concern 1 is focused at the top of the changes
+    When I scroll the changes down by 20000 pixels
+    Then concern 1's title keeps the focus off screen
+
+  Scenario: Read a pull request too large for a guide on a narrow screen
+    Given the local API answers a pull request with too many hunks for a guide
+    When I open Deck on a narrow screen
+    And I open the requested pull request summary
+    Then its files show A–Z with the reason there is no guide
+    And the guide tree's ticks run in one row within the narrow viewport
+
   Scenario: Read a pull request's guide on a narrow screen
     Given the local API built the requested pull request's guide
     When I open Deck on a narrow screen

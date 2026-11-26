@@ -234,6 +234,34 @@ describe("the Deck content cache", () => {
     });
   });
 
+  it("keeps what changed since each reviewed version with its entry, across a restart, counted and removed with it", async () => {
+    const directory = await cacheFolder();
+    const first = start(directory);
+    await first.put(key(1), content(1), FRESH);
+    const since = (reviewedHead: string, version: number) => ({
+      head: "head",
+      reviewedHead,
+      version: 3,
+      reviewedVersion: version,
+      changed: [{ hunkId: "pr01/a.ts#0", version: 3 }],
+    });
+    await first.putSince(key(1), since("h1", 1));
+    await first.putSince(key(1), since("h2", 2));
+    // Another head's answer isn't this entry's.
+    await first.putSince(key(1), { ...since("h1", 1), head: "other" });
+    const withoutSince = await entrySize();
+    expect((await first.usage()).sizeBytes).toBeGreaterThan(withoutSince);
+
+    const second = start(directory);
+    expect(await second.getSince(key(1), "h1")).toEqual(since("h1", 1));
+    expect(await second.getSince(key(1), "h2")).toEqual(since("h2", 2));
+    expect(await second.getSince(key(1), "h0")).toBeUndefined();
+
+    await second.clear();
+    expect(await second.getSince(key(1), "h1")).toBeUndefined();
+    expect(await readdir(directory)).toEqual([]);
+  });
+
   it("evicts the least recently used entries first, under the cap", async () => {
     const size = await entrySize();
     const clock = { now: 1_000 };

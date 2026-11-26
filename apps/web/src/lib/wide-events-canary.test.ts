@@ -245,7 +245,7 @@ export async function syncPullRequests(connection) {
   return {
     viewer: user, instanceUrl: "https://git.example.test",
     pullRequests: [{
-      ...summary(7), viewerIsAuthor: false, headSha: "sha7", lastPushedAt: 1760000050000,
+      ...summary(7), viewerIsAuthor: false, headSha: "sha7", baseRef: "release/" + MARKER, lastPushedAt: 1760000050000,
       reviewRequests: [{ kind: "user", name: "Ana " + MARKER, includesViewer: true }],
       reviews: [], comments: [{ id: "c-" + MARKER, author: user, createdAt: 1760000060000, mentionsViewer: false }],
       checks: "success", mergeability: "mergeable",
@@ -291,6 +291,16 @@ export async function getLinkedTickets(connection) {
       number: 7, repository: REPOSITORY, title: "Ticket " + MARKER, body: "Ticket body " + MARKER,
       url: "https://example.test/" + MARKER, state: "Open " + MARKER,
     }],
+  };
+}
+export async function getPullRequestVersions(connection) {
+  await check(connection);
+  const commit = (sha) => ({ sha, headline: "Commit " + MARKER, authorName: "Ana " + MARKER, createdAt: 1760000040000 });
+  return {
+    versions: [
+      { number: 1, headSha: "sha6", baseSha: "base7", pushedAt: 1760000040000, commits: [commit("sha6")] },
+      { number: 2, headSha: "sha7", baseSha: "base7", pushedAt: 1760000050000, forced: true, commits: [commit("sha7")] },
+    ],
   };
 }
 export async function browsePullRequests(connection) {
@@ -1330,8 +1340,28 @@ describe("the privacy canary", () => {
     app.localStore.changePullRequest(pullRequest!._id, { type: "unsnooze" });
     app.localStore.changePullRequest(pullRequest!._id, { type: "settle" });
 
-    // The operations no screen of the renderer calls yet, as the routes take them.
+    // The versions bar and changes since your review (#787), as the review page reads them.
     const pull = { repository: REPOSITORY, number: 7 };
+    const versions = await app.appApi.readPullRequestVersions(
+      "canary",
+      connections.work,
+      pull,
+    );
+    expect(versions.versions[0]!.commits[0]!.headline).toContain(MARKER);
+    await app.appApi.openDeckPullRequest("canary", connections.work, pull);
+    const since = await app.appApi.readDeckSinceReview(
+      "canary",
+      connections.work,
+      { ...pull, head: "sha7", reviewedHead: "sha6" },
+    );
+    expect(since.reviewedVersion).toBe(1);
+    app.localStore.changePullRequest(pullRequest!._id, {
+      type: "reviewed",
+      headSha: "sha6",
+      at: 1760000045000,
+    });
+
+    // The operations no screen of the renderer calls yet, as the routes take them.
     const anchor = { path: CHANGED_PATH, side: "head", line: 3 };
     for (const [operation, body] of [
       ["getPullRequestContent", pull],
@@ -1394,7 +1424,10 @@ describe("the privacy canary", () => {
         "api plugin_operation pull_request.sync",
         "renderer command pull_request.snooze",
         "renderer command pull_request.settle",
+        "renderer command pull_request.remember_review",
+        "api request deck.since_review",
         ...[
+          "load_versions",
           "load",
           "load_file",
           "load_conversation",

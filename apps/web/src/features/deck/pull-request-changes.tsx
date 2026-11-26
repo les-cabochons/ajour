@@ -1,26 +1,34 @@
 import {
   useCallback,
   useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type Ref,
   type RefObject,
 } from "react";
+import type { CodeHostVersion, CodeHostVersionsResult } from "@ajour/shared";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { MessagePanel } from "@/components/app-surface";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  noGuideNote,
   reviewSections,
   sectionToReach,
   toggleViewed,
+  virtualized,
   type ReviewOrder,
+  type ReviewSection,
 } from "@/domain/deck/guide";
 import type {
   PlacedThread,
   ThreadPlacement,
 } from "@/domain/deck/review-threads";
+import { sinceReviewSections, versionNames } from "@/domain/deck/versions";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
@@ -28,33 +36,105 @@ import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
 import type { ReachHunk } from "./pull-request-summary";
 import {
+  atEnd,
+  readingOffset,
+  scrollerOf,
+  scrollToReadingLine,
+  type SectionNavigator,
+} from "./review-scroll";
+import {
   HUNK_ATTRIBUTE,
   ReviewSectionView,
   SECTION_ATTRIBUTE,
 } from "./review-sections";
 import { ThreadGutter } from "./thread-gutter";
-import type { PullRequestReadState } from "./use-pull-request-read";
+import type {
+  PullRequestReadState,
+  SinceReviewState,
+} from "./use-pull-request-read";
+import { NewPushesBanner, VersionsBar } from "./versions-bar";
+import { VirtualReviewSections } from "./virtual-review-sections";
 
-/** Where a section scrolled to lands below the top of the page's scroller, as `scroll-margin-top` in styles/deck.css. */
-const SECTION_MARGIN = 16;
-
-/** The element that scrolls `element`, or undefined for the window. */
-function scrollerOf(element: HTMLElement) {
-  for (
-    let parent = element.parentElement;
-    parent;
-    parent = parent.parentElement
-  ) {
-    const { overflowY } = getComputedStyle(parent);
-    if (overflowY === "auto" || overflowY === "scroll") return parent;
-  }
-  return undefined;
-}
-
-/** Whether `scroller`, or the window, is scrolled to its end. */
-function atEnd(scroller: HTMLElement | undefined) {
-  const box = scroller ?? document.scrollingElement;
-  return !box || box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
+/** Every section mounted, for a pull request that isn't huge. */
+function MountedReviewSections({
+  sections,
+  viewed,
+  theme,
+  onToggleViewed,
+  navigator,
+  listRef,
+  bySection,
+  floating,
+  hovered,
+  hoveredSection,
+  onHover,
+  onAnchor,
+  changed,
+}: {
+  sections: readonly ReviewSection[];
+  viewed: ReadonlySet<string>;
+  theme: "light" | "dark";
+  onToggleViewed: (hunkId: string) => void;
+  navigator: Ref<SectionNavigator>;
+  /** The sections' column, which the gutter beside it follows. */
+  listRef: RefObject<HTMLDivElement | null>;
+  /** Each section's review threads, by its key. */
+  bySection: ReadonlyMap<string, readonly PlacedThread[]>;
+  floating: boolean;
+  hovered: string | undefined;
+  /** The key of the section holding the hovered thread. */
+  hoveredSection: string | undefined;
+  onHover: (threadId: string | undefined) => void;
+  onAnchor: (element: HTMLElement | null) => void;
+  /** The hunks changed since the review, with the version each last changed in. */
+  changed: ReadonlyMap<string, number> | undefined;
+}) {
+  const all = () => [
+    ...(listRef.current?.querySelectorAll<HTMLElement>(
+      `[${SECTION_ATTRIBUTE}]`,
+    ) ?? []),
+  ];
+  useImperativeHandle(navigator, () => ({
+    tops: () => all().map((section) => section.getBoundingClientRect().top),
+    reach(index) {
+      const section = all()[index];
+      if (!section) return;
+      // Instant, so a second J reads where the first one landed.
+      section.scrollIntoView({ block: "start", behavior: "instant" });
+      section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    },
+    reachHunk(hunkId) {
+      const element = listRef.current;
+      const hunk = [
+        ...(element?.querySelectorAll<HTMLElement>(`[${HUNK_ATTRIBUTE}]`) ??
+          []),
+      ].find((candidate) => candidate.getAttribute(HUNK_ATTRIBUTE) === hunkId);
+      if (!element || !hunk) return false;
+      // Below the sticky versions bar, as a section lands.
+      scrollToReadingLine(hunk, readingOffset(element));
+      hunk.focus({ preventScroll: true });
+      return true;
+    },
+  }));
+  return (
+    <div ref={listRef} className="deck-review-sections">
+      {sections.map((section) => (
+        <ReviewSectionView
+          key={section.key}
+          section={section}
+          viewed={viewed}
+          theme={theme}
+          onToggleViewed={onToggleViewed}
+          placed={bySection.get(section.key)}
+          floating={floating}
+          hovered={hoveredSection === section.key ? hovered : undefined}
+          onHover={onHover}
+          onAnchor={onAnchor}
+          changed={changed}
+        />
+      ))}
+    </div>
+  );
 }
 
 /** Where the review page shows the review threads, as `PullRequestReview` works it out. */
@@ -64,6 +144,26 @@ export interface ReviewThreadsView {
   floating: boolean;
   hovered: string | undefined;
   onHover: (threadId: string | undefined) => void;
+}
+
+/** The versions bar's reads and the since-review marks, as `PullRequestReview` works them out. */
+export interface ReviewVersionsView {
+  state: PullRequestReadState<CodeHostVersionsResult>;
+  retry: () => void;
+  /** The version the user last reviewed. */
+  reviewed: CodeHostVersion | undefined;
+  since: SinceReviewState;
+  retrySince: () => void;
+  /**
+   * The hunks changed since the version reviewed, with the version each
+   * last changed in; empty when the version reviewed is the one on screen.
+   * Undefined until known.
+   */
+  changed: ReadonlyMap<string, number> | undefined;
+  /** The pushes after the head on screen. */
+  pushes: number;
+  refresh: () => void;
+  baseRef: string | undefined;
 }
 
 /**
@@ -76,67 +176,107 @@ function ReviewChanges({
   pullRequest,
   threads: { placement, floating, hovered, onHover },
   reachHunkRef,
+  versions,
 }: {
   pullRequest: DeckOpenedPullRequest;
   threads: ReviewThreadsView;
   reachHunkRef: RefObject<ReachHunk | undefined>;
+  versions: ReviewVersionsView;
 }) {
   const theme = useResolvedTheme();
   const [chosen, setChosen] = useState<ReviewOrder>("guide");
   const order: ReviewOrder = pullRequest.guide ? chosen : "files";
-  const sections = useMemo(
+  const all = useMemo(
     () => reviewSections(pullRequest, order),
     [pullRequest, order],
   );
+  // The latest version shows by default; the filter keeps what changed since the review.
+  const [filtering, setFiltering] = useState(false);
+  const { changed } = versions;
+  const since = useMemo(
+    () =>
+      filtering && changed ? sinceReviewSections(all, changed) : undefined,
+    [all, changed, filtering],
+  );
+  const sections = since ? since.sections : all;
+  const hunkCount = useMemo(
+    () =>
+      pullRequest.files.reduce((count, file) => count + file.hunks.length, 0),
+    [pullRequest.files],
+  );
+  const shownCount = sections.reduce(
+    (count, section) => count + section.hunks.length,
+    0,
+  );
+  const shownVersion =
+    versions.state.status === "ready"
+      ? versions.state.value.versions.find(
+          (version) => version.headSha === pullRequest.headSha,
+        )
+      : undefined;
   const [viewed, setViewed] = useState<ReadonlySet<string>>(() => new Set());
   const onToggleViewed = useCallback(
     (hunkId: string) => setViewed((marks) => toggleViewed(marks, hunkId)),
     [],
   );
   const [treeOpen, setTreeOpen] = useState(false);
-  const list = useRef<HTMLDivElement>(null);
+  const review = useRef<HTMLDivElement>(null);
+  const navigator = useRef<SectionNavigator>(null);
+  // A huge pull request mounts only the rows near the screen (#790).
+  const huge = useMemo(() => virtualized(sections), [sections]);
 
   /** The section J, K or a tick went to last. */
   const reached = useRef<number | undefined>(undefined);
   const reach = useCallback((index: number) => {
-    const section = list.current?.querySelectorAll<HTMLElement>(
-      `[${SECTION_ATTRIBUTE}]`,
-    )[index];
-    if (!section) return;
+    if (index < 0 || !navigator.current) return;
     reached.current = index;
-    // Instant, so a second J reads where the first one landed.
-    section.scrollIntoView({ block: "start", behavior: "instant" });
-    section.querySelector<HTMLElement>("h3")?.focus({ preventScroll: true });
+    navigator.current.reach(index);
   }, []);
   const step = (direction: 1 | -1) => {
-    const element = list.current;
-    if (!element) return;
+    const element = review.current;
+    if (!element || !navigator.current) return;
     // One read pass on each key press; nothing listens to the scroll.
-    const tops = [
-      ...element.querySelectorAll<HTMLElement>(`[${SECTION_ATTRIBUTE}]`),
-    ].map((section) => section.getBoundingClientRect().top);
+    const tops = navigator.current.tops();
     const scroller = scrollerOf(element);
     const target = sectionToReach(
       tops,
-      (scroller?.getBoundingClientRect().top ?? 0) + SECTION_MARGIN,
+      (scroller?.getBoundingClientRect().top ?? 0) + readingOffset(element),
       direction,
       atEnd(scroller) ? reached.current : undefined,
     );
     if (target !== undefined) reach(target);
   };
-  // A summary line scrolls its hunk to the top, in either order, and focuses it.
+  // A summary line scrolls its hunk to the reading line, below the versions
+  // bar, in either order and either list, and focuses it. A hunk the
+  // since-review filter hides shows all the changes first.
+  const shown = useRef({ sections, all, filtering });
+  useLayoutEffect(() => {
+    shown.current = { sections, all, filtering };
+  }, [sections, all, filtering]);
   useEffect(() => {
+    let frame = 0;
+    const holds = (list: readonly ReviewSection[], hunkId: string) =>
+      list.some((section) =>
+        section.hunks.some((entry) => entry.hunk.id === hunkId),
+      );
     reachHunkRef.current = (hunkId) => {
-      const hunk = [
-        ...(list.current?.querySelectorAll<HTMLElement>(
-          `[${HUNK_ATTRIBUTE}]`,
-        ) ?? []),
-      ].find((element) => element.getAttribute(HUNK_ATTRIBUTE) === hunkId);
-      if (!hunk) return;
-      hunk.scrollIntoView({ block: "start", behavior: "instant" });
-      hunk.focus({ preventScroll: true });
+      cancelAnimationFrame(frame);
+      const now = shown.current;
+      if (!holds(now.sections, hunkId)) {
+        if (!now.filtering || !holds(now.all, hunkId)) return;
+        setFiltering(false);
+      }
+      // A few frames while the list shows it: after the filter's change,
+      // or while a huge list finds its scroller.
+      let tries = 0;
+      const attempt = () => {
+        if (navigator.current?.reachHunk(hunkId) || (tries += 1) > 10) return;
+        frame = requestAnimationFrame(attempt);
+      };
+      attempt();
     };
     return () => {
+      cancelAnimationFrame(frame);
       reachHunkRef.current = undefined;
     };
   }, [reachHunkRef]);
@@ -144,10 +284,21 @@ function ReviewChanges({
   useShortcut("deck.previous-concern", () => step(-1));
   useShortcut("deck.guide-tree", () => setTreeOpen((open) => !open));
 
+  const list = useRef<HTMLDivElement>(null);
   const scheduleRef = useRef<(() => void) | undefined>(undefined);
   const onAnchor = useCallback((element: HTMLElement | null) => {
     if (element) scheduleRef.current?.();
   }, []);
+  // A huge pull request's hunks mount and unmount as the page scrolls, and
+  // the gutter holds the cards of the mounted ones only: thousands of hidden
+  // cards would cost every style and layout pass.
+  const [mountedThreadHunks, setMountedThreadHunks] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const onThreadRowsChange = useCallback(
+    (hunkIds: ReadonlySet<string>) => setMountedThreadHunks(hunkIds),
+    [],
+  );
   const { bySection, sectionOfHunk } = useMemo(() => {
     const sectionOfHunk = new Map<string, string>();
     for (const section of sections)
@@ -170,8 +321,31 @@ function ReviewChanges({
   const hoveredSection = hoveredHunk
     ? sectionOfHunk.get(hoveredHunk)
     : undefined;
-  const placed = placement?.placed ?? [];
+  // Under the filter, only the threads on the hunks it shows.
+  const placed = useMemo(
+    () =>
+      (placement?.placed ?? []).filter((entry) =>
+        sectionOfHunk.has(entry.hunkId),
+      ),
+    [placement, sectionOfHunk],
+  );
   const gutter = floating && placed.length > 0;
+  const gutterPlaced = useMemo(
+    () =>
+      huge
+        ? placed.filter((entry) => mountedThreadHunks.has(entry.hunkId))
+        : placed,
+    [huge, placed, mountedThreadHunks],
+  );
+  // A hovered card whose hunk scrolled away is no longer under the pointer.
+  useEffect(() => {
+    if (
+      hovered !== undefined &&
+      gutter &&
+      !gutterPlaced.some((entry) => entry.thread.id === hovered)
+    )
+      onHover(undefined);
+  }, [gutter, gutterPlaced, hovered, onHover]);
   // Folding a hunk or changing the order moves the lines, even where the
   // column keeps its height. The gutter places its cards itself as it mounts.
   const laidOut = useRef({ sections, viewed });
@@ -185,9 +359,23 @@ function ReviewChanges({
     scheduleRef.current?.();
   }, [sections, viewed]);
 
-  const count = order === "guide" ? sections.length : pullRequest.files.length;
+  const count = order === "guide" ? all.length : pullRequest.files.length;
   return (
     <>
+      <VersionsBar
+        versions={versions.state}
+        retryVersions={versions.retry}
+        shownHead={pullRequest.headSha}
+        reviewed={versions.reviewed}
+        since={versions.since}
+        retrySince={versions.retrySince}
+        changed={changed}
+        filtering={filtering}
+        onFilter={setFiltering}
+        hunkCount={hunkCount}
+        shownCount={shownCount}
+        baseRef={versions.baseRef}
+      />
       <div className="deck-guide-header">
         <SectionHeading trailing={count} className="deck-guide-heading">
           {order === "guide" ? "Guide" : "Files"}
@@ -211,33 +399,48 @@ function ReviewChanges({
             <ToggleGroupItem value="files">Files A–Z</ToggleGroupItem>
           </ToggleGroup>
         ) : pullRequest.files.length ? (
-          <span className="deck-guide-source">
-            The guide couldn't be built, so the files show A–Z.
-          </span>
+          <span className="deck-guide-source">{noGuideNote(pullRequest)}</span>
         ) : null}
       </div>
       {sections.length ? (
-        <div className="deck-review">
+        <div ref={review} className="deck-review">
           <div className="deck-review-grid" data-gutter={gutter || undefined}>
-            <div ref={list} className="deck-review-sections">
-              {sections.map((section) => (
-                <ReviewSectionView
-                  key={section.key}
-                  section={section}
-                  viewed={viewed}
-                  theme={theme}
-                  onToggleViewed={onToggleViewed}
-                  placed={bySection.get(section.key)}
-                  floating={gutter}
-                  hovered={hoveredSection === section.key ? hovered : undefined}
-                  onHover={onHover}
-                  onAnchor={onAnchor}
-                />
-              ))}
-            </div>
+            {huge ? (
+              <VirtualReviewSections
+                sections={sections}
+                viewed={viewed}
+                theme={theme}
+                onToggleViewed={onToggleViewed}
+                navigator={navigator}
+                listRef={list}
+                placed={placed}
+                floating={gutter}
+                hovered={hovered}
+                onHover={onHover}
+                onAnchor={onAnchor}
+                onThreadRowsChange={onThreadRowsChange}
+                changed={changed}
+              />
+            ) : (
+              <MountedReviewSections
+                sections={sections}
+                viewed={viewed}
+                theme={theme}
+                onToggleViewed={onToggleViewed}
+                navigator={navigator}
+                listRef={list}
+                bySection={bySection}
+                floating={gutter}
+                hovered={hovered}
+                hoveredSection={hoveredSection}
+                onHover={onHover}
+                onAnchor={onAnchor}
+                changed={changed}
+              />
+            )}
             {gutter ? (
               <ThreadGutter
-                placed={placed}
+                placed={gutterPlaced}
                 columnRef={list}
                 hovered={hovered}
                 onHover={onHover}
@@ -254,9 +457,33 @@ function ReviewChanges({
             onReach={reach}
           />
         </div>
+      ) : since ? (
+        <p className="deck-file-empty">
+          {`Nothing changed since your review of v${versions.reviewed?.number ?? ""}.`}{" "}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setFiltering(false)}
+          >
+            {shownVersion ? `Show all of v${shownVersion.number}` : "Show all"}
+          </Button>
+        </p>
       ) : (
         <p className="deck-file-empty">This pull request changes no files.</p>
       )}
+      {sections.length && since?.folded.length ? (
+        <p className="deck-unchanged">
+          <span>Unchanged since your review:</span>
+          {since.folded.map((section) => (
+            <span key={section.key} className="deck-unchanged-item">
+              {section.number ? (
+                <span className="deck-unchanged-number">{section.number}</span>
+              ) : null}
+              {section.title}
+            </span>
+          ))}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -272,6 +499,7 @@ export function PullRequestChanges({
   retry,
   threads,
   reachHunkRef,
+  versions,
 }: {
   pullRequest: LocalPullRequest;
   state: PullRequestReadState<DeckOpenedPullRequest>;
@@ -279,6 +507,7 @@ export function PullRequestChanges({
   threads: ReviewThreadsView;
   /** Set while the changes show, to the way a summary line reaches its hunk. */
   reachHunkRef: RefObject<ReachHunk | undefined>;
+  versions: ReviewVersionsView;
 }) {
   return (
     // Named outright: the heading's count would join its name.
@@ -307,12 +536,24 @@ export function PullRequestChanges({
           number={pullRequest.facts.number}
           head={state.value.headSha}
         >
-          {/* A new diff, or another head, starts with no hunk marked viewed. */}
+          {versions.pushes ? (
+            <NewPushesBanner
+              count={versions.pushes}
+              names={versionNames(
+                versions.state.status === "ready"
+                  ? versions.state.value.versionName
+                  : undefined,
+              )}
+              onRefresh={versions.refresh}
+            />
+          ) : null}
+          {/* A new diff, or another head, starts with no hunk viewed and the latest version shown. */}
           <ReviewChanges
             key={`${state.value.baseSha}..${state.value.headSha}`}
             pullRequest={state.value}
             threads={threads}
             reachHunkRef={reachHunkRef}
+            versions={versions}
           />
         </DeckAskProvider>
       )}

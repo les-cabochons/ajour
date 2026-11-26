@@ -288,6 +288,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   unknown_operation: "The route doesn't have the operation it was asked for.",
   unknown_run: "A plugin page reported on a run Ajour doesn't know.",
   unknown_tool: "The plugin's manifest declares no tool with that id.",
+  unknown_version:
+    "The commit asked about isn't one of the pull request's versions, so nothing was compared.",
   unreadable: "Ajour's saved data couldn't be read.",
   unreadable_record:
     "The record of the last session's plugin processes couldn't be read.",

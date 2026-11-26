@@ -2,11 +2,14 @@ import { NO_DECK_SUMMARY } from "../../test-support/deck";
 import { describe, expect, it } from "vitest";
 import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import {
+  reviewRows,
   reviewSections,
   sectionToReach,
   tickLength,
   toggleViewed,
+  treeVirtualized,
   viewedCount,
+  virtualized,
 } from "./guide";
 
 const hunk = (id: string) => ({
@@ -182,5 +185,60 @@ describe("viewed marks", () => {
     expect(tickLength(1)).toBeLessThan(tickLength(5));
     expect(tickLength(0)).toBe(tickLength(1));
     expect(tickLength(500)).toBe(tickLength(1_000));
+  });
+});
+
+describe("huge pull requests", () => {
+  it("lays the sections out as one row per section header and per hunk, in reading order", () => {
+    const { rows, sectionRows } = reviewRows(
+      reviewSections(PULL_REQUEST, "files"),
+    );
+
+    expect(
+      rows.map((row) =>
+        row.kind === "section"
+          ? `section ${row.section}`
+          : `${row.entry.hunk.id}${row.beforeSection ? " ends" : ""}`,
+      ),
+    ).toEqual([
+      "section 0",
+      "README.md#0 ends",
+      "section 1",
+      "src/a.ts#0 ends",
+      "section 2",
+      "src/b.ts#0",
+      // The last hunk of the last section has no section after it.
+      "src/b.ts#1",
+    ]);
+    expect(sectionRows).toEqual([0, 2, 4]);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+  });
+
+  it("mounts only the hunks near the screen above 500 hunks", () => {
+    const sections = (hunks: number) =>
+      reviewSections(
+        { ...PULL_REQUEST, guide: null, files: [file("src/a.ts", hunks)] },
+        "files",
+      );
+
+    expect(virtualized(sections(500))).toBe(false);
+    expect(virtualized(sections(501))).toBe(true);
+  });
+
+  it("mounts only the guide tree's ticks in view above 200 sections", () => {
+    const sections = (files: number) =>
+      reviewSections(
+        {
+          ...PULL_REQUEST,
+          guide: null,
+          files: Array.from({ length: files }, (_, index) =>
+            file(`src/${index}.ts`, 1),
+          ),
+        },
+        "files",
+      );
+
+    expect(treeVirtualized(sections(200))).toBe(false);
+    expect(treeVirtualized(sections(201))).toBe(true);
   });
 });
