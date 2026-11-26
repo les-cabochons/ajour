@@ -11,7 +11,10 @@ import {
 } from "react";
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
+  DECK_LINES_DEFAULT_QUESTION,
   DECK_QUESTION_MAX,
+  deckLinesLabel,
+  type DeckAskAnchor,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
@@ -19,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { askGoing, askText, shortHead } from "@/domain/deck/ask";
+import { anchorSelection, linkCitations } from "@/domain/deck/line-selection";
 import { watchClosedConversations } from "@/lib/agent-turns";
 import { grantDeckConsent } from "@/lib/app-api";
 import { watchDeckConsentRevocations } from "@/lib/deck-consent-revocations";
@@ -27,20 +31,25 @@ import {
   askKey,
   DeckAskSessions,
   useAskSession,
+  useHunkAsks,
   type AskSession,
   type ConsentAnswer,
   type DeckAskTarget,
 } from "./deck-ask-sessions";
+import { useReviewLines } from "./review-lines-context";
 
 /*
- * Deck's quiet asks (#791): a faint `more ›` ends each concern's rationale.
- * It opens on the concern's default question, which Enter sends as is or as
- * edited; the answer streams in under the rationale, ending with the commit
- * it is about. The first ask in a repository opens the consent dialog.
- * Nothing names the agent. At rest a concern mounts one button and no
- * listener. The asks live in the page's `DeckAskSessions`, so a concern
- * that unmounts, as a huge pull request's rows do off screen (#790), finds
- * its ask as it left it.
+ * Deck's quiet asks (#791, #793): a faint `more ›` ends each concern's
+ * rationale, and the toolbar above selected lines asks about them. An ask
+ * opens on its anchor's default question, which Enter sends as is or as
+ * edited; the answer streams in under the rationale, or after the hunk of
+ * the lines, ending with the commit it is about, and its `path:line`
+ * citations scroll to their lines. The first ask in a repository opens the
+ * consent dialog. Nothing names the agent. At rest a concern mounts one
+ * button and no listener, and a hunk nothing for its asks. The asks live
+ * in the page's `DeckAskSessions`, so a concern or a hunk that unmounts,
+ * as a huge pull request's rows do off screen (#790), finds its ask as it
+ * left it.
  */
 
 interface DeckAskContextValue {
@@ -49,6 +58,11 @@ interface DeckAskContextValue {
 }
 
 const DeckAskContext = createContext<DeckAskContextValue | null>(null);
+
+/** The page's asks and the pull request they are about, or null outside the review page's changes. */
+export function useDeckAsks() {
+  return useContext(DeckAskContext);
+}
 
 /** Gives the page's asks their pull request at `head`, and its one consent dialog. */
 export function DeckAskProvider({
@@ -160,7 +174,11 @@ export function ConcernRationale({
   rationale: string;
 }) {
   const context = useContext(DeckAskContext);
-  const key = context ? askKey(context.target.head, concernId) : "";
+  const anchor = useMemo(
+    (): DeckAskAnchor => ({ kind: "concern", id: concernId }),
+    [concernId],
+  );
+  const key = context ? askKey(context.target.head, anchor) : "";
   const session = useAskSession(context?.sessions, key);
   const open = session !== undefined;
   const answerId = useId();
@@ -182,7 +200,7 @@ export function ConcernRationale({
               aria-expanded={open}
               aria-controls={open ? answerId : undefined}
               onClick={() => {
-                if (!open) context.sessions.open(key);
+                if (!open) context.sessions.open(context.target.head, anchor);
               }}
             >
               more ›
@@ -194,10 +212,12 @@ export function ConcernRationale({
         <AskAnswer
           id={answerId}
           askKey={key}
-          concernId={concernId}
           session={session}
           context={context}
           onClosed={focusMore}
+          label="More detail"
+          placeholder="Getting more detail…"
+          defaultQuestion={DECK_CONCERN_DEFAULT_QUESTION}
         />
       ) : null}
     </>
@@ -213,23 +233,34 @@ export function ConcernRationale({
 function AskAnswer({
   id,
   askKey: key,
-  concernId,
   session,
   context,
   onClosed,
+  label,
+  placeholder,
+  defaultQuestion,
+  actions,
 }: {
   id: string;
   askKey: string;
-  concernId: string;
   session: AskSession;
   context: DeckAskContextValue;
   /** After the ask closes. */
   onClosed: () => void;
+  /** Names the block, "More detail" on a concern. */
+  label: string;
+  /** What shows while nothing came yet. */
+  placeholder: string;
+  /** The anchor's default question, which sent as is asks with none. */
+  defaultQuestion: string;
+  /** More actions on an answer, before Dismiss, given its text. */
+  actions?: (text: string) => ReactNode;
 }) {
   const { target, sessions } = context;
   const { state, turnId } = session;
+  const lines = useReviewLines();
   const ask = (question?: string) =>
-    void sessions.ask(target, concernId, question, onClosed);
+    void sessions.ask(target, session.anchor, question, onClosed);
   const close = () => {
     sessions.close(key);
     onClosed();
@@ -244,6 +275,8 @@ function AskAnswer({
     return (
       <AskQuestion
         id={id}
+        label={label}
+        defaultQuestion={defaultQuestion}
         draft={session.question}
         focus={session.focusQuestion}
         onFocused={focused}
@@ -256,20 +289,24 @@ function AskAnswer({
   const going = askGoing(state);
   const text = askText(state);
   return (
-    <section id={id} className="deck-ask" aria-label="More detail">
+    <section id={id} className="deck-ask" aria-label={label}>
       {state.question !== undefined ? (
         <p className="deck-ask-question">{state.question}</p>
       ) : null}
       {state.kind === "asking" ? (
         <p role="status" className="deck-ask-placeholder">
-          Getting more detail…
+          {placeholder}
         </p>
       ) : state.kind === "waiting" ? (
         <p role="status" className="deck-ask-placeholder">
           Waiting for the timesheet task to finish
         </p>
       ) : null}
-      {text ? <Markdown className="deck-ask-text">{text}</Markdown> : null}
+      {text ? (
+        <Markdown className="deck-ask-text" onCitation={lines?.cite}>
+          {lines ? linkCitations(text, lines.diff) : text}
+        </Markdown>
+      ) : null}
       {state.kind === "answered" ? (
         <p className="deck-ask-footer">
           From the code at {shortHead(state.head)}
@@ -322,6 +359,7 @@ function AskAnswer({
                 Try again
               </Button>
             ) : null}
+            {state.kind === "answered" && actions ? actions(text) : null}
             <Button variant="ghost" size="sm" onClick={close}>
               Dismiss
             </Button>
@@ -339,6 +377,8 @@ function AskAnswer({
  */
 function AskQuestion({
   id,
+  label,
+  defaultQuestion,
   draft,
   focus,
   onFocused,
@@ -347,6 +387,8 @@ function AskQuestion({
   onClose,
 }: {
   id: string;
+  label: string;
+  defaultQuestion: string;
   draft: string;
   /** Takes the focus as it mounts. Coming back on screen, it doesn't. */
   focus: boolean;
@@ -366,13 +408,13 @@ function AskQuestion({
   const send = () => {
     const question = draft.trim();
     if (!question) return;
-    onAsk(question === DECK_CONCERN_DEFAULT_QUESTION ? undefined : question);
+    onAsk(question === defaultQuestion ? undefined : question);
   };
   return (
     <form
       id={id}
       className="deck-ask deck-ask-compose"
-      aria-label="More detail"
+      aria-label={label}
       onSubmit={(event) => {
         event.preventDefault();
         send();
@@ -405,5 +447,65 @@ function AskQuestion({
         Ask
       </Button>
     </form>
+  );
+}
+
+/**
+ * The asks about a hunk's selected lines, after its lines and the threads
+ * among them: never between code lines, so the hunk stays whole. Nothing
+ * shows while none is open.
+ */
+export function HunkAsks({ hunkId }: { hunkId: string }) {
+  const context = useContext(DeckAskContext);
+  const keys = useHunkAsks(context?.sessions, hunkId);
+  if (!context || !keys.length) return null;
+  return keys.map((key) => (
+    <LinesAnswer key={key} askKey={key} context={context} />
+  ));
+}
+
+/** One ask about selected lines, with Turn into a comment once answered. */
+function LinesAnswer({
+  askKey: key,
+  context,
+}: {
+  askKey: string;
+  context: DeckAskContextValue;
+}) {
+  const session = useAskSession(context.sessions, key);
+  const lines = useReviewLines();
+  const id = useId();
+  if (!session || session.anchor.kind !== "lines" || !session.hunkId)
+    return null;
+  const { anchor, hunkId } = session;
+  const comment = lines?.comment;
+  return (
+    <AskAnswer
+      id={id}
+      askKey={key}
+      session={session}
+      context={context}
+      onClosed={() => {}}
+      label={`Explanation of ${deckLinesLabel(anchor)}`}
+      placeholder="Explaining…"
+      defaultQuestion={DECK_LINES_DEFAULT_QUESTION}
+      actions={
+        comment
+          ? (text) => (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  // Closed once the composer holds the answer; asking again shows it at once.
+                  if (comment(anchorSelection(hunkId, anchor), text))
+                    context.sessions.close(key);
+                }}
+              >
+                Turn into a comment
+              </Button>
+            )
+          : undefined
+      }
+    />
   );
 }

@@ -3295,7 +3295,7 @@ export const catalog = defineCatalog({
         "repository_not_allowed",
         /** Ajour no longer holds the pull request at this head. */
         "not_open",
-        /** The guide has no such concern. */
+        /** The guide has no such concern, or the diff no such lines. */
         "unknown_anchor",
         /** No agent is picked or installed. */
         "blocked",
@@ -3307,7 +3307,7 @@ export const catalog = defineCatalog({
         plugin: { id: operational() },
         connection: { id: operational() },
         deck: {
-          anchor_kind: operational<"concern">(),
+          anchor_kind: operational<"concern" | "lines">(),
           /** The user typed a question in place of the default one. */
           typed_question: operational<boolean>(),
           /** Answered from the cache, with no turn. */
