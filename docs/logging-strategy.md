@@ -1257,6 +1257,7 @@ channel to read the event each emits.
 | `pull_request.browse`                | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.change`                | command                                 | store command                                    |
 | `pull_request.comment`               | command, request, plugin_operation      | route, plugin method, client call                |
+| `pull_request.delete_comment`        | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.load`                  | command, request, plugin_operation      | route, plugin method                             |
 | `pull_request.load_checks`           | command, request, plugin_operation      | route, plugin method, client call                |
 | `pull_request.load_conversation`     | command, request, plugin_operation      | route, plugin method, client call                |

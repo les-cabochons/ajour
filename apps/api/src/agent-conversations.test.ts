@@ -734,7 +734,20 @@ describe("a conversation's tools", () => {
       expect(list).toMatchObject({ status: 200 });
       expect(
         list!.reply.result.tools.map((tool: { name: string }) => tool.name),
-      ).toEqual(["read_hunks", "read_file", "read_threads", "read_guide"]);
+      ).toEqual([
+        "read_hunks",
+        "read_file",
+        "read_threads",
+        "read_guide",
+        // The chat's writes, which only a chat turn may call (#796).
+        "add_draft_comment",
+        "post_comment",
+        "reply_to_thread",
+        "resolve_thread",
+        "submit_review",
+        "edit_title",
+        "set_draft",
+      ]);
       for (const [reply, tool] of [
         [projects, "list_projects"],
         [session, "begin_session"],
@@ -1485,7 +1498,20 @@ describe("a conversation on OpenCode", () => {
       expect(list).toMatchObject({ status: 200 });
       expect(
         list!.reply.result.tools.map((tool: { name: string }) => tool.name),
-      ).toEqual(["read_hunks", "read_file", "read_threads", "read_guide"]);
+      ).toEqual([
+        "read_hunks",
+        "read_file",
+        "read_threads",
+        "read_guide",
+        // The chat's writes, which only a chat turn may call (#796).
+        "add_draft_comment",
+        "post_comment",
+        "reply_to_thread",
+        "resolve_thread",
+        "submit_review",
+        "edit_title",
+        "set_draft",
+      ]);
       expect(
         named(api.events, "agent.turn").find(
           (event) => event.agent?.turn_id === first.id,

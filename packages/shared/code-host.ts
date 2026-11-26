@@ -540,8 +540,11 @@ export type CodeHostSubmitReviewRequest = z.infer<
   typeof codeHostSubmitReviewRequestSchema
 >;
 
+/** Where a review or comment shows on the code host, when the plugin knows. */
+const postedUrlSchema = z.string().url().max(2_000).optional();
+
 export const codeHostSubmitReviewResultSchema = z.union([
-  z.object({ reviewId: idSchema }),
+  z.object({ reviewId: idSchema, url: postedUrlSchema }),
   uncertainSchema,
 ]);
 export type CodeHostSubmitReviewResult = z.infer<
@@ -559,7 +562,10 @@ export type CodeHostPostCommentRequest = z.infer<
   typeof codeHostPostCommentRequestSchema
 >;
 
-export const codeHostCommentResultSchema = z.object({ commentId: idSchema });
+export const codeHostCommentResultSchema = z.object({
+  commentId: idSchema,
+  url: postedUrlSchema,
+});
 
 export const codeHostPostCommentResultSchema = z.union([
   codeHostCommentResultSchema,
@@ -576,6 +582,21 @@ export const codeHostReplyRequestSchema = codeHostPullRequestRefSchema.extend({
   ...submissionFields,
 });
 export type CodeHostReplyRequest = z.infer<typeof codeHostReplyRequestSchema>;
+
+/**
+ * Deletes one of the user's comments or replies, by the `commentId` its
+ * post answered (#796): Deck's chat offers it on the action line of what it
+ * posted. A comment already gone counts as deleted.
+ */
+export const codeHostDeleteCommentRequestSchema =
+  codeHostPullRequestRefSchema.extend({ commentId: idSchema });
+export type CodeHostDeleteCommentRequest = z.infer<
+  typeof codeHostDeleteCommentRequestSchema
+>;
+
+export const codeHostDeleteCommentResultSchema = z.object({
+  deleted: z.literal(true),
+});
 
 export const codeHostResolveThreadRequestSchema =
   codeHostPullRequestRefSchema.extend({
@@ -689,6 +710,10 @@ export const codeHostOperations = {
   replyToThread: {
     request: codeHostReplyRequestSchema,
     result: codeHostPostCommentResultSchema,
+  },
+  deleteComment: {
+    request: codeHostDeleteCommentRequestSchema,
+    result: codeHostDeleteCommentResultSchema,
   },
   setThreadResolved: {
     request: codeHostResolveThreadRequestSchema,

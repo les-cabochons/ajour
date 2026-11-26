@@ -148,8 +148,11 @@ import {
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
 import {
+  DECK_DRAFT_COMMENT_TOOL,
   deckAskRequestSchema,
   deckCacheSettingsUpdateSchema,
+  deckChatRequestSchema,
+  deckDraftCommentResultSchema,
   deckCloneChooseRequestSchema,
   deckCloneForgetRequestSchema,
   deckCloneSuggestionsRequestSchema,
@@ -167,6 +170,7 @@ import {
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
 import { createDeckAsks, DeckAskRefused, DeckAskStopped } from "./deck-asks.ts";
+import { createDeckChatWrites, DeckChatRefused } from "./deck-chat-writes.ts";
 import {
   createDeckClones,
   DeckCloneRefused,
@@ -269,7 +273,7 @@ import {
   type ApiEvents,
   type ApiLaunch,
 } from "./events.ts";
-import { McpBridge } from "./mcp-bridge.ts";
+import { BridgeCallError, McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
 import type { LocalLogReader } from "./local-log-reader.ts";
@@ -2114,6 +2118,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     // Deck's asks read them too, to cache their answers.
     publishTurnEvent: (event) => {
       deckAsks.observe(event);
+      deckChat.observe(event);
       mcpBridge.publish("agent-turn", event);
     },
     // Each turn is sent only while its repository is allowed with its agent.
@@ -2186,6 +2191,86 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
     }
   }
+  /**
+   * A chat write's code host operation (#796), through the pull request's
+   * plugin and connection, as the user's own writes go: refused before the
+   * plugin runs when the connection's access doesn't allow it.
+   */
+  async function deckCodeHostWrite<Operation extends CodeHostOperation>(
+    source: DeckPullRequestSource,
+    operation: Operation,
+    request: CodeHostOperationRequest<Operation>,
+  ): Promise<CodeHostOperationResult<Operation>> {
+    const { plugin } = await findPlugin(pluginManager, source.pluginId);
+    if (!plugin || !pluginHasCodeHost(plugin)) {
+      throw new DeckChatRefused("The pull request's code host is off.");
+    }
+    const connection = await storage.connectionForOperation(
+      source.pluginId,
+      source.connectionId,
+      secretManifestOf(plugin),
+    );
+    if (!connection) {
+      throw new DeckChatRefused("The pull request's connection was removed.");
+    }
+    if (connectionAccessRefusal(plugin, connection, operation, request)) {
+      throw new DeckChatRefused(
+        `The user's access choices don't let Ajour write to this pull request: turn on Review pull requests for the connection in Settings › Plugins. Tell the user so.`,
+      );
+    }
+    const call = admittedCall(plugin, connection.secrets);
+    try {
+      return await pluginManager.runCodeHostOperation(
+        source.pluginId,
+        operation,
+        pluginConnection(connection),
+        request,
+        call.admit,
+      );
+    } catch (error) {
+      // The plugin's own words may hold what the agent shouldn't see.
+      throw new DeckChatRefused(
+        error instanceof PluginExportMissing
+          ? `${plugin.displayName} doesn't offer this yet. Tell the user to do it on ${plugin.displayName}.`
+          : `${plugin.displayName} didn't take it. Tell the user it wasn't done.`,
+      );
+    }
+  }
+  const deckChat = createDeckChatWrites({
+    runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
+    allowed: (binding) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    deck: deckService,
+    codeHost: deckCodeHostWrite,
+    // The draft review lives in the window (#784): the bridge hands it there.
+    async addDraftComment(draft) {
+      let result;
+      try {
+        result = await mcpBridge.call(DECK_DRAFT_COMMENT_TOOL, draft, {
+          id: "deck-chat",
+          name: "Deck's chat",
+        });
+      } catch (error) {
+        if (!(error instanceof BridgeCallError)) throw error;
+        throw new DeckChatRefused(
+          "The Ajour window didn't answer, so the draft comment wasn't added.",
+        );
+      }
+      const parsed = result.ok
+        ? deckDraftCommentResultSchema.safeParse(result.output)
+        : undefined;
+      if (!parsed?.success) {
+        throw new DeckChatRefused(
+          result.ok
+            ? "The Ajour window didn't add the draft comment."
+            : result.error,
+        );
+      }
+      return parsed.data;
+    },
+    publish: (event) => mcpBridge.publish("agent-turn", event),
+  });
+
   const deckReads = createDeckAgentReads({
     deck: deckService,
     allowed: (binding) =>
@@ -2231,6 +2316,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     readBody: readJsonBody,
     localLogs: options.localLogs,
     deckReads,
+    deckChat,
   };
 
   /**
@@ -4935,6 +5021,51 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           unit.set({ agent: { turn_id: asked.turn.id } });
         }
         writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
+      } catch (error) {
+        if (error instanceof DeckAskStopped) {
+          unit.refuse("client_closed");
+          return;
+        }
+        if (error instanceof DeckAskRefused) {
+          unit.refuse(error.eventReason);
+          writeJson(response, error.status, error.body);
+          return;
+        }
+        if (!(error instanceof AgentRunError)) throw error;
+        unit.refuse(error.status === 409 ? "already_running" : "blocked");
+        writeJson(response, error.status, { error: error.message });
+      }
+    },
+
+    // A message in Deck's chat (#796): its turn, whose events stream the
+    // reply and the action line of each write it makes.
+    deckChat: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(request, deckChatRequestSchema);
+      if (payload.anchor) {
+        unit.set({ deck: { anchor_kind: payload.anchor.kind } });
+      }
+      // The window stopped the message while its clone was prepared: git stops too.
+      const stop = new AbortController();
+      response.once("close", () => {
+        if (!response.writableFinished) stop.abort();
+      });
+      try {
+        const { cloneFact, ...chatted } = await deckAsks.chat(
+          { pluginId, connectionId },
+          payload,
+          stop.signal,
+        );
+        deckChat.chatStarted(chatted.turn.id, {
+          author: payload.author === true,
+        });
+        unit.set({
+          agent: { turn_id: chatted.turn.id },
+          ...(cloneFact ? { deck: { clone: cloneFact } } : {}),
+        });
+        writeJson(response, 201, chatted);
       } catch (error) {
         if (error instanceof DeckAskStopped) {
           unit.refuse("client_closed");

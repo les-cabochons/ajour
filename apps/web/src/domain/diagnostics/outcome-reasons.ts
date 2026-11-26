@@ -146,6 +146,8 @@ const OUTCOME_REASON_EXPLANATIONS: Readonly<
   mcp_failed:
     "The agent's MCP server didn't start, so it couldn't reach Ajour.",
   mcp_off: "The MCP server is turned off in Settings.",
+  merge_refused:
+    "The pull request's agent asked to merge it. Ajour never merges for an agent, so the call was refused.",
   missing: "The task to merge into doesn't exist anymore.",
   missing_asset: "The release has no download for this computer.",
   missing_digest:

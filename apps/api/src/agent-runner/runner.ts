@@ -284,6 +284,15 @@ export class AgentRunner {
     return this.conversations.startTurn(request, options);
   }
 
+  /**
+   * The turn running in the conversation whose client is `clientId`, as a
+   * call of its tools reads it (#794), or undefined between turns and once
+   * it is being stopped.
+   */
+  runningTurnOf(clientId: string) {
+    return this.conversations.runningTurnOf(clientId);
+  }
+
   /** Stops a turn that waits or runs. False when it isn't going. */
   cancelTurn(turnId: string): boolean {
     return this.conversations.cancelTurn(turnId);

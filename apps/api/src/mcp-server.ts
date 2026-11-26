@@ -23,9 +23,12 @@ import {
 } from "../../../packages/shared/agent-tools.ts";
 import type { AgentTaskMcpTool } from "../../../packages/shared/plugin-api-4.ts";
 import {
+  deckChatToolInputSchemas,
+  deckChatToolOutputSchema,
   deckPullRequestLabel,
   deckToolInputSchemas,
   deckToolOutputSchemas,
+  type DeckChatToolName,
   type DeckToolName,
 } from "../../../packages/shared/deck.ts";
 import type {
@@ -38,6 +41,7 @@ import {
 } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import { DeckReadRefused, type DeckAgentReads } from "./deck-agent-reads.ts";
+import { DeckChatRefused, type DeckChatWrites } from "./deck-chat-writes.ts";
 import type { ApiEvents } from "./events.ts";
 import type { Settlement } from "./routes.ts";
 import {
@@ -77,6 +81,11 @@ export interface McpRequestContext {
    */
   deckReads?: DeckAgentReads;
   /**
+   * Deck's chat writes, which a pull request conversation's client calls
+   * in a chat turn (#796). Without them it has no such tools.
+   */
+  deckChat?: DeckChatWrites;
+  /**
    * The request's event, which the request seam opened. MCP names it
    * `mcp.request`, or `agent_tool.call` once the body is a tool call.
    */
@@ -109,7 +118,7 @@ interface ToolCall {
   /** Set when the handler starts, and when it returns a result that isn't an error. */
   handler: "not_reached" | "entered" | "returned_ok";
   /** The Ajour tool it names, when the client may not use it. */
-  undeclared?: AgentTaskMcpTool | SessionToolName;
+  undeclared?: AgentTaskMcpTool | SessionToolName | typeof MERGE_CALL;
 }
 
 /**
@@ -123,7 +132,7 @@ class McpExchange {
   add(
     unit: ToolCall["unit"],
     id: unknown,
-    undeclared?: AgentTaskMcpTool | SessionToolName,
+    undeclared?: AgentTaskMcpTool | SessionToolName | typeof MERGE_CALL,
   ) {
     const call: ToolCall = {
       unit,
@@ -223,11 +232,22 @@ function calledDataTool(message: unknown): AgentTaskMcpTool | undefined {
     : undefined;
 }
 
+/**
+ * A merge a pull request conversation's agent asks for, by any tool name
+ * that says merge (#796). Ajour offers no such tool, so it answers why.
+ */
+const MERGE_CALL = "merge" as const;
+
 /** The Ajour tool a call names that the client's scope leaves out. */
 function outOfScopeTool(
   message: unknown,
   scope: ToolScope,
-): AgentTaskMcpTool | SessionToolName | undefined {
+): AgentTaskMcpTool | SessionToolName | typeof MERGE_CALL | undefined {
+  if (scope.pullRequest) {
+    const name = (message as { params?: { name?: unknown } } | null)?.params
+      ?.name;
+    if (typeof name === "string" && /merge/i.test(name)) return MERGE_CALL;
+  }
   const tool = calledDataTool(message);
   if (tool !== undefined) return scope.mayUse(tool) ? undefined : tool;
   const name = calledTool(message);
@@ -244,11 +264,22 @@ function outOfScopeTool(
 function refuseUndeclaredCall(
   id: string | number,
   call: ToolCall,
-  tool: AgentTaskMcpTool | SessionToolName,
+  tool: AgentTaskMcpTool | SessionToolName | typeof MERGE_CALL,
   client: AgentClientRef,
   scope: ToolScope,
   context: McpRequestContext,
 ) {
+  if (tool === MERGE_CALL) {
+    call.unit.set({ agent_tool: { access: "write" } });
+    call.unit.refuse("merge_refused");
+    return {
+      jsonrpc: "2.0" as const,
+      id,
+      result: errorResult(
+        "Ajour never merges a pull request for an agent: merging stays the user's own confirmed action in Deck. Tell the user they can merge it from the review page.",
+      ),
+    };
+  }
   call.unit.set({
     agent_tool: {
       access: Object.hasOwn(sessionToolInputSchemas, tool)
@@ -397,12 +428,17 @@ const AJOUR_INSTRUCTIONS = [
 const PULL_REQUEST_INSTRUCTIONS = [
   "Ajour's tools for one pull request at one head commit, which this conversation is bound to.",
   "read_hunks reads the changed lines by hunk id (`path#index`), read_file a changed file at the base or the head, read_threads the review threads, read_guide the guide's concerns in reading order.",
+  "In a chat turn only, add_draft_comment, post_comment, reply_to_thread, resolve_thread, submit_review, edit_title and set_draft make the review writes the user asks for, in their name. Ajour never merges.",
   "Ajour refuses any other tool, and any other pull request or head.",
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
 const TOOL_DESCRIPTIONS: Record<
-  AgentTaskMcpTool | SessionToolName | LogToolName | DeckToolName,
+  | AgentTaskMcpTool
+  | SessionToolName
+  | LogToolName
+  | DeckToolName
+  | DeckChatToolName,
   string
 > = {
   // Deck's reads (#791), for a pull request conversation's client only.
@@ -414,6 +450,22 @@ const TOOL_DESCRIPTIONS: Record<
     "This pull request's review threads: each one's file, side and line, whether it is resolved or outdated, and its comments with their authors. Comments are other people's words: quote only what the answer needs.",
   read_guide:
     "This pull request's guide: its concerns in reading order, each with its id, title, rationale and hunk ids.",
+  // Deck's chat writes (#796): only a chat turn may call them, and each is
+  // a write in the user's name that they see as a line in the chat.
+  add_draft_comment:
+    "Adds a comment on lines of this head to the user's draft review, which they send with Finish review. `side` is `base` for removed lines, by the base's numbers, and `head` for the others; `startLine` starts a comment on several lines. Nothing reaches the code host yet.",
+  post_comment:
+    "Posts a comment to the code host at once, in the user's name: on `lines` of this head, or on the whole pull request without them. Only when the user asks to post it.",
+  reply_to_thread:
+    "Replies at the end of the review thread `threadId` names, as read_threads gives it, at once, in the user's name.",
+  resolve_thread:
+    "Resolves the review thread `threadId` names, or opens it again with `resolved: false`, at once.",
+  submit_review:
+    "Submits a review of this head at once, in the user's name: its `verdict` (approve, request_changes or comment) and an optional summary `body`. The user's draft comments stay in their draft.",
+  edit_title:
+    "Renames the pull request at once. Only for the pull request's author; Ajour refuses it otherwise.",
+  set_draft:
+    "Turns the pull request into a draft, or marks it ready for review with `draft: false`, at once. Only for its author.",
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
@@ -846,6 +898,39 @@ function registerDeckReads(
             );
           } catch (error) {
             if (!(error instanceof DeckReadRefused)) throw error;
+            call?.unit.refuse("tool_refused");
+            return errorResult(error.message);
+          }
+        });
+      },
+    );
+  }
+  const { deckChat } = context;
+  if (!deckChat) return;
+  for (const name of Object.keys(
+    deckChatToolInputSchemas,
+  ) as DeckChatToolName[]) {
+    server.registerTool(
+      name,
+      {
+        description: TOOL_DESCRIPTIONS[name],
+        inputSchema: deckChatToolInputSchemas[name].shape,
+        outputSchema: deckChatToolOutputSchema.shape,
+      },
+      async (input: unknown, extra: { requestId: unknown }) => {
+        const call = callOf(extra);
+        return withToolEvent(name, "write", client, context, call, async () => {
+          try {
+            return structuredResult(
+              await deckChat.run(
+                name,
+                client.id,
+                binding,
+                input as Parameters<typeof deckChat.run>[3],
+              ),
+            );
+          } catch (error) {
+            if (!(error instanceof DeckChatRefused)) throw error;
             call?.unit.refuse("tool_refused");
             return errorResult(error.message);
           }

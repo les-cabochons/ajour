@@ -418,6 +418,8 @@ export const catalog = defineCatalog({
         "tool_not_declared",
         /** A pull request conversation's client called a tool outside its pull request. */
         "outside_pull_request",
+        /** A pull request conversation's agent asked to merge: Ajour has no such tool (#796). */
+        "merge_refused",
         ...requestReasons,
       ],
       fields: {
@@ -3086,6 +3088,11 @@ export const catalog = defineCatalog({
       reasons: pluginRequestReasons,
       fields: { ...requestFields, ...pluginOperationFields },
     },
+    "pull_request.delete_comment": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
     "pull_request.resolve_thread": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
@@ -3329,6 +3336,54 @@ export const catalog = defineCatalog({
            * What the turn did with the user's local clone (#795): read it,
            * none chosen, or why it couldn't. Never its path or a reason's words.
            */
+          clone: operational<
+            | "read"
+            | "not_chosen"
+            | "agent_reads_no_files"
+            | "clone_missing"
+            | "remote_changed"
+            | "no_git"
+            | "wsl_unavailable"
+            | "head_not_full"
+            | "no_head_ref"
+            | "no_fork_remote"
+            | "fetch_failed"
+            | "fetch_timeout"
+            | "head_not_found"
+            | "checkout_failed"
+            | "cancelled"
+          >(),
+        },
+        agent: { turn_id: operational() },
+      },
+    },
+    /**
+     * A message in Deck's chat (#796): a `deck.chat` turn of the pull
+     * request's conversation. The message, the reply and what the chat
+     * writes are content, so none of them is here.
+     */
+    "deck.chat": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The user hasn't allowed the repository with this agent yet. */
+        "repository_not_allowed",
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        /** The chip's concern or lines aren't in the guide or the diff. */
+        "unknown_anchor",
+        /** No agent is picked or installed. */
+        "blocked",
+        "already_running",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
+          /** The anchor a Continue in chat chip carried in, if any. */
+          anchor_kind: operational<"concern" | "lines">(),
+          /** What the turn did with the user's local clone, as for an ask. */
           clone: operational<
             | "read"
             | "not_chosen"

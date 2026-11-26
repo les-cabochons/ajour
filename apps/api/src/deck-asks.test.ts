@@ -711,7 +711,7 @@ describe("answers", () => {
 
 describe("the agent's reads", () => {
   it(
-    "lists Deck's four reads, and answers them for this pull request at this head",
+    "lists Deck's reads and the chat's writes, and answers the reads for this pull request at this head",
     { timeout: 20_000 },
     async () => {
       const call = (name: string, args: Record<string, unknown> = {}) => ({
@@ -738,7 +738,20 @@ describe("the agent's reads", () => {
         await api.mcpReplies();
       expect(
         list!.reply.result.tools.map((tool: { name: string }) => tool.name),
-      ).toEqual(["read_hunks", "read_file", "read_threads", "read_guide"]);
+      ).toEqual([
+        "read_hunks",
+        "read_file",
+        "read_threads",
+        "read_guide",
+        // The chat's writes, which only a chat turn may call (#796).
+        "add_draft_comment",
+        "post_comment",
+        "reply_to_thread",
+        "resolve_thread",
+        "submit_review",
+        "edit_title",
+        "set_draft",
+      ]);
       expect(hunks!.reply.result.structuredContent).toEqual({
         hunks: [
           {
@@ -757,6 +770,7 @@ describe("the agent's reads", () => {
       expect(threads!.reply.result.structuredContent).toEqual({
         threads: [
           {
+            id: "t1",
             path: "src/api.ts",
             side: "head",
             line: 2,

@@ -19,6 +19,9 @@ import {
   type DeckAskRequest,
   type DeckAskResponse,
   type DeckAskRefusal,
+  type DeckChatRequest,
+  type DeckChatResponse,
+  type DeckCloneSource,
   type DeckCloneUse,
   type DeckConcern,
   type DeckLinesAnchor,
@@ -198,6 +201,41 @@ function turnMessage(held: DeckHeldPullRequest, request: DeckAskRequest) {
   return concernMessage(concern, question);
 }
 
+/**
+ * A chat message's turn words (#796): what its chip carries in, written
+ * from what Ajour holds, as an ask's anchor, then the user's message.
+ */
+function chatMessage(held: DeckHeldPullRequest, request: DeckChatRequest) {
+  const { anchor, message } = request;
+  if (!anchor) return message;
+  let context: string;
+  if (anchor.kind === "lines") {
+    const selected = selectedRows(held.diff, anchor);
+    if (!selected) {
+      throw new DeckAskRefused(404, {
+        error: "The diff doesn't show those lines.",
+        reason: "unknown_anchor",
+      });
+    }
+    context = [
+      `The user continues from ${deckLinesLabel(anchor)} of ${anchor.path}, in hunk ${selected.hunkId}:`,
+      "```diff",
+      ...selected.rows,
+      "```",
+    ].join("\n");
+  } else {
+    const concern = held.guide?.concerns.find(({ id }) => id === anchor.id);
+    if (!concern) {
+      throw new DeckAskRefused(404, {
+        error: "The guide has no such concern.",
+        reason: "unknown_anchor",
+      });
+    }
+    context = `The user continues from the guide's concern "${concern.title}", whose hunks are ${concern.hunkIds.join(", ")}.`;
+  }
+  return `${context}\n\n${message}`;
+}
+
 /** The anchor as its answers are cached: a concern by its id, lines by their path and ends. */
 const anchorKey = (anchor: DeckAskAnchor) =>
   anchor.kind === "concern"
@@ -260,7 +298,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
   async function cloneFor(
     source: DeckPullRequestSource,
     held: DeckHeldPullRequest,
-    request: DeckAskRequest,
+    request: { head: string; clone?: DeckCloneSource },
     signal?: AbortSignal,
   ): Promise<{ use?: DeckCloneUse; root?: string; fact?: DeckAskCloneFact }> {
     const { clones } = options;
@@ -448,6 +486,53 @@ export function createDeckAsks(options: DeckAsksOptions) {
       });
       return {
         kind: "turn",
+        turn,
+        ...(clone.use ? { clone: clone.use } : {}),
+        ...(clone.fact ? { cloneFact: clone.fact } : {}),
+      };
+    },
+
+    /**
+     * Starts a chat message's `deck.chat` turn (#796): never from a cache,
+     * since each message follows the ones before it. It reads the user's
+     * clone as an ask does, and its writes are the chat's tools.
+     */
+    async chat(
+      source: Pick<DeckPullRequestSource, "pluginId" | "connectionId">,
+      request: DeckChatRequest,
+      signal?: AbortSignal,
+    ): Promise<DeckChatResponse & { cloneFact?: DeckAskCloneFact }> {
+      const pullRequestSource: DeckPullRequestSource = {
+        ...source,
+        repository: request.repository,
+        number: request.number,
+      };
+      await requireConsent(pullRequestSource);
+      const pullRequest = deckPullRequestKey(pullRequestSource);
+      const held = await options.deck.held(pullRequest, request.head);
+      if (!held) {
+        throw new DeckAskRefused(409, {
+          error:
+            "Open the pull request again: Ajour no longer holds it at this commit.",
+          reason: "not_open",
+        });
+      }
+      const message = chatMessage(held, request);
+      const clone = await cloneFor(pullRequestSource, held, request, signal);
+      if (clone.root && !(await options.deck.held(pullRequest, request.head))) {
+        void options.clones?.release(held.key).catch(() => undefined);
+        throw new DeckAskRefused(409, {
+          error:
+            "Open the pull request again: Ajour no longer holds it at this commit.",
+          reason: "not_open",
+        });
+      }
+      if (signal?.aborted) throw new DeckAskStopped();
+      const turn = await options.startTurn(
+        { task: "deck.chat", pullRequest, head: request.head, message },
+        clone.root ? { readRoot: clone.root } : {},
+      );
+      return {
         turn,
         ...(clone.use ? { clone: clone.use } : {}),
         ...(clone.fact ? { cloneFact: clone.fact } : {}),

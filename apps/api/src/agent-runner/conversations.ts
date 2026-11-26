@@ -337,6 +337,40 @@ export class AgentConversations {
   }
 
   /**
+   * The turn running now in the conversation whose client is `clientId`,
+   * once it is sent to its CLI: what a call of that client's tools is part
+   * of. Undefined between turns, once the turn is being stopped, and for
+   * any other client.
+   */
+  runningTurnOf(
+    clientId: string,
+  ):
+    | {
+        id: string;
+        task: CoreAgentTask;
+        pullRequest: string;
+        head: string;
+        conversationId: string;
+      }
+    | undefined {
+    const { conversation } = this;
+    if (!conversation || conversation.closing) return undefined;
+    if (conversation.client?.id !== clientId) return undefined;
+    const turn = conversation.turns[0];
+    if (!turn?.started || turn.settled || !turn.process) return undefined;
+    // A turn being stopped, by the user or a stall, runs only until its
+    // CLI ends: its calls aren't part of it any more.
+    if (turn.stopReason) return undefined;
+    return {
+      id: turn.id,
+      task: turn.task,
+      pullRequest: conversation.key,
+      head: conversation.binding.head,
+      conversationId: conversation.id,
+    };
+  }
+
+  /**
    * Closes the conversation when its pull request is one of `pullRequest`'s:
    * its running turn and those queued behind it stop, and its client is
    * revoked. Revoking a repository does this (#791).

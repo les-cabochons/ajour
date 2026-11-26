@@ -147,9 +147,59 @@ export const agentTurnBlockerSchema = z.enum(["agent-run", "turn"]);
 export type AgentTurnBlocker = z.infer<typeof agentTurnBlockerSchema>;
 
 /**
+ * A write a chat turn made in the user's name (#796, ADR 0024): one action
+ * line in the chat, saying what it did, with where it shows and, for what
+ * it posted, what Delete removes.
+ */
+export const agentTurnActionSchema = z.object({
+  /** Unique across the app's turns. */
+  id: z.string().min(1),
+  kind: z.enum([
+    "draft_comment",
+    "comment",
+    "reply",
+    "resolve",
+    "reopen",
+    "review",
+    "title",
+    "draft",
+    "ready",
+    "regroup",
+  ]),
+  /** The line as the chat shows it, such as "Commented on src/api.ts:12". */
+  text: z.string().min(1).max(500),
+  /** Where it shows on the code host, when the code host says. */
+  url: z.string().url().max(2_000).optional(),
+  /** Where it sits in the diff, for a comment on lines: the line links there. */
+  at: z
+    .object({
+      path: z.string().min(1).max(1_000),
+      side: z.enum(["base", "head"]),
+      line: z.number().int().positive(),
+    })
+    .optional(),
+  /**
+   * The title and draft state the code host holds after a title edit or a
+   * draft toggle, which the page then shows.
+   */
+  edited: z
+    .object({ title: z.string().min(1).max(1_000), draft: z.boolean() })
+    .optional(),
+  /** What Delete removes: a comment or reply it posted, or a draft comment it added. */
+  posted: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("comment"), commentId: z.string().min(1) }),
+      z.object({ kind: z.literal("draft_comment"), draftId: z.string().min(1) }),
+    ])
+    .optional(),
+});
+export type AgentTurnAction = z.infer<typeof agentTurnActionSchema>;
+
+/**
  * The `agent-turn` events on the window's event stream, in order for each
- * turn: `waiting` (only when it waits), `started`, any number of `text`, then
- * one `ended`. `text` carries the next piece of the answer, never all of it.
+ * turn: `waiting` (only when it waits), `started`, any number of `text` and
+ * `action`, then one `ended`. `text` carries the next piece of the answer,
+ * never all of it; `action` a write a chat turn made (#796).
  * `conversation-closed` says the pull request's conversation went away.
  */
 export const agentTurnEventSchema = z.discriminatedUnion("type", [
@@ -171,6 +221,12 @@ export const agentTurnEventSchema = z.discriminatedUnion("type", [
     /** 0 for a turn's first piece, then 1, 2 and so on. */
     index: z.number().int().nonnegative(),
     text: z.string(),
+  }),
+  z.object({
+    type: z.literal("action"),
+    turnId: z.string(),
+    conversationId: z.string(),
+    action: agentTurnActionSchema,
   }),
   z.object({
     type: z.literal("ended"),

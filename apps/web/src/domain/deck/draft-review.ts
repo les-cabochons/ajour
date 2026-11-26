@@ -5,7 +5,7 @@ import type {
   CodeHostPostCommentRequest,
   CodeHostSubmitReviewRequest,
 } from "@ajour/shared";
-import type { DeckPullRequestDiff } from "@ajour/shared/deck";
+import { deckLineText, type DeckPullRequestDiff } from "@ajour/shared/deck";
 import { findLine, inDiffOrder, type AnnotationSide } from "./review-threads";
 
 /*
@@ -137,27 +137,7 @@ function withDraft(
  * `+`, `-` or space and one per row, or undefined when the diff doesn't
  * show one of them.
  */
-export function lineTextOf(
-  diff: DeckPullRequestDiff,
-  anchor: {
-    path: string;
-    side: CodeHostDiffSide;
-    line: number;
-    startLine?: number;
-  },
-) {
-  const first =
-    anchor.startLine !== undefined && anchor.startLine < anchor.line
-      ? anchor.startLine
-      : anchor.line;
-  const texts: string[] = [];
-  for (let line = first; line <= anchor.line; line += 1) {
-    const text = findLine(diff, { ...anchor, line })?.text;
-    if (text === undefined) return undefined;
-    texts.push(text);
-  }
-  return texts.join("\n");
-}
+export const lineTextOf = deckLineText;
 
 /** Adds a comment on lines of `headSha`. A blank comment adds nothing. */
 export function addDraftComment(

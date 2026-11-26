@@ -75,6 +75,7 @@ export const APP_API_CLIENT = {
   updatePullRequest: "pull_request.update",
   mergePullRequest: "pull_request.merge",
   replyToPullRequestThread: "pull_request.reply",
+  deletePullRequestComment: "pull_request.delete_comment",
   setPullRequestThreadResolved: "pull_request.resolve_thread",
   setPullRequestFileViewed: "pull_request.mark_file_viewed",
   readPullRequestVersions: "pull_request.load_versions",

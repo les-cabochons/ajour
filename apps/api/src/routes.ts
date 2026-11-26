@@ -510,6 +510,11 @@ export const ROUTES = {
     path: "/api/deck/:pluginId/connections/:connectionId/ask",
     name: "deck.ask",
   },
+  deckChat: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/chat",
+    name: "deck.chat",
+  },
   deckConsent: {
     method: "POST",
     path: "/api/deck/:pluginId/connections/:connectionId/consent",
