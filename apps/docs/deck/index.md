@@ -47,7 +47,7 @@ Click a line to go to its first hunk. Ajour builds the summary with the guide, o
 
 The author's **Description** is folded away until you open it. Then come its changes, as a guide: the hunks grouped into concerns, numbered in reading order, each with a title and a one-line reason. Ajour builds the guide on your device, from the code, the way Review Deck does, with no agent. **Files A–Z** shows every changed file in path order instead, and **Guide** goes back. A pull request with more than 1,000 hunks shows its files A–Z, without a guide or a summary, since grouping that many would take too long. Long lines wrap. Ajour builds the diff itself from both versions of each file, the way Review Deck does, so a hunk is the same in both.
 
-Mark a hunk **Viewed** to fold it. The guide tree on the right fills a tick per concern as you go; press <kbd>F</kbd> to see its titles, and click one to jump there. <kbd>J</kbd> and <kbd>K</kbd> go to the next and previous concern. Viewed marks last while the pull request stays open. Comment threads sit beside the lines they are on in a window 1,100 pixels wide or more, joined to them by a line, and right under their lines in a narrower one; a folded hunk folds its threads too. Point at a thread to highlight its line. The **Conversation** ends the page: the comments, reviews, commits and other events in time order, with the threads the diff no longer shows. Ajour keeps the pull requests it read on this computer, and after each sync reads the ones waiting on you, so they open at once. **Settings › Storage** shows how much Deck keeps, sets its size limit, and has **Clear cache**. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
+Mark a hunk **Viewed** to fold it. The guide tree on the right fills a tick per concern as you go; press <kbd>F</kbd> to see its titles, and click one to jump there. <kbd>J</kbd> and <kbd>K</kbd> go to the next and previous concern. In **Files A–Z**, each file has a **File viewed** mark, which marks all its hunks. Ajour keeps viewed marks on your computer, so you pick up where you stopped, also after closing Ajour. On GitHub, a file whose hunks are all viewed is marked viewed on GitHub too, and a file you marked viewed on GitHub shows viewed here; Azure DevOps doesn't share which files you viewed, so there the marks stay on your computer. Comment threads sit beside the lines they are on in a window 1,100 pixels wide or more, joined to them by a line, and right under their lines in a narrower one; a folded hunk folds its threads too. Point at a thread to highlight its line. The **Conversation** ends the page: the comments, reviews, commits and other events in time order, with the threads the diff no longer shows. Ajour keeps the pull requests it read on this computer, and after each sync reads the ones waiting on you, so they open at once. **Settings › Storage** shows how much Deck keeps, sets its size limit, and has **Clear cache**. **Open in GitHub**, or **Open in Azure DevOps**, takes you to it. Hold <kbd>⌘</kbd> and click a row to go there directly. Right-click a row, or press its **…** button, for the same actions.
 
 ## Changes since your review
 
@@ -55,7 +55,7 @@ Above the changes, the versions bar lists the pull request's **Pushes** on GitHu
 
 Coming back after new pushes, turn on **Changes since your review**: Deck keeps only the hunks that changed since the version you reviewed, and folds the concerns you don't need to read again into one line at the end. A hunk that a rebase only moved, with the same added and removed lines, counts as unchanged. Changed hunks say which version they changed in. The version you reviewed is the one you last approved, requested changes on or commented on, on GitHub or Azure DevOps, and Ajour remembers it on this computer.
 
-When someone pushes while you read, a line above the bar says so, and the changes stay as they are until you press **Refresh**, so you don't lose your place.
+When someone pushes while you read, a line above the bar says so, and the changes stay as they are until you press **Refresh**, so you don't lose your place. After a refresh, a hunk you marked viewed stays viewed if the push left its added and removed lines as they were, wherever it moved; a hunk the push changed is unmarked, so you read it again.
 
 ## Comment and finish your review
 
@@ -65,13 +65,19 @@ Your draft review is saved on your computer, so it survives closing Ajour, and n
 
 The review goes to the code host as soon as you submit it. If it fails, your draft stays as it was, and the dialog says why, with **Retry**. Nothing waits to be sent later. Retry, also after you restart Ajour, doesn't post the review twice: Ajour names each review, and the plugin first looks on the code host for what an earlier try left there. Comments you post from a closed pull request's draft, and Comment now, work the same way. If someone edited the hidden name out of a review or comment on GitHub, the plugin can't be sure: Ajour says the review may already be there and asks you to check the pull request, then **Post again** posts it once more.
 
+To suggest a change on lines of the new code, press **Suggest change** in the comment: it adds a suggestion block holding those lines, for you to edit into what they should be. GitHub and Azure DevOps show it with a way for the author to apply it.
+
 To comment from the keyboard, press <kbd>Tab</kbd> until a hunk's **Comment on line …** button shows, move it with <kbd>↑</kbd> and <kbd>↓</kbd>, and press <kbd>Enter</kbd>.
 
 On Azure DevOps, where your vote counts for the whole pull request, Ajour won't approve once new commits arrived after you read it: open it again to read them first.
 
 When the author pushes and you open the pull request again, a draft comment whose lines changed is marked **Outdated** and listed before the conversation. It isn't sent with the review; remove it when you're done with it. A pull request that closes keeps your draft, and stays under **Recently closed** until you post its comments with **Post as comments**, or **Discard** it.
 
-Commenting and reviewing need the connection's **Review pull requests** access, and a token that can write to pull requests: **Code (Read & write)** on Azure DevOps. It starts off. Turn it on in the connection's settings under **Settings › Plugins**.
+Commenting, replying, resolving, reviewing and marking files viewed on the code host need the connection's **Review pull requests** access, and a token that can write to pull requests: **Code (Read & write)** on Azure DevOps. It starts off. Turn it on in the connection's settings under **Settings › Plugins**.
+
+## Reply and resolve
+
+Each thread has **Reply** and **Resolve**. A reply goes to the code host at once, with <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac) or its **Reply** button; it isn't part of your draft review. If it fails, your words stay with **Retry**, which doesn't post it twice. On Azure DevOps a reply carries no hidden name, so after an answer was lost Ajour can't tell whether the reply got there when you wrote in that thread since: it says the reply may already be there, and **Post again** posts it once more. **Resolve** resolves the thread at once, and **Unresolve** opens it again.
 
 ## Ask for more detail
 
@@ -88,5 +94,5 @@ When you'd group the changes another way, press **Regroup…** after the guide's
 Press **Sync** to refresh the list now. Otherwise, each connection syncs on its interval while Ajour is open, unless you turned off its **Sync pull requests automatically**.
 
 ::: info Merging happens in your code host for now
-Deck shows the changes of GitHub and Azure DevOps pull requests. Replying to a thread and merging still happen on GitHub or Azure DevOps.
+Deck shows the changes of GitHub and Azure DevOps pull requests, and you review them there. Merging still happens on GitHub or Azure DevOps.
 :::

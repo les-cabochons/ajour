@@ -20,7 +20,6 @@ import {
   noGuideNote,
   reviewSections,
   sectionToReach,
-  toggleViewed,
   virtualized,
   type ReviewOrder,
   type ReviewSection,
@@ -50,11 +49,13 @@ import {
 import { useReviewLinesValue } from "./review-lines";
 import { ReviewLinesContext } from "./review-lines-context";
 import { ReviewNotesContext } from "./review-notes";
+import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import {
   HUNK_ATTRIBUTE,
   ReviewSectionView,
   SECTION_ATTRIBUTE,
   type AddComment,
+  type ToggleFileViewed,
 } from "./review-sections";
 import { ThreadGutter } from "./thread-gutter";
 import type {
@@ -70,6 +71,7 @@ function MountedReviewSections({
   viewed,
   theme,
   onToggleViewed,
+  onToggleFileViewed,
   navigator,
   listRef,
   bySection,
@@ -84,6 +86,7 @@ function MountedReviewSections({
   viewed: ReadonlySet<string>;
   theme: "light" | "dark";
   onToggleViewed: (hunkId: string) => void;
+  onToggleFileViewed: ToggleFileViewed;
   navigator: Ref<SectionNavigator>;
   /** The sections' column, which the gutter beside it follows. */
   listRef: RefObject<HTMLDivElement | null>;
@@ -139,6 +142,7 @@ function MountedReviewSections({
           viewed={viewed}
           theme={theme}
           onToggleViewed={onToggleViewed}
+          onToggleFileViewed={onToggleFileViewed}
           notes={bySection.get(section.key)}
           floating={floating}
           hovered={hoveredSection === section.key ? hovered : undefined}
@@ -195,6 +199,14 @@ function notesBySection(
   return kept;
 }
 
+/** The hunks marked viewed, as `PullRequestReview` keeps them. */
+export interface ReviewViewedView {
+  /** The ids of the hunks on screen marked viewed. */
+  viewed: ReadonlySet<string>;
+  /** Marks hunks viewed, or not. */
+  setViewed: (hunkIds: readonly string[], viewed: boolean) => void;
+}
+
 /** The versions bar's reads and the since-review marks, as `PullRequestReview` works them out. */
 export interface ReviewVersionsView {
   state: PullRequestReadState<CodeHostVersionsResult>;
@@ -229,6 +241,7 @@ function ReviewChanges({
   notes: { notes: allNotes, floating, hovered, onAddComment },
   reachHunkRef,
   versions,
+  viewing: { viewed, setViewed },
 }: {
   pullRequest: DeckOpenedPullRequest;
   /** Shows another guide of this diff: the agent's, or the built one again (#794). */
@@ -236,6 +249,7 @@ function ReviewChanges({
   notes: ReviewNotesView;
   reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
+  viewing: ReviewViewedView;
 }) {
   const onHover = useContext(ReviewNotesContext)?.onHover;
   const regroup = useRegroup(onGuide);
@@ -270,11 +284,22 @@ function ReviewChanges({
           (version) => version.headSha === pullRequest.headSha,
         )
       : undefined;
-  const [viewed, setViewed] = useState<ReadonlySet<string>>(() => new Set());
-  const onToggleViewed = useCallback(
-    (hunkId: string) => setViewed((marks) => toggleViewed(marks, hunkId)),
-    [],
-  );
+  // Read by the toggles, so a mark changing doesn't draw every hunk again.
+  const marks = useRef({ viewed, setViewed });
+  useLayoutEffect(() => {
+    marks.current = { viewed, setViewed };
+  }, [viewed, setViewed]);
+  const onToggleViewed = useCallback((hunkId: string) => {
+    const { viewed: now, setViewed: set } = marks.current;
+    set([hunkId], !now.has(hunkId));
+  }, []);
+  const onToggleFileViewed = useCallback<ToggleFileViewed>((file) => {
+    const { viewed: now, setViewed: set } = marks.current;
+    set(
+      file.hunks.map((hunk) => hunk.id),
+      !fileIsViewed(file, now),
+    );
+  }, []);
   const [treeOpen, setTreeOpen] = useState(false);
   const review = useRef<HTMLDivElement>(null);
   const navigator = useRef<SectionNavigator>(null);
@@ -493,6 +518,7 @@ function ReviewChanges({
                   viewed={viewed}
                   theme={theme}
                   onToggleViewed={onToggleViewed}
+                  onToggleFileViewed={onToggleFileViewed}
                   navigator={navigator}
                   listRef={list}
                   notes={notes}
@@ -510,6 +536,7 @@ function ReviewChanges({
                   viewed={viewed}
                   theme={theme}
                   onToggleViewed={onToggleViewed}
+                  onToggleFileViewed={onToggleFileViewed}
                   navigator={navigator}
                   listRef={list}
                   bySection={bySection}
@@ -583,6 +610,7 @@ export function PullRequestChanges({
   notes,
   reachHunkRef,
   versions,
+  viewing,
 }: {
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
@@ -591,6 +619,7 @@ export function PullRequestChanges({
   /** Set while the changes show, to the way a summary line reaches its hunk. */
   reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
+  viewing: ReviewViewedView;
 }) {
   return (
     // Named outright: the heading's count would join its name.
@@ -624,7 +653,7 @@ export function PullRequestChanges({
               onRefresh={versions.refresh}
             />
           ) : null}
-          {/* A new diff, or another head, starts with no hunk viewed and the latest version shown. */}
+          {/* A new diff, or another head, starts with the latest version shown; its viewed marks are the page's. */}
           <ReviewChanges
             key={`${state.value.baseSha}..${state.value.headSha}`}
             pullRequest={state.value}
@@ -632,6 +661,7 @@ export function PullRequestChanges({
             notes={notes}
             reachHunkRef={reachHunkRef}
             versions={versions}
+            viewing={viewing}
           />
         </>
       )}

@@ -1395,13 +1395,21 @@ describe("the privacy canary", () => {
       ],
       [
         "replyToThread",
-        { ...pull, threadId: `th-${MARKER}`, body: `Reply ${MARKER}` },
+        {
+          ...pull,
+          threadId: `th-${MARKER}`,
+          body: `Reply ${MARKER}`,
+          submissionId: `reply_${MARKER}`,
+        },
       ],
       [
         "setThreadResolved",
         { ...pull, threadId: `th-${MARKER}`, resolved: true },
       ],
-      ["setFileViewed", { ...pull, path: CHANGED_PATH, viewed: true }],
+      [
+        "setFileViewed",
+        { ...pull, path: CHANGED_PATH, viewed: true, headSha: "sha7" },
+      ],
       ["updatePullRequest", { ...pull, title: `Renamed ${MARKER}` }],
       [
         "mergePullRequest",

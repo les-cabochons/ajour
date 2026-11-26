@@ -39,6 +39,7 @@ const RECORD_COLLECTIONS = Object.freeze([
   "workItems",
   "pullRequests",
   "deckDraftReviews",
+  "deckViewedMarks",
   "calendarDecisions",
   "calendarEventRules",
   "workflowStates",

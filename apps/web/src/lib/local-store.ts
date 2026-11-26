@@ -77,6 +77,14 @@ import {
   type DeckDraftReview,
   type DeckReviewRef,
 } from "@/domain/deck/draft-review";
+import {
+  adoptViewedFiles,
+  forgetViewedMarks,
+  normalizeViewedMarks,
+  refreshViewedMarks,
+  setHunksViewed,
+  type DeckViewedMarks,
+} from "@/domain/deck/viewed-marks";
 import type { DeckPullRequestDiff } from "@ajour/shared/deck";
 import {
   changePullRequest,
@@ -506,6 +514,7 @@ function createDefaultState(): LocalAppState {
     workItems: [],
     pullRequests: [],
     deckDraftReviews: [],
+    deckViewedMarks: [],
     calendarDecisions: [],
     calendarEventRules: [],
     workflowStates: [],
@@ -640,6 +649,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       workItems,
       pullRequests: normalizePullRequests(persistedState.pullRequests),
       deckDraftReviews: normalizeDraftReviews(persistedState.deckDraftReviews),
+      deckViewedMarks: normalizeViewedMarks(persistedState.deckViewedMarks),
       calendarDecisions: pruneCalendarDecisions(
         arrayOrDefault(
           persistedState.calendarDecisions,
@@ -1455,6 +1465,25 @@ function updateDraftReviews(
   });
 }
 
+/** The state with `after` as its viewed marks; the same marks give the same state. */
+function withViewedMarks(
+  state: LocalAppState,
+  before: readonly DeckViewedMarks[],
+  after: readonly DeckViewedMarks[],
+): LocalAppState {
+  return after === before ? state : { ...state, deckViewedMarks: [...after] };
+}
+
+/** Replaces the viewed marks; a transition that returns them unchanged writes nothing. */
+function updateViewedMarks(
+  change: (marks: readonly DeckViewedMarks[]) => readonly DeckViewedMarks[],
+) {
+  return updateState((state) => {
+    const before = state.deckViewedMarks ?? [];
+    return withViewedMarks(state, before, change(before));
+  });
+}
+
 function updateStateWithResult<T>(
   operation: (state: LocalAppState) => {
     state: LocalAppState;
@@ -1752,9 +1781,8 @@ const store = {
     result: CodeHostSyncResult,
     options: { reattachFrom?: string } = {},
   ) {
-    return updateState((state) => ({
-      ...state,
-      pullRequests: reconcilePullRequests(
+    return updateState((state) => {
+      const pullRequests = reconcilePullRequests(
         options.reattachFrom
           ? reattachPullRequests(
               state.pullRequests ?? [],
@@ -1774,8 +1802,22 @@ const store = {
           keep: (ref) =>
             draftReviewOf(state.deckDraftReviews ?? [], ref) !== undefined,
         },
-      ),
-    }));
+      );
+      // A pull request that left the list takes its viewed marks with it.
+      const before = state.deckViewedMarks ?? [];
+      const deckViewedMarks = forgetViewedMarks(
+        before,
+        pullRequests.map((item) => ({
+          pluginId: item.pluginId,
+          connectionId: item.connectionId,
+          repository: item.facts.repository,
+          number: item.facts.number,
+        })),
+      );
+      return deckViewedMarks === before
+        ? { ...state, pullRequests }
+        : { ...state, pullRequests, deckViewedMarks: [...deckViewedMarks] };
+    });
   },
   changePullRequest(id: string, command: PullRequestCommand) {
     return updateState((state) => ({
@@ -1841,6 +1883,55 @@ const store = {
         result: outdated,
       };
     });
+  },
+  /**
+   * Marks hunks of the diff on screen viewed, or not. Returns the files
+   * whose hunks all became viewed, or stopped being, for the code host.
+   */
+  setHunksViewed(
+    ref: DeckReviewRef,
+    diff: DeckPullRequestDiff,
+    hunkIds: readonly string[],
+    viewed: boolean,
+  ) {
+    return updateStateWithResult((state) => {
+      const before = state.deckViewedMarks ?? [];
+      const { marks, files } = setHunksViewed(
+        before,
+        ref,
+        diff,
+        hunkIds,
+        viewed,
+        Date.now(),
+      );
+      return { state: withViewedMarks(state, before, marks), result: files };
+    });
+  },
+  /**
+   * After the review page read the pull request at a new head: clears the
+   * viewed marks of the hunks that changed. Returns how many it cleared.
+   */
+  refreshViewedMarks(ref: DeckReviewRef, diff: DeckPullRequestDiff) {
+    return updateStateWithResult((state) => {
+      const before = state.deckViewedMarks ?? [];
+      const { marks, cleared } = refreshViewedMarks(
+        before,
+        ref,
+        diff,
+        Date.now(),
+      );
+      return { state: withViewedMarks(state, before, marks), result: cleared };
+    });
+  },
+  /** Marks viewed every hunk of the files the code host says the user viewed. */
+  adoptViewedFiles(
+    ref: DeckReviewRef,
+    diff: DeckPullRequestDiff,
+    paths: readonly string[],
+  ) {
+    return updateViewedMarks((marks) =>
+      adoptViewedFiles(marks, ref, diff, paths, Date.now()),
+    );
   },
   /** Takes the comments the code host accepted out of the draft review. */
   completeDraftComments(ref: DeckReviewRef, commentIds: readonly string[]) {
@@ -2272,11 +2363,15 @@ const store = {
       const deckDraftReviews = (state.deckDraftReviews ?? []).filter(
         (review) => !inConnection(review),
       );
+      const deckViewedMarks = (state.deckViewedMarks ?? []).filter(
+        (marks) => !inConnection(marks),
+      );
       // Nothing to remove writes nothing.
       return pullRequests.length === (state.pullRequests ?? []).length &&
-        deckDraftReviews.length === (state.deckDraftReviews ?? []).length
+        deckDraftReviews.length === (state.deckDraftReviews ?? []).length &&
+        deckViewedMarks.length === (state.deckViewedMarks ?? []).length
         ? state
-        : { ...state, pullRequests, deckDraftReviews };
+        : { ...state, pullRequests, deckDraftReviews, deckViewedMarks };
     });
   },
   createTeam(
@@ -4004,6 +4099,26 @@ export const STORE_COMMANDS = {
     fields: { deck: { comment_count: ([, ids]) => ids.length } },
   },
   discardDraftReview: "deck.draft_review_discard",
+  setHunksViewed: {
+    name: "deck.viewed_marks_set",
+    fields: {
+      deck: {
+        hunk_count: ([, , hunkIds]) => hunkIds.length,
+        viewed: ([, , , viewed]) => viewed,
+      },
+    },
+    resultFields: { deck: { file_count: (files) => files.length } },
+  },
+  refreshViewedMarks: {
+    name: "deck.viewed_marks_refresh",
+    trigger: "system",
+    resultFields: { deck: { cleared_count: (cleared) => cleared } },
+  },
+  adoptViewedFiles: {
+    name: "deck.viewed_files_adopt",
+    trigger: "system",
+    fields: { deck: { file_count: ([, , paths]) => paths.length } },
+  },
   prepareReviewSubmission: {
     name: "deck.review_submission_prepare",
     resultFields: {
