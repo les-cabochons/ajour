@@ -1904,6 +1904,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         connectionId: key.connectionId,
         repository: key.repository,
       })),
+    // What cleanup leaves because it can't prove it Deck's, never a path.
+    onKept: ({ reason, environment }) =>
+      events
+        .start("deck.clone_kept", {
+          kind: "job",
+          trigger: "system",
+          detached: true,
+        })
+        .set({
+          deck: { clone_kept: reason, clone_environment: environment },
+        })
+        .end(),
   });
   const deckGuides = createGuideBuilds({
     runtime: options.deckGuideRuntime ?? createWorkerGuideRuntime(),

@@ -10,13 +10,18 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeckClone } from "../../../packages/shared/deck.ts";
-import { createDeckClones, type DeckCloneEntry } from "./deck-clones.ts";
+import {
+  createDeckClones,
+  type DeckCloneEntry,
+  type DeckCloneKept,
+} from "./deck-clones.ts";
 import {
   deckCloneFixture,
   type DeckCloneFixture,
 } from "./test-support/deck-clone-fixture.ts";
+import { Git } from "./git-process.ts";
 import {
   git,
   useHermeticGit,
@@ -37,6 +42,8 @@ const repository = {
 let fixture: DeckCloneFixture;
 let restoreGit: () => Promise<void>;
 let saved: DeckClone[];
+/** Why cleanup left each folder it couldn't prove Deck's, in order. */
+let kept: DeckCloneKept[];
 
 const exists = (file: string) =>
   access(file).then(
@@ -75,6 +82,7 @@ function clones(
       },
     },
     worktreesFolder,
+    onKept: ({ reason }) => kept.push(reason),
   });
 }
 
@@ -98,6 +106,7 @@ beforeEach(async () => {
   restoreGit = await useHermeticGit();
   fixture = await deckCloneFixture();
   saved = [];
+  kept = [];
 });
 
 afterEach(async () => {
@@ -789,6 +798,196 @@ describe(
 
       expect(worktreeList()).toContain("0123456789abcdef");
     });
+
+    it("removes nothing when the worktrees folder itself is a junction", async () => {
+      const root = await preparedByEarlierRun();
+      // The user moved Deck's worktrees folder and left a junction to it.
+      const moved = path.join(fixture.root, "moved worktrees");
+      await rename(fixture.worktrees, moved);
+      await symlink(moved, fixture.worktrees, "junction");
+      const mine = path.join(moved, path.basename(root), "unsaved.txt");
+      await writeFile(mine, "mine\n");
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      expect(await readFile(mine, "utf8")).toBe("mine\n");
+      expect(kept).toContain("worktrees_linked");
+    });
+
+    it("keeps the user's worktree made where Deck's was, and forgets Deck's mark", async () => {
+      const root = await preparedByEarlierRun();
+      // Git removed Deck's worktree; the user made one of theirs there.
+      git(fixture.clone, "worktree", "remove", "--force", root);
+      git(fixture.clone, "worktree", "add", "--quiet", "--detach", root);
+      const mine = path.join(root, "unsaved.txt");
+      await writeFile(mine, "mine\n");
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      expect(await readFile(mine, "utf8")).toBe("mine\n");
+      expect(worktreeList()).toContain(path.basename(root));
+      expect(await exists(`${root}.deck`)).toBe(false);
+      expect(kept).toContain("replaced");
+    });
+
+    it("keeps a folder beside a mark Deck didn't write", async () => {
+      const folder = path.join(fixture.worktrees, "0123456789abcdef");
+      await mkdir(folder);
+      await writeFile(path.join(folder, "unsaved.txt"), "mine\n");
+      await writeFile(`${folder}.deck`, "unrelated file");
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      expect(await readFile(path.join(folder, "unsaved.txt"), "utf8")).toBe(
+        "mine\n",
+      );
+      expect(kept).toContain("not_proved");
+    });
+
+    it("forgets a mark whose worktree is gone, and makes no folder for it", async () => {
+      const id = "0123456789abcdef";
+      await writeFile(path.join(fixture.worktrees, `${id}.deck`), "old mark");
+
+      await clones(fixture.worktrees, async () => []).sweepAtStart();
+
+      expect(await exists(path.join(fixture.worktrees, id))).toBe(false);
+    });
+
+    /**
+     * Releases the entry's worktree, with `swap` run just before git is
+     * asked to remove it: after every check Deck makes.
+     */
+    async function releasedWithSwap(swap: (root: string) => Promise<void>) {
+      const deck = clones();
+      await deck.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+      const prepared = await deck.prepare(entry());
+      if (prepared.state !== "read") throw new Error("Not prepared.");
+      const run = Git.prototype.run;
+      let swapped = false;
+      const spy = vi
+        .spyOn(Git.prototype, "run")
+        .mockImplementation(async function (this: Git, args, ...rest) {
+          if (
+            !swapped &&
+            args.includes("worktree") &&
+            args.includes("remove")
+          ) {
+            swapped = true;
+            await swap(prepared.root);
+          }
+          return run.call(this, args, ...rest);
+        });
+      try {
+        await deck.release(entry().key);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(swapped).toBe(true);
+      return prepared.root;
+    }
+
+    it("keeps the user's file when the worktree is moved and linked just before git removes it", async () => {
+      const moved = path.join(fixture.root, "moved out");
+      const mine = path.join(moved, "unsaved.txt");
+
+      await releasedWithSwap(async (root) => {
+        await rename(root, moved);
+        await writeFile(mine, "mine\n");
+        await symlink(moved, root, "junction");
+      });
+
+      expect(await readFile(mine, "utf8")).toBe("mine\n");
+      expect(kept).toContain("git_refused");
+    });
+
+    it("keeps the user's own worktree outside the cache when a junction to it is swapped in", async () => {
+      const outside = path.join(fixture.root, "my own worktree");
+      git(fixture.clone, "worktree", "add", "--quiet", "--detach", outside);
+      const mine = path.join(outside, "unsaved.txt");
+      await writeFile(mine, "mine\n");
+
+      await releasedWithSwap(async (root) => {
+        await rename(root, path.join(fixture.root, "deck's moved"));
+        await symlink(outside, root, "junction");
+      });
+
+      expect(await readFile(mine, "utf8")).toBe("mine\n");
+      expect(worktreeList()).toContain("my own worktree");
+    });
+
+    it("keeps the user's folder swapped in just before git removes the worktree", async () => {
+      const outside = path.join(fixture.root, "my folder");
+      await mkdir(outside);
+      await writeFile(path.join(outside, "unsaved.txt"), "mine\n");
+
+      const root = await releasedWithSwap(async (root) => {
+        await rename(root, path.join(fixture.root, "deck's moved"));
+        await rename(outside, root);
+      });
+
+      expect(await readFile(path.join(root, "unsaved.txt"), "utf8")).toBe(
+        "mine\n",
+      );
+    });
+
+    it("removes the worktree when the ask stops just after its checkout", async () => {
+      const deck = clones();
+      await deck.choose(
+        repository,
+        { repositoryIdentity: { cloneUrls: [fixture.host] } },
+        fixture.clone,
+      );
+      const stop = new AbortController();
+      const run = Git.prototype.run;
+      let made: string | undefined;
+      const spy = vi
+        .spyOn(Git.prototype, "run")
+        .mockImplementation(async function (this: Git, args, ...rest) {
+          const result = await run.call(this, args, ...rest);
+          if (args.includes("worktree") && args.includes("add") && !made) {
+            made = args[args.indexOf("--") + 1];
+            stop.abort();
+          }
+          return result;
+        });
+      let outcome;
+      try {
+        outcome = await deck.prepare(entry(), stop.signal);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(outcome).toMatchObject({
+        state: "unavailable",
+        failure: "cancelled",
+      });
+      expect(made).toBeTruthy();
+      expect(await exists(made!)).toBe(false);
+      expect(worktreeList()).not.toContain("detached");
+      expect(await exists(`${made}.deck`)).toBe(false);
+    });
+
+    it.runIf(process.platform === "win32")(
+      "prepares and releases through a differently cased worktrees folder",
+      async () => {
+        const deck = clones(fixture.worktrees.toUpperCase());
+        await deck.choose(
+          repository,
+          { repositoryIdentity: { cloneUrls: [fixture.host] } },
+          fixture.clone,
+        );
+        const prepared = await deck.prepare(entry());
+        if (prepared.state !== "read") throw new Error("Not prepared.");
+
+        await deck.release(entry().key);
+
+        expect(await exists(prepared.root)).toBe(false);
+      },
+    );
 
     it("checks out every file when the user's clone is sparse, and leaves it sparse", async () => {
       git(fixture.clone, "sparse-checkout", "set", "src");

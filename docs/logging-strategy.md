@@ -587,6 +587,7 @@ The local API emits these (#305, #306):
 | `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                                                                  |
 | `agent.conversation`, `agent.turn`    | `AgentConversations` in `apps/api/src/agent-runner/conversations.ts`: a conversation from its first turn to its close, a turn from its start to its end |
 | `deck.guide_build`                    | `createGuideBuilds` in `apps/api/src/deck-guide-builds.ts`, for each guide build, from its start in the worker to its end                               |
+| `deck.clone_kept`                     | `createDeckClones` in `apps/api/src/deck-clones.ts`, once for each worktree folder its cleanup leaves where it was                                      |
 
 ### Requests
 
@@ -1142,6 +1143,7 @@ channel to read the event each emits.
 | `deck.ask`                           | command, request                        | route, client call                               |
 | `deck.clone_choose`                  | command, request, ipc                   | route, IPC channel, client call                  |
 | `deck.clone_forget`                  | command, request                        | route, client call                               |
+| `deck.clone_kept`                    | job                                     | local API                                        |
 | `deck.clone_suggestions`             | command, request                        | route, client call                               |
 | `deck.clones`                        | command, request                        | route, client call                               |
 | `deck.consent`                       | command, request                        | route, client call                               |

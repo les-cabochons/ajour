@@ -591,6 +591,41 @@ describe("the clone routes' events", () => {
   );
 
   it(
+    "record a worktree cleanup leaves, with why, never a path",
+    { timeout: 60_000 },
+    async () => {
+      const api = await startCloneApi();
+      await api.choose((await api.addFolder()).id);
+      const asked = await api.ask();
+      expect(asked.body.clone).toEqual({ state: "read" });
+      await api.ended(asked.body.turn.id);
+      const [argv] = await api.launches();
+      const root = argv![argv!.indexOf("--add-dir") + 1]!;
+      // A file of the user's in Deck's worktree: git won't remove it.
+      const mine = path.join(root, "my notes.txt");
+      await writeFile(mine, "mine\n");
+
+      expect(
+        (await apiRequest(api.baseUrl, "/api/deck/storage/clear", {})).status,
+      ).toBe(200);
+      await until(async () =>
+        api.events.some((one) => one.name === "deck.clone_kept"),
+      );
+
+      expect(await readFile(mine, "utf8")).toBe("mine\n");
+      expect(eventNamed(api.events, "deck.clone_kept")).toMatchObject({
+        outcome: "ok",
+        deck: { clone_kept: "git_refused", clone_environment: "native" },
+      });
+      const recorded = JSON.stringify(
+        eventNamed(api.events, "deck.clone_kept"),
+      );
+      expect(recorded).not.toContain(fixture.root);
+      expect(recorded).not.toContain(fixture.root.replaceAll("\\", "/"));
+    },
+  );
+
+  it(
     "records a refused choice with its reason",
     { timeout: 30_000 },
     async () => {

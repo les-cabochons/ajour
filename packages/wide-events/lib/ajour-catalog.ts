@@ -3361,6 +3361,23 @@ export const catalog = defineCatalog({
         deck: { clone_environment: operational<"native" | "wsl">() },
       },
     },
+    /**
+     * Cleanup of Deck's worktrees left one where it was (#795, ADR 0023):
+     * it couldn't prove it the folder Deck made, or git wouldn't remove it
+     * without `--force`. Never a path.
+     */
+    "deck.clone_kept": {
+      kinds: ["job"],
+      reasons: [],
+      fields: {
+        deck: {
+          clone_kept: operational<
+            "worktrees_linked" | "not_proved" | "replaced" | "git_refused"
+          >(),
+          clone_environment: operational<"native" | "wsl">(),
+        },
+      },
+    },
     /** Settings › Agents reads the clones the user chose. */
     "deck.clones": {
       kinds: ["command", "request"],
