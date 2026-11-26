@@ -642,6 +642,31 @@ it("says the merge failed when a sync finds the branches conflict, whatever the 
   });
 });
 
+it("ends the wait without blaming a conflict when the sync after the merge fails", async () => {
+  vi.mocked(api.mergePullRequest).mockResolvedValue({});
+  let failSync!: () => void;
+  vi.mocked(api.syncCodeHostConnection).mockReturnValue(
+    new Promise((_, reject) => {
+      failSync = () => reject(new Error("Azure DevOps request failed (502)."));
+    }),
+  );
+  // The facts from before the merge say the branches conflict: Azure DevOps
+  // took the merge anyway, once the conflict was resolved there.
+  const id = await renderAuthorPage(
+    { updatedAt: 100, mergeability: "conflicting" },
+    "azure_devops",
+  );
+  await mergeStillCompleting(id);
+
+  await act(async () => failSync());
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Merge…" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  expect(toasts.error).not.toHaveBeenCalled();
+});
+
 it("sends nothing from an old toast's Retry once the draft state is what it asked for", async () => {
   await renderAuthorPage();
   vi.mocked(api.updatePullRequest).mockRejectedValueOnce(

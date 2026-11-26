@@ -331,12 +331,16 @@ export function MergePullRequest({
         setPending({ synced: false });
         showToast(`${pullRequest.pluginName} is completing the merge`);
       }
-      // The next sync says how it closed.
-      void syncCodeHostConnection(pluginId, connectionId)
-        .catch(() => undefined)
-        .finally(() => {
+      // The next sync says how it closed. One that fails ends the wait with
+      // no verdict: the facts it leaves are from before the merge.
+      void syncCodeHostConnection(pluginId, connectionId).then(
+        () => {
           if (!completed) setPending((current) => current && { synced: true });
-        });
+        },
+        () => {
+          if (!completed) setPending(undefined);
+        },
+      );
     } catch (error) {
       setFailure(writeFailure(error, pullRequest));
       onFailed?.();
