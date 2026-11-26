@@ -41,6 +41,11 @@ export interface SectionNavigator {
    * rows below the reading line, as a citation goes to it (#793).
    */
   reveal(hunkId: string, row: number, point: HunkLine): void;
+  /**
+   * Scrolls the hunk to the reading line and focuses it, for a summary
+   * line (#789). False when the list doesn't show it.
+   */
+  reachHunk(hunkId: string): boolean;
 }
 
 /** The rows a cited line lands below the reading line, so what leads to it shows. */
@@ -91,6 +96,27 @@ export function scrollByDistance(
       behavior: "instant",
     });
   else window.scrollTo({ top: window.scrollY + distance, behavior: "instant" });
+}
+
+/** Scrolls `element` to `offset` below the top of its scroller, or of the window. */
+export function scrollToReadingLine(element: HTMLElement, offset: number) {
+  const scroller = scrollerOf(element);
+  const top = element.getBoundingClientRect().top;
+  if (scroller) {
+    scroller.scrollTo({
+      top:
+        scroller.scrollTop +
+        top -
+        scroller.getBoundingClientRect().top -
+        offset,
+      behavior: "instant",
+    });
+  } else {
+    window.scrollTo({
+      top: window.scrollY + top - offset,
+      behavior: "instant",
+    });
+  }
 }
 
 /** The element that scrolls `element`, or undefined for the window. */

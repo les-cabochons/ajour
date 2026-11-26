@@ -1,4 +1,5 @@
 import type {
+  DeckChangeKind,
   DeckFile,
   DeckHunk,
   DeckOpenedPullRequest,
@@ -31,6 +32,8 @@ export interface ReviewSection {
   title: string;
   /** The concern's one-line rationale. */
   rationale?: string;
+  /** The concern's kinds of change. */
+  kinds?: DeckChangeKind[];
   /** The file of a Files A–Z section. */
   file?: DeckFile;
   hunks: ReviewHunk[];
@@ -101,6 +104,7 @@ export function reviewSections(
       number: sections.length + 1,
       title: concern.title,
       rationale: concern.rationale,
+      kinds: concern.kinds,
       hunks: entries,
     });
   }

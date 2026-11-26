@@ -25,6 +25,7 @@ import * as api from "@/lib/app-api";
 import { receiveAgentTurnEvent } from "@/lib/agent-turns";
 import { cachePluginsOverview } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+import { NO_DECK_SUMMARY } from "@/test-support/deck";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import {
   installDomShims,
@@ -197,18 +198,21 @@ const DIFF: DeckOpenedPullRequest = {
   ],
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "g1",
         title: "Handle the request",
         rationale: "The handler.",
         hunkIds: ["src/api.ts#0"],
+        kinds: [],
       },
       {
         id: "g2",
         title: "Read it later",
         rationale: "Further down.",
         hunkIds: ["src/api.ts#1"],
+        kinds: [],
       },
     ],
   },

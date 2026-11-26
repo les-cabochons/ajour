@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { NO_DECK_SUMMARY } from "@/test-support/deck";
 import type { ReactNode } from "react";
 import {
   act,
@@ -208,18 +209,21 @@ const GUIDED: DeckOpenedPullRequest = {
   ...DIFF,
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "g1",
         title: "Handle the request",
         rationale: "The handler and the export it reads.",
         hunkIds: ["src/api.ts#1", "src/new.ts#0"],
+        kinds: [],
       },
       {
         id: "mechanical",
         title: "Mechanical changes",
         rationale: "1 binary. Nothing to review line by line.",
         hunkIds: ["assets/logo.png#0", "src/api.ts#0"],
+        kinds: [],
       },
     ],
   },
@@ -1146,6 +1150,214 @@ it("floats each thread beside its line in its concern, and hides it while its hu
   expect(card("on-y").style.top).toBe("217px");
 });
 
+/** The guided pull request with a summary every section of which has a line. */
+const SUMMARIZED: DeckOpenedPullRequest = {
+  ...GUIDED,
+  guide: {
+    ...GUIDED.guide!,
+    concerns: [
+      { ...GUIDED.guide!.concerns[0]!, kinds: ["tests"] },
+      { ...GUIDED.guide!.concerns[1]!, kinds: ["dependencies", "build"] },
+    ],
+    summary: {
+      problem: {
+        text: "Retries never stop on 410",
+        source: "ticket",
+        ticket: {
+          number: 482,
+          repository: "acme/api",
+          title: "Retries never stop on 410",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+      },
+      tickets: [
+        {
+          number: 482,
+          repository: "acme/api",
+          title: "Retries never stop on 410",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+        {
+          number: 12,
+          repository: "acme/web",
+          title: "Show the retries",
+          url: "https://github.com/acme/web/issues/12",
+          state: "Closed",
+        },
+      ],
+      kinds: ["tests", "dependencies", "build"],
+      breaking: [],
+      risks: [
+        {
+          id: "risk:auth",
+          text: "Auth and security: src/api.ts",
+          hunkIds: ["src/api.ts#0", "src/api.ts#1"],
+        },
+      ],
+      tests: [],
+      untested: [
+        {
+          id: "untested:g1",
+          text: "No test for src/api.ts and src/new.ts",
+          hunkIds: ["src/api.ts#1", "src/new.ts#0"],
+          concernId: "g1",
+        },
+      ],
+      leftovers: [
+        {
+          id: "leftover:0",
+          text: "TODO in src/new.ts:1: // TODO: stop on 410",
+          hunkIds: ["src/new.ts#0"],
+        },
+      ],
+    },
+  },
+};
+
+async function openSummarized(pullRequest = SUMMARIZED) {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(pullRequest);
+  await renderReviewPage();
+  return await screen.findByRole("region", { name: "Summary" });
+}
+
+it("opens on the summary, above the description and the guide: the ticket, the kinds and each section's lines", async () => {
+  const summary = await openSummarized();
+
+  const description = screen.getByRole("region", { name: "Description" });
+  const changes = screen.getByRole("region", { name: "Changes" });
+  expect(
+    summary.compareDocumentPosition(description) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    description.compareDocumentPosition(changes) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(within(summary).getByText("Retries never stop on 410")).toBeTruthy();
+  expect(
+    within(summary).getByRole("button", {
+      name: "Open #482: Retries never stop on 410",
+    }),
+  ).toBeTruthy();
+  expect(
+    within(summary).getByRole("button", {
+      name: "Open acme/web#12: Show the retries",
+    }),
+  ).toBeTruthy();
+  expect(
+    within(within(summary).getByRole("list", { name: "Kinds of change" }))
+      .getAllByRole("listitem")
+      .map((kind) => kind.textContent),
+  ).toEqual(["Tests", "Dependencies", "Build"]);
+  expect(
+    within(summary)
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.textContent),
+  ).toEqual(["Risky areas", "Tests", "Leftovers"]);
+  expect(
+    within(summary).getByRole("button", {
+      name: "Concern 1: No test for src/api.ts and src/new.ts",
+    }),
+  ).toBeTruthy();
+  expect(within(summary).getAllByText("2 hunks")).toHaveLength(2);
+  // Each concern shows its own kinds.
+  const mechanical = screen.getByRole("region", {
+    name: "Concern 2: Mechanical changes",
+  });
+  expect(
+    within(within(mechanical).getByRole("list", { name: "Kinds of change" }))
+      .getAllByRole("listitem")
+      .map((kind) => kind.textContent),
+  ).toEqual(["Dependencies", "Build"]);
+});
+
+it("scrolls to a line's first hunk below the versions bar and focuses it, in the guide and in Files A–Z", async () => {
+  // Each hunk 500px down the page, under a 60px versions bar.
+  const restore = sizeElements([
+    { selector: ".deck-versions", width: 1000, height: 60 },
+  ]);
+  const rect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this.hasAttribute("data-hunk-id")
+        ? DOMRect.fromRect({ x: 0, y: 500, width: 1000, height: 100 })
+        : rect.call(this);
+    },
+  );
+  const scrolled = vi
+    .spyOn(window, "scrollTo")
+    .mockImplementation(() => undefined);
+  try {
+    const summary = await openSummarized();
+    const changes = screen.getByRole("region", { name: "Changes" });
+
+    fireEvent.click(
+      within(summary).getByRole("button", { name: /^TODO in src\/new\.ts/ }),
+    );
+    // Its top lands 16px below the bar, as a section's does.
+    expect(scrolled).toHaveBeenLastCalledWith({
+      top: 500 - 60 - 16,
+      behavior: "instant",
+    });
+    expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
+      "src/new.ts#0",
+    );
+
+    fireEvent.click(
+      within(within(changes).getByRole("group", { name: "Order" })).getByRole(
+        "button",
+        { name: "Files A–Z" },
+      ),
+    );
+    scrolled.mockClear();
+    fireEvent.click(
+      within(summary).getByRole("button", {
+        name: "Auth and security: src/api.ts",
+      }),
+    );
+    expect(scrolled).toHaveBeenCalledExactlyOnceWith({
+      top: 500 - 60 - 16,
+      behavior: "instant",
+    });
+    expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
+      "src/api.ts#0",
+    );
+  } finally {
+    restore();
+  }
+});
+
+it("says there's no linked ticket, or that the tickets couldn't be read", async () => {
+  const none = await openSummarized({
+    ...GUIDED,
+    guide: { ...GUIDED.guide!, summary: NO_DECK_SUMMARY },
+  });
+  expect(within(none).getByText("No linked ticket")).toBeTruthy();
+  expect(within(none).queryByRole("list")).toBeNull();
+  cleanup();
+
+  const unread = await openSummarized({
+    ...GUIDED,
+    guide: {
+      ...GUIDED.guide!,
+      summary: { ...NO_DECK_SUMMARY, tickets: null },
+    },
+  });
+  expect(
+    within(unread).getByText("The linked tickets couldn't be read."),
+  ).toBeTruthy();
+});
+
+it("shows no summary while the guide couldn't be built", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
+  await renderReviewPage();
+  await screen.findByRole("heading", { name: "src/api.ts" });
+
+  expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
+});
+
 /** One file of 600 one-line hunks, so its rows mount only near the screen (#790). */
 const HUGE: DeckOpenedPullRequest = {
   headSha: "head",
@@ -1242,6 +1454,101 @@ it("shows a huge pull request's threads only while their hunks are mounted, and 
     await waitFor(() => expect(placed("first")).toBe(true));
     expect(placed("last")).toBe(false);
     expect(connected("last")).toBe(false);
+  } finally {
+    restore();
+  }
+});
+
+it("scrolls a huge pull request to a summary line's hunk, mounting it below the versions bar", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue({
+    ...HUGE,
+    guide: {
+      madeWith: "code",
+      concerns: [
+        {
+          id: "g1",
+          title: "Rename the field",
+          rationale: "Every use of it.",
+          hunkIds: HUGE.files[0]!.hunks.map((entry) => entry.id),
+          kinds: [],
+        },
+      ],
+      summary: {
+        ...NO_DECK_SUMMARY,
+        leftovers: [
+          {
+            id: "leftover:0",
+            text: "TODO in src/big.ts:551: // TODO: drop it",
+            hunkIds: ["src/big.ts#550"],
+          },
+        ],
+      },
+    },
+  });
+  // A 900px scroller under a 60px versions bar, whose rows are 100px high
+  // and sit where the virtualizer placed them.
+  const restore = sizeElements([
+    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
+    { selector: ".deck-versions", width: 1000, height: 60 },
+    { selector: ".deck-review-row", width: 1000, height: 100 },
+  ]);
+  const rect = HTMLElement.prototype.getBoundingClientRect;
+  const rowTop = (row: HTMLElement) =>
+    Number(/translateY\((-?[\d.]+)px\)/.exec(row.style.transform)?.[1] ?? 0) -
+    screen.getByTestId("scroller").scrollTop;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      return this.classList.contains("deck-review-row")
+        ? DOMRect.fromRect({ x: 0, y: rowTop(this), width: 1000, height: 100 })
+        : rect.call(this);
+    },
+  );
+  try {
+    await renderRoutes({
+      shell: ({ children }) => (
+        <Shell>
+          <div
+            data-testid="scroller"
+            style={{ overflowY: "auto" }}
+            ref={(element) => {
+              if (!element) return;
+              makeScrollable(element);
+              // Tall enough for every row, so a scroll there isn't clamped.
+              Object.defineProperty(element, "scrollHeight", {
+                configurable: true,
+                get: () => 100_000,
+              });
+            }}
+          >
+            {children}
+          </div>
+        </Shell>
+      ),
+      path: `/deck/${itemId}`,
+      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
+    });
+    const summary = await screen.findByRole("region", { name: "Summary" });
+    const changes = screen.getByRole("region", { name: "Changes" });
+    const hunkElement = () =>
+      changes.querySelector<HTMLElement>('[data-hunk-id="src/big.ts#550"]');
+    await waitFor(() =>
+      expect(
+        changes.querySelector(".deck-review-sections[data-virtual]"),
+      ).not.toBeNull(),
+    );
+    expect(hunkElement()).toBeNull();
+
+    fireEvent.click(
+      within(summary).getByRole("button", { name: /^TODO in src\/big\.ts/ }),
+    );
+
+    // It mounts, takes the focus, and its row's top holds 16px below the bar.
+    await waitFor(() => expect(document.activeElement).toBe(hunkElement()));
+    await waitFor(() =>
+      expect(
+        rowTop(hunkElement()!.closest<HTMLElement>(".deck-review-row")!),
+      ).toBe(60 + 16),
+    );
   } finally {
     restore();
   }

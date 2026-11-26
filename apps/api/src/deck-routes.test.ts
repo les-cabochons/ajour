@@ -16,6 +16,7 @@ import {
 } from "../../../packages/review-deck/diff.ts";
 import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
+import { builtFrom } from "./test-support/deck-guides.ts";
 import { DECK_GUIDE_HUNK_LIMIT } from "./deck-service.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
@@ -63,6 +64,35 @@ const FILES: Record<string, string | "binary"> = {
   "base:src/broken.ts": "x\n",
 };
 
+/**
+ * Pull request 30, whose summary every rule has a line in: a migration, a
+ * TODO, debug output, a skipped test, a test per concern, code without one,
+ * and docs. Its paths are `[base, head]`.
+ */
+const SUMMARY_FILES: Record<string, [string | null, string | null]> = {
+  "db/migrations/0042_users.sql": [null, "CREATE TABLE users (id int);\n"],
+  "src/retry.ts": [
+    "export const retry = 1;\n",
+    "// TODO: stop on 410\nconsole.log(attempt);\nexport const retry = 2;\n",
+  ],
+  "src/retry.test.ts": [
+    'it("retries", () => {});\n',
+    'it("retries", () => {});\nit.skip("stops on 410", () => {});\n',
+  ],
+  "src/billing.ts": ["export const a = 1;\n", "export const a = 2;\n"],
+  "README.md": ["# Api\n", "# Api\n\nRetries stop on 410.\n"],
+};
+for (const [file, [base, head]] of Object.entries(SUMMARY_FILES)) {
+  if (base !== null) FILES[`base:${file}`] = base;
+  if (head !== null) FILES[`head:${file}`] = head;
+}
+const SUMMARY_CHANGED_FILES = Object.entries(SUMMARY_FILES).map(
+  ([file, [base]]) => ({
+    path: file,
+    status: base === null ? "added" : "modified",
+  }),
+);
+
 /** The pull request's files, in the order the host lists them, which is not path order. */
 const CHANGED_FILES = [
   { path: "src/new.ts", status: "added" },
@@ -75,6 +105,7 @@ const CHANGED_FILES = [
 const pluginSource = `
 const FILES = ${JSON.stringify(FILES)};
 const CHANGED_FILES = ${JSON.stringify(CHANGED_FILES)};
+const SUMMARY_CHANGED_FILES = ${JSON.stringify(SUMMARY_CHANGED_FILES)};
 export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
@@ -96,14 +127,40 @@ export async function getPullRequestContent(connection, request) {
       ? Array.from({ length: 20 }, (_, index) => ({ path: "slow/" + index + ".ts", status: "added" }))
     : request.number >= 20 && request.number < 30
       ? [{ path: "pr" + request.number + "/a.ts", status: "added" }]
-    : request.number === 30 ? [{ path: "huge1000/a.ts", status: "modified" }]
-    : request.number === 31 ? [{ path: "huge1001/a.ts", status: "modified" }]
+    : request.number === 30 ? SUMMARY_CHANGED_FILES
+    : request.number === 40 ? [{ path: "huge1000/a.ts", status: "modified" }]
+    : request.number === 41 ? [{ path: "huge1001/a.ts", status: "modified" }]
     : CHANGED_FILES;
   return {
     headSha: globalThis.deckHeads?.[request.number] ?? "head",
     baseSha: "base",
     // The host's patch is never used: this one would cut other hunks.
     files: files.map((file) => ({ additions: 1, deletions: 1, binary: false, patch: "@@ -1 +1 @@\\n-nothing\\n+like this", ...file })),
+  };
+}
+export async function getLinkedTickets(connection, request) {
+  if (request.number === 31 && !globalThis.deckTicketsBack) throw new Error("GitHub request failed (502).");
+  if (request.number === 31) return { tickets: [{ number: 5, title: "Back again", body: "", url: "https://github.com/acme/api/issues/5", state: "Open" }] };
+  if (request.number !== 30) return { tickets: [] };
+  return {
+    tickets: [
+      {
+        number: 482,
+        repository: "acme/api",
+        title: "Retries never stop on 410",
+        body: "The ticket's own words.",
+        url: "https://github.com/acme/api/issues/482",
+        state: "Open",
+      },
+      {
+        number: 12,
+        repository: "acme/web",
+        title: "Show the retries",
+        body: "",
+        url: "https://github.com/acme/web/issues/12",
+        state: "Closed",
+      },
+    ],
   };
 }
 export async function syncPullRequests() {
@@ -374,7 +431,7 @@ function heldGuides() {
         ),
       ]);
       built.push(name);
-      return [
+      return builtFrom(input, [
         {
           id: "g1",
           title: name,
@@ -383,7 +440,7 @@ function heldGuides() {
             file.hunks.map((hunk) => hunk.id),
           ),
         },
-      ];
+      ]);
     },
     close: async () => {},
   };
@@ -1128,12 +1185,15 @@ describe("the guide of a pull request opened in Deck", () => {
     expect(opened.status).toBe(200);
     expect(opened.body.guide).toEqual({
       madeWith: "code",
+      // No rule finds a kind in these files.
       concerns: expected.groups.map((group) => ({
         id: group.id,
         title: group.title,
         rationale: group.rationale,
         hunkIds: group.hunkIds,
+        kinds: [],
       })),
+      summary: expect.objectContaining({ problem: null, tickets: [] }),
     });
     // Every hunk is in one concern.
     const hunkIds = (opened.body.files as { hunks: { id: string }[] }[])
@@ -1265,16 +1325,18 @@ describe("the guide of a pull request opened in Deck", () => {
         build: (input, signal) => {
           calls += 1;
           if (calls > 1) {
-            return Promise.resolve([
-              {
-                id: "g1",
-                title: "Built",
-                rationale: "",
-                hunkIds: parseDiff(input.diff).flatMap((file) =>
-                  file.hunks.map((hunk) => hunk.id),
-                ),
-              },
-            ]);
+            return Promise.resolve(
+              builtFrom(input, [
+                {
+                  id: "g1",
+                  title: "Built",
+                  rationale: "",
+                  hunkIds: parseDiff(input.diff).flatMap((file) =>
+                    file.hunks.map((hunk) => hunk.id),
+                  ),
+                },
+              ]),
+            );
           }
           return new Promise((_, reject) =>
             signal.addEventListener("abort", () =>
@@ -1303,16 +1365,17 @@ describe("the guide of a pull request opened in Deck", () => {
 
   it("cuts a title or rationale longer than the guide allows, keeping the guide", async () => {
     const { open } = await startDeck(undefined, {
-      build: async (input) => [
-        {
-          id: "g1",
-          title: "t".repeat(600),
-          rationale: "r".repeat(2_500),
-          hunkIds: parseDiff(input.diff).flatMap((file) =>
-            file.hunks.map((hunk) => hunk.id),
-          ),
-        },
-      ],
+      build: async (input) =>
+        builtFrom(input, [
+          {
+            id: "g1",
+            title: "t".repeat(600),
+            rationale: "r".repeat(2_500),
+            hunkIds: parseDiff(input.diff).flatMap((file) =>
+              file.hunks.map((hunk) => hunk.id),
+            ),
+          },
+        ]),
       close: async () => {},
     });
 
@@ -1343,7 +1406,7 @@ describe("the guide of a pull request opened in Deck", () => {
     const guides = heldGuides();
     const { open } = await startDeck(undefined, guides.runtime);
 
-    const opened = await open(30);
+    const opened = await open(40);
 
     expect(opened.status).toBe(200);
     expect(
@@ -1358,7 +1421,7 @@ describe("the guide of a pull request opened in Deck", () => {
     const guides = heldGuides();
     const { api, open, fileReads } = await startDeck(undefined, guides.runtime);
 
-    const opened = await open(31);
+    const opened = await open(41);
 
     expect(opened.status).toBe(200);
     expect(
@@ -1387,7 +1450,7 @@ describe("the guide of a pull request opened in Deck", () => {
     });
 
     // It isn't a failed guide: the diff stays kept for the next open.
-    const again = await open(31);
+    const again = await open(41);
     expect(again.body.guideSkipped).toEqual(opened.body.guideSkipped);
     expect(fileReads()).toBe(2);
   });
@@ -1399,7 +1462,7 @@ describe("the guide of a pull request opened in Deck", () => {
       guides.runtime,
     );
 
-    await expect(preload(31)).resolves.toEqual({
+    await expect(preload(41)).resolves.toEqual({
       status: 202,
       body: { queued: 0 },
     });
@@ -1411,7 +1474,7 @@ describe("the guide of a pull request opened in Deck", () => {
     ).toMatchObject({ deck: { queued_count: 0, guide_skipped_count: 1 } });
 
     // Opened from the content cache, it gets no build either.
-    const opened = await open(31);
+    const opened = await open(41);
     expect(opened.body.guide).toBeNull();
     expect(opened.body.guideSkipped).toMatchObject({
       reason: "too_many_hunks",
@@ -1421,9 +1484,9 @@ describe("the guide of a pull request opened in Deck", () => {
 
     // Preloaded again, it is cached without a guide, which it never gets:
     // nothing is read or queued.
-    await open(30);
+    await open(40);
     const [started, read] = [guides.started.length, fileReads()];
-    await expect(preload(31)).resolves.toEqual({
+    await expect(preload(41)).resolves.toEqual({
       status: 202,
       body: { queued: 0 },
     });
@@ -1611,7 +1674,7 @@ describe("the content cache", () => {
       build: async (input) => {
         calls += 1;
         if (calls === 1) throw new Error("The pipeline broke.");
-        return [
+        return builtFrom(input, [
           {
             id: "g1",
             title: "Built",
@@ -1620,7 +1683,7 @@ describe("the content cache", () => {
               file.hunks.map((hunk) => hunk.id),
             ),
           },
-        ];
+        ]);
       },
       close: async () => {},
     });
@@ -2160,5 +2223,210 @@ describe("opening an Azure DevOps pull request in Deck", () => {
     ]);
     // Both versions of the edited, renamed and binary files, one of the added and deleted ones.
     expect(fileReads()).toBe(10);
+  });
+});
+
+/** Builds one concern per file, in the diff's path order, in process. */
+const concernPerFile: DeckGuideRuntime = {
+  async build(input) {
+    return builtFrom(
+      input,
+      parseDiff(input.diff).map((file, index) => ({
+        id: `g${index + 1}`,
+        title: file.path,
+        rationale: "",
+        hunkIds: file.hunks.map((hunk) => hunk.id),
+      })),
+    );
+  },
+  close: async () => {},
+};
+
+describe("the summary of a pull request opened in Deck", () => {
+  it("comes with the guide: the linked ticket, the kinds, risks, tests and leftovers, each line with its hunks", async () => {
+    const { api, open } = await startDeck(undefined, concernPerFile);
+
+    const opened = await open(30);
+
+    expect(opened.status).toBe(200);
+    const { concerns, summary } = opened.body.guide;
+    // README.md, the migration, billing, the test, retry: path order.
+    expect(
+      concerns.map((concern: { kinds: string[] }) => concern.kinds),
+    ).toEqual([["docs"], [], [], ["tests"], []]);
+    expect(summary).toEqual({
+      problem: {
+        text: "Retries never stop on 410",
+        source: "ticket",
+        ticket: {
+          number: 482,
+          repository: "acme/api",
+          title: "Retries never stop on 410",
+          url: "https://github.com/acme/api/issues/482",
+          state: "Open",
+        },
+      },
+      tickets: [
+        expect.objectContaining({ number: 482 }),
+        {
+          number: 12,
+          repository: "acme/web",
+          title: "Show the retries",
+          url: "https://github.com/acme/web/issues/12",
+          state: "Closed",
+        },
+      ],
+      kinds: ["tests", "docs"],
+      breaking: [],
+      risks: [
+        {
+          id: "risk:migrations",
+          text: "Migrations: db/migrations/0042_users.sql",
+          hunkIds: ["db/migrations/0042_users.sql#0"],
+        },
+      ],
+      tests: [
+        {
+          id: "tests:g4",
+          text: "Tested in src/retry.test.ts",
+          hunkIds: ["src/retry.test.ts#0"],
+          concernId: "g4",
+        },
+      ],
+      untested: [
+        {
+          id: "untested:g3",
+          text: "No test for src/billing.ts",
+          hunkIds: ["src/billing.ts#0"],
+          concernId: "g3",
+        },
+      ],
+      leftovers: [
+        {
+          id: "leftover:0",
+          text: 'Skipped test in src/retry.test.ts:2: it.skip("stops on 410", () => {});',
+          hunkIds: ["src/retry.test.ts#0"],
+        },
+        {
+          id: "leftover:1",
+          text: "TODO in src/retry.ts:1: // TODO: stop on 410",
+          hunkIds: ["src/retry.ts#0"],
+        },
+        {
+          id: "leftover:2",
+          text: "Debug output in src/retry.ts:2: console.log(attempt);",
+          hunkIds: ["src/retry.ts#0"],
+        },
+      ],
+    });
+    // Every line's hunks are the diff's.
+    const hunkIds = new Set(
+      (opened.body.files as { hunks: { id: string }[] }[]).flatMap((file) =>
+        file.hunks.map((hunk) => hunk.id),
+      ),
+    );
+    const lines = [
+      ...summary.risks,
+      ...summary.tests,
+      ...summary.untested,
+      ...summary.leftovers,
+    ] as { hunkIds: string[] }[];
+    expect(
+      lines.flatMap((line) => line.hunkIds).every((id) => hunkIds.has(id)),
+    ).toBe(true);
+    // The ticket's text is read for the agent later, never sent to the page.
+    expect(JSON.stringify(opened.body)).not.toContain(
+      "The ticket's own words.",
+    );
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_tickets" &&
+          event.kind === "plugin_operation",
+      ),
+    ).toMatchObject({ outcome: "ok" });
+    expect(JSON.stringify(api.events)).not.toContain("Retries never stop");
+  });
+
+  it("has no problem line when no ticket is linked", async () => {
+    const { open } = await startDeck(undefined, concernPerFile);
+
+    const opened = await open(7);
+
+    expect(opened.body.guide.summary).toMatchObject({
+      problem: null,
+      tickets: [],
+    });
+  });
+
+  it("reads the linked tickets through the code host route too, counting them on its event", async () => {
+    const { api, connectionId } = await startDeck();
+
+    const read = await apiRequest(
+      api.baseUrl,
+      `/api/code-hosts/github/connections/${connectionId}/getLinkedTickets`,
+      { repository: "acme/api", number: 30 },
+    );
+
+    expect(read.status).toBe(200);
+    expect(
+      read.body.tickets.map((ticket: { number: number }) => ticket.number),
+    ).toEqual([482, 12]);
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "pull_request.load_tickets" &&
+          event.kind === "request",
+      ),
+    ).toMatchObject({ outcome: "ok", pull_request: { ticket_count: 2 } });
+  });
+
+  it("says the tickets couldn't be read when the code host fails or doesn't offer them, and keeps the guide", async () => {
+    const failing = await startDeck(undefined, concernPerFile);
+    const failed = await failing.open(31);
+    expect(failed.status).toBe(200);
+    expect(failed.body.guide.summary).toMatchObject({
+      problem: null,
+      tickets: null,
+    });
+    expect(failed.body.guide.concerns.length).toBeGreaterThan(0);
+
+    const older = await startDeck(
+      pluginSource.replace(
+        "export async function getLinkedTickets",
+        "async function notExported",
+      ),
+      concernPerFile,
+    );
+    const opened = await older.open(30);
+    expect(opened.status).toBe(200);
+    expect(opened.body.guide.summary).toMatchObject({
+      problem: null,
+      tickets: null,
+      risks: [expect.objectContaining({ id: "risk:migrations" })],
+    });
+  });
+});
+
+describe("linked tickets that couldn't be read", () => {
+  afterEach(() => {
+    delete (globalThis as { deckTicketsBack?: boolean }).deckTicketsBack;
+  });
+
+  it("are read again when the pull request opens again, on screen or from the content cache, without building its guide again", async () => {
+    const guides = heldGuides();
+    const { open } = await startDeck(undefined, guides.runtime);
+    const failed = await open(31);
+    expect(failed.body.guide.summary.tickets).toBeNull();
+
+    (globalThis as { deckTicketsBack?: boolean }).deckTicketsBack = true;
+    const again = await open(31);
+    expect(again.body.guide.summary.problem?.text).toBe("Back again");
+
+    // From the content cache, after another pull request took the screen.
+    await open(20);
+    const cached = await open(31);
+    expect(cached.body.guide.summary.problem?.text).toBe("Back again");
+    expect(guides.built.filter((name) => name !== "pr20")).toHaveLength(1);
   });
 });

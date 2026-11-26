@@ -106,6 +106,14 @@ Feature: Deck lists the pull requests on your plate
     When I switch to Files A–Z
     Then the changed files show in path order
 
+  Scenario: Read a pull request's summary and go to a line's hunk
+    Given the local API built the requested pull request's guide
+    When I open Deck
+    And I open the requested pull request summary
+    Then the summary names the linked ticket, the kinds and each section's lines
+    When I follow the summary's line about the test
+    Then the test's hunk is in view and focused
+
   Scenario: Draft a review beside the lines and finish it
     Given the local API built the requested pull request's guide
     And the code host takes reviews
@@ -162,6 +170,14 @@ Feature: Deck lists the pull requests on your plate
     Then file 240 is focused at the top of the changes
     When I mark the last file's first hunk viewed
     Then the last file's tick counts it viewed
+
+  Scenario: Follow a summary line on a pull request with many hunks
+    Given the local API built the guide of a pull request with 600 hunks
+    When I open Deck
+    And I open the requested pull request summary
+    Then only the rows near the screen are mounted
+    When I follow the summary's line about the leftover
+    Then the leftover's hunk is focused at the top of the changes
 
   Scenario: Move through the guide of a pull request with many hunks
     Given the local API built the guide of a pull request with 600 hunks

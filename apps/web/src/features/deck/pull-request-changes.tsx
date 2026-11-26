@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,6 +32,7 @@ import { useShortcut } from "@/lib/shortcut-handlers";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { DeckAskProvider } from "./deck-ask";
 import { GuideTree } from "./guide-tree";
+import type { ReachHunk } from "./pull-request-summary";
 import {
   atEnd,
   hunkBoxOf,
@@ -38,12 +40,14 @@ import {
   revealDistance,
   scrollByDistance,
   scrollerOf,
+  scrollToReadingLine,
   type SectionNavigator,
 } from "./review-scroll";
 import { useReviewLinesValue } from "./review-lines";
 import { ReviewLinesContext } from "./review-lines-context";
 import { ReviewNotesContext } from "./review-notes";
 import {
+  HUNK_ATTRIBUTE,
   ReviewSectionView,
   SECTION_ATTRIBUTE,
   type AddComment,
@@ -108,6 +112,18 @@ function MountedReviewSections({
       const box = hunkBoxOf(listRef.current, hunkId);
       if (box)
         scrollByDistance(scrollerOf(box), revealDistance(box, row, point));
+    },
+    reachHunk(hunkId) {
+      const element = listRef.current;
+      const hunk = [
+        ...(element?.querySelectorAll<HTMLElement>(`[${HUNK_ATTRIBUTE}]`) ??
+          []),
+      ].find((candidate) => candidate.getAttribute(HUNK_ATTRIBUTE) === hunkId);
+      if (!element || !hunk) return false;
+      // Below the sticky versions bar, as a section lands.
+      scrollToReadingLine(hunk, readingOffset(element));
+      hunk.focus({ preventScroll: true });
+      return true;
     },
   }));
   return (
@@ -206,10 +222,12 @@ export interface ReviewVersionsView {
 function ReviewChanges({
   pullRequest,
   notes: { notes: allNotes, floating, hovered, onAddComment },
+  reachHunkRef,
   versions,
 }: {
   pullRequest: DeckOpenedPullRequest;
   notes: ReviewNotesView;
+  reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
 }) {
   const onHover = useContext(ReviewNotesContext)?.onHover;
@@ -276,6 +294,40 @@ function ReviewChanges({
     );
     if (target !== undefined) reach(target);
   };
+  // A summary line scrolls its hunk to the reading line, below the versions
+  // bar, in either order and either list, and focuses it. A hunk the
+  // since-review filter hides shows all the changes first.
+  const shown = useRef({ sections, all, filtering });
+  useLayoutEffect(() => {
+    shown.current = { sections, all, filtering };
+  }, [sections, all, filtering]);
+  useEffect(() => {
+    let frame = 0;
+    const holds = (list: readonly ReviewSection[], hunkId: string) =>
+      list.some((section) =>
+        section.hunks.some((entry) => entry.hunk.id === hunkId),
+      );
+    reachHunkRef.current = (hunkId) => {
+      cancelAnimationFrame(frame);
+      const now = shown.current;
+      if (!holds(now.sections, hunkId)) {
+        if (!now.filtering || !holds(now.all, hunkId)) return;
+        setFiltering(false);
+      }
+      // A few frames while the list shows it: after the filter's change,
+      // or while a huge list finds its scroller.
+      let tries = 0;
+      const attempt = () => {
+        if (navigator.current?.reachHunk(hunkId) || (tries += 1) > 10) return;
+        frame = requestAnimationFrame(attempt);
+      };
+      attempt();
+    };
+    return () => {
+      cancelAnimationFrame(frame);
+      reachHunkRef.current = undefined;
+    };
+  }, [reachHunkRef]);
   useShortcut("deck.next-concern", () => step(1));
   useShortcut("deck.previous-concern", () => step(-1));
   useShortcut("deck.guide-tree", () => setTreeOpen((open) => !open));
@@ -517,12 +569,15 @@ export function PullRequestChanges({
   state,
   retry,
   notes,
+  reachHunkRef,
   versions,
 }: {
   pullRequest: LocalPullRequest;
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
   notes: ReviewNotesView;
+  /** Set while the changes show, to the way a summary line reaches its hunk. */
+  reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
 }) {
   return (
@@ -568,6 +623,7 @@ export function PullRequestChanges({
             key={`${state.value.baseSha}..${state.value.headSha}`}
             pullRequest={state.value}
             notes={notes}
+            reachHunkRef={reachHunkRef}
             versions={versions}
           />
         </DeckAskProvider>

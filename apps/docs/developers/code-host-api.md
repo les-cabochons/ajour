@@ -118,7 +118,7 @@ The schemas are in [`packages/shared/code-host.ts`](https://github.com/les-caboc
 
 ## Review operations
 
-The contract also defines operations for reviewing in Ajour: `getPullRequestContent`, `getFileContent`, `getPullRequestConversation`, `getChecks`, `getPullRequestVersions`, `browsePullRequests`, `submitReview`, `postComment`, `replyToThread`, `setThreadResolved`, `setFileViewed`, `updatePullRequest` and `mergePullRequest`. Each takes `(connection, request)`.
+The contract also defines operations for reviewing in Ajour: `getPullRequestContent`, `getFileContent`, `getPullRequestConversation`, `getChecks`, `getLinkedTickets`, `getPullRequestVersions`, `browsePullRequests`, `submitReview`, `postComment`, `replyToThread`, `setThreadResolved`, `setFileViewed`, `updatePullRequest` and `mergePullRequest`. Each takes `(connection, request)`.
 
 ### What Deck reads
 
@@ -128,6 +128,8 @@ When the user opens a pull request in Deck, Ajour calls `getPullRequestContent`,
 - `getFileContent` returns `{ kind: "text", content }` with at most 5,000,000 characters, `{ kind: "binary" }` for a binary file or one too long to send, or `{ kind: "missing" }` when the file isn't at that commit.
 
 Ajour reads three files at a time. The GitHub and Azure DevOps plugins implement both.
+
+While it builds the guide, Ajour also calls `getLinkedTickets` for the pull request's summary. It returns at most 50 `tickets`, the issues the pull request closes or is linked to on GitHub, or its linked work items on Azure DevOps, in your code host's order. Each has its `number` (an issue's number or a work item's id), the issue's `repository` (leave it out for a work item), its `title`, its `body` as your code host stores it (Markdown on GitHub, HTML on Azure DevOps, at most 65,536 characters), its `url` and its `state` in your code host's own words, such as `Open`, `Closed` or `Active`. Return `{ tickets: [] }` when none is linked. The first ticket's title heads the summary. Ajour shows the titles and states, never the bodies, and keeps them with the guide. A plugin without the operation, or one that fails, still opens: the summary says the tickets couldn't be read. The GitHub and Azure DevOps plugins implement it.
 
 The review page also calls, beside the diff:
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CodeHostReviewFact, CodeHostVersion } from "@ajour/shared";
 import type { DeckFile, DeckOpenedPullRequest } from "@ajour/shared/deck";
+import { NO_DECK_SUMMARY } from "../../test-support/deck";
 import { reviewSections } from "./guide";
 import {
   changedHunks,
@@ -108,18 +109,27 @@ const opened: DeckOpenedPullRequest = {
   files: [file("src/a.ts", 3), file("src/b.ts", 1), file("src/c.ts", 1)],
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "g1",
         title: "Routes",
         rationale: "",
+        kinds: [],
         hunkIds: ["src/a.ts#0", "src/a.ts#1"],
       },
-      { id: "g2", title: "Config", rationale: "", hunkIds: ["src/b.ts#0"] },
+      {
+        id: "g2",
+        title: "Config",
+        rationale: "",
+        hunkIds: ["src/b.ts#0"],
+        kinds: [],
+      },
       {
         id: "g3",
         title: "Tests",
         rationale: "",
+        kinds: [],
         hunkIds: ["src/a.ts#2", "src/c.ts#0"],
       },
     ],
