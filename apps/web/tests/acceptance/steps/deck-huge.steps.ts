@@ -71,8 +71,13 @@ const OPENED = {
   guideSkipped: { reason: "too_many_hunks", hunkLimit: 1_000 },
 };
 
-/** 120 files, 600 hunks, in a guide of three concerns of 40 files each. */
+/**
+ * 120 files, 600 hunks, in a guide of three concerns of 40 files each,
+ * whose summary has one leftover, in the last concern (#789).
+ */
 const GUIDED_FILES = filesOf(120);
+const LEFTOVER_PATH = pathOf(100);
+const LEFTOVER_HUNK = `${LEFTOVER_PATH}#2`;
 const CONCERNS = [
   "Read the settings",
   "Write the settings",
@@ -91,7 +96,24 @@ const GUIDED = {
       hunkIds: GUIDED_FILES.slice(at * 40, at * 40 + 40).flatMap((file) =>
         file.hunks.map((entry) => entry.id),
       ),
+      kinds: [],
     })),
+    summary: {
+      problem: null,
+      tickets: [],
+      kinds: [],
+      breaking: [],
+      risks: [],
+      tests: [],
+      untested: [],
+      leftovers: [
+        {
+          id: "leftover:0",
+          text: `TODO in ${LEFTOVER_PATH}:41: // TODO: drop the old key`,
+          hunkIds: [LEFTOVER_HUNK],
+        },
+      ],
+    },
   },
 };
 
@@ -176,6 +198,27 @@ Given(
           headers: { "access-control-allow-origin": "*" },
         }),
     );
+  },
+);
+
+When("I follow the summary's line about the leftover", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Summary" })
+    .getByRole("button", { name: new RegExp(`^TODO in ${LEFTOVER_PATH}`) })
+    .click();
+});
+
+Then(
+  "the leftover's hunk is focused at the top of the changes",
+  async ({ page }) => {
+    const hunk = page.locator(`[data-hunk-id="${LEFTOVER_HUNK}"]`);
+    await expect(hunk).toBeFocused();
+    // Its row lands below the sticky versions bar, 16px down, less the
+    // row's 8px above the hunk.
+    await expect
+      .poll(async () => Math.abs((await focusedOffset(page)) - 24) <= 2)
+      .toBe(true);
+    await page.screenshot({ path: "test-results/deck-huge-summary-link.png" });
   },
 );
 

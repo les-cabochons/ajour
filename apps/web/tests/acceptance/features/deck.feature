@@ -131,6 +131,14 @@ Feature: Deck lists the pull requests on your plate
     When I mark the last file's first hunk viewed
     Then the last file's tick counts it viewed
 
+  Scenario: Follow a summary line on a pull request with many hunks
+    Given the local API built the guide of a pull request with 600 hunks
+    When I open Deck
+    And I open the requested pull request summary
+    Then only the rows near the screen are mounted
+    When I follow the summary's line about the leftover
+    Then the leftover's hunk is focused at the top of the changes
+
   Scenario: Move through the guide of a pull request with many hunks
     Given the local API built the guide of a pull request with 600 hunks
     When I open Deck

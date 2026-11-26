@@ -280,4 +280,12 @@ Then("the test's hunk is in view and focused", async ({ page }) => {
   const hunk = page.locator('[data-hunk-id="src/client/retry.test.ts#0"]');
   await expect(hunk).toBeFocused();
   await expect(hunk).toBeInViewport();
+  // Never under the sticky versions bar (#787).
+  const [top, bar] = await Promise.all([
+    hunk.evaluate((element) => element.getBoundingClientRect().top),
+    page
+      .locator(".deck-versions")
+      .evaluate((element) => element.getBoundingClientRect().bottom),
+  ]);
+  expect(top).toBeGreaterThanOrEqual(bar - 1);
 });
