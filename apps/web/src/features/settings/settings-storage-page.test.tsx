@@ -13,13 +13,15 @@ import { SettingsStoragePage } from "./settings-storage-page";
 
 /*
  * Settings › Storage (#781): the size of Deck's content cache and its cap,
- * a new cap, and Clear cache. The local API module is mocked.
+ * a new cap, Clear cache, and the clone folders Deck kept. The local API
+ * module is mocked.
  */
 
 vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/app-api")>()),
   clearDeckCache: vi.fn(),
   getDeckCacheStorage: vi.fn(),
+  openKeptDeckCloneFolders: vi.fn(),
   saveDeckCacheCap: vi.fn(),
 }));
 
@@ -32,6 +34,7 @@ const USED: DeckCacheStorage = {
   capBytes: GB,
   entryCount: 14,
   pendingRemovalCount: 0,
+  keptCloneFolderCount: 0,
 };
 
 beforeEach(() => {
@@ -83,6 +86,7 @@ it("saves a new size limit, and shows what eviction left", async () => {
     capBytes: 250 * MB,
     entryCount: 9,
     pendingRemovalCount: 0,
+    keptCloneFolderCount: 0,
   });
   await renderPage();
 
@@ -114,6 +118,7 @@ it("clears the cache", async () => {
     capBytes: GB,
     entryCount: 0,
     pendingRemovalCount: 0,
+    keptCloneFolderCount: 0,
   });
   await renderPage();
 
@@ -134,6 +139,7 @@ it("says calmly what a clear left, while another program holds its files", async
     capBytes: GB,
     entryCount: 1,
     pendingRemovalCount: 1,
+    keptCloneFolderCount: 0,
   });
   await renderPage();
   expect(screen.queryByRole("status")).toBeNull();
@@ -172,6 +178,53 @@ it("says so when the local API can't read the cache, with nothing to set", async
       limit.getAttribute("aria-disabled") === "true" ||
       limit.hasAttribute("data-disabled"),
   ).toBe(true);
+});
+
+it("says how many clone folders Deck kept, and opens their folder", async () => {
+  vi.mocked(api.getDeckCacheStorage).mockResolvedValue({
+    ...USED,
+    keptCloneFolderCount: 2,
+  });
+  vi.mocked(api.openKeptDeckCloneFolders).mockResolvedValue({ ok: true });
+  await renderPage();
+
+  const row = screen.getByText("Clone folders kept").closest(".settings-row");
+  expect(row?.textContent).toContain(
+    "2 folders of local clone checkouts that hold files of yours, or that no clone could check. Ajour never deletes them.",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+  await act(async () => {});
+
+  expect(api.openKeptDeckCloneFolders).toHaveBeenCalledTimes(1);
+});
+
+it("says so when the kept clone folders can't be shown", async () => {
+  vi.mocked(api.getDeckCacheStorage).mockResolvedValue({
+    ...USED,
+    keptCloneFolderCount: 1,
+  });
+  vi.mocked(api.openKeptDeckCloneFolders).mockRejectedValue(
+    new Error("Not the desktop app."),
+  );
+  await renderPage();
+  expect(
+    screen.getByText("Clone folders kept").closest(".settings-row")
+      ?.textContent,
+  ).toContain("1 folder of local clone checkouts");
+
+  fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
+  await act(async () => {});
+
+  expect(
+    (await screen.findAllByText("Couldn't open the folder")).length,
+  ).toBeGreaterThan(0);
+});
+
+it("shows no kept clone folders row when there are none", async () => {
+  await renderPage();
+
+  expect(screen.queryByText("Clone folders kept")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Open folder" })).toBeNull();
 });
 
 it("works in the narrow view", async () => {

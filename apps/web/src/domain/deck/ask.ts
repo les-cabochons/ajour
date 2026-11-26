@@ -1,4 +1,5 @@
 import type { AgentTurnEvent } from "@ajour/shared/agent-runs";
+import type { DeckCloneUse } from "@ajour/shared/deck";
 
 /*
  * One ask on Deck's review page (#791): a question anchored to a concern,
@@ -7,17 +8,27 @@ import type { AgentTurnEvent } from "@ajour/shared/agent-runs";
  * streams in, and it ends answered, stopped or failed. While a timesheet
  * task holds the agent, it waits. Another of Deck's turns ahead of it keeps
  * the placeholder: that wait is short and needs no note.
+ *
+ * Once the ask is sent, it knows what it does with the user's local clone
+ * (#795): it reads it, or can't and why, or none is chosen. The answer's
+ * footer says so.
  */
+
+/** What every state of an ask carries: its typed question and its clone. */
+interface Carried {
+  question?: string;
+  clone?: DeckCloneUse;
+}
 
 export type AskState =
   /** Sent, or running before its first text. */
-  | { kind: "asking"; question?: string }
+  | ({ kind: "asking" } & Carried)
   /** A timesheet task holds the agent. */
-  | { kind: "waiting"; question?: string }
-  | { kind: "streaming"; question?: string; pieces: string[] }
-  | { kind: "answered"; question?: string; text: string; head: string }
-  | { kind: "stopped"; question?: string; text: string }
-  | { kind: "failed"; question?: string; text: string; message: string };
+  | ({ kind: "waiting" } & Carried)
+  | ({ kind: "streaming"; pieces: string[] } & Carried)
+  | ({ kind: "answered"; text: string; head: string } & Carried)
+  | ({ kind: "stopped"; text: string } & Carried)
+  | ({ kind: "failed"; text: string; message: string } & Carried);
 
 /** An ask just sent, on the default question or `question`. */
 export function startAsk(question?: string): AskState {
@@ -49,8 +60,19 @@ export function askGoing(state: AskState): boolean {
   );
 }
 
-const withQuestion = (state: AskState) =>
-  state.question === undefined ? {} : { question: state.question };
+const withQuestion = (state: AskState): Carried => ({
+  ...(state.question === undefined ? {} : { question: state.question }),
+  ...(state.clone === undefined ? {} : { clone: state.clone }),
+});
+
+/** What the ask does with the user's clone, as the ask's start answered. */
+export function withClone(
+  state: AskState,
+  clone: DeckCloneUse | undefined,
+): AskState {
+  if (clone === undefined) return state;
+  return { ...state, clone };
+}
 
 /** The answer the cache gave at once. */
 export function answerAsk(
@@ -59,6 +81,26 @@ export function answerAsk(
   head: string,
 ): AskState {
   return { kind: "answered", ...withQuestion(state), text, head };
+}
+
+/**
+ * An answer's footer: the head it read, with `, and your clone` when it
+ * read the user's clone too, and why it didn't when it couldn't.
+ */
+export function answerFooter(state: Extract<AskState, { kind: "answered" }>): {
+  source: string;
+  cloneReason?: string;
+  offersClone: boolean;
+} {
+  const source = `From the code at ${shortHead(state.head)}`;
+  const clone = state.clone;
+  if (clone?.state === "read") {
+    return { source: `${source}, and your clone`, offersClone: false };
+  }
+  if (clone?.state === "unavailable") {
+    return { source, cloneReason: clone.reason, offersClone: false };
+  }
+  return { source, offersClone: clone?.state === "not_chosen" };
 }
 
 /** The ask couldn't start or its turn failed, with what came so far. */
@@ -71,7 +113,7 @@ export function failAsk(state: AskState, message: string): AskState {
   };
 }
 
-/** The ask stopped before its turn ended, such as by a revoked consent, keeping what came. */
+/** The ask stopped before its turn ended, by Stop or a revoked consent, keeping what came. */
 export function stopAsk(state: AskState): AskState {
   return { kind: "stopped", ...withQuestion(state), text: askText(state) };
 }
@@ -101,13 +143,7 @@ export function applyTurnEvent(
       if (event.outcome === "done") {
         return answerAsk(state, askText(state), head);
       }
-      if (event.outcome === "cancelled") {
-        return {
-          kind: "stopped",
-          ...withQuestion(state),
-          text: askText(state),
-        };
-      }
+      if (event.outcome === "cancelled") return stopAsk(state);
       return failAsk(state, event.error ?? "The answer couldn't be finished.");
     case "conversation-closed":
       return state;

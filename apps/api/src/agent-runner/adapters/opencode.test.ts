@@ -477,6 +477,32 @@ describe("OpenCode conversation", () => {
     ]);
   });
 
+  it("reads a clone's worktree with its read-only file tools, in that folder only", () => {
+    const root = path.join(path.sep, "cache", "worktrees", "0123456789abcdef");
+    const without = JSON.parse(
+      conversation.buildInvocation(conversationInput).files["opencode.json"]!,
+    ).permission;
+    expect(without).toEqual({ "*": "deny", "ajour_*": "allow" });
+
+    const { permission } = JSON.parse(
+      conversation.buildInvocation({ ...conversationInput, readRoot: root })
+        .files["opencode.json"]!,
+    );
+    expect(permission).toEqual({
+      "*": "deny",
+      "ajour_*": "allow",
+      read: "allow",
+      grep: "allow",
+      glob: "allow",
+      list: "allow",
+      external_directory: { "*": "deny", [path.join(root, "*")]: "allow" },
+    });
+    // Editing, the shell and everything else stay denied by "*".
+    expect(Object.keys(permission)).not.toContain("edit");
+    expect(Object.keys(permission)).not.toContain("bash");
+    expect(conversation.readsFiles).toBe(true);
+  });
+
   it("sets the model in the config when one is set", () => {
     const { files } = conversation.buildInvocation({
       ...conversationInput,

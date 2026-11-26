@@ -204,11 +204,15 @@ import {
   deckAskResponseSchema,
   deckCacheSettingsUpdateSchema,
   deckCacheStorageSchema,
+  deckCloneSchema,
+  deckClonesSchema,
+  deckCloneSuggestionsSchema,
   deckConsentsSchema,
   deckOpenedPullRequestSchema,
   deckPreloadResultSchema,
   deckSinceReviewSchema,
   type DeckAskRequest,
+  type DeckCloneSource,
   type DeckConsentRevokeRequest,
   type DeckOpenRequest,
   type DeckSinceReviewRequest,
@@ -244,6 +248,8 @@ export function askDeck(
   pluginId: string,
   connectionId: string,
   ask: DeckAskRequest,
+  /** Stops the ask before its turn starts, as while the clone is fetched. */
+  signal?: AbortSignal,
 ) {
   return appApiRequest(
     "askDeck",
@@ -252,6 +258,7 @@ export function askDeck(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(ask),
+      ...(signal ? { signal } : {}),
     },
     deckAskResponseSchema,
     (unit) =>
@@ -305,6 +312,79 @@ export function revokeDeckConsent(repository: DeckConsentRevokeRequest) {
       body: JSON.stringify(repository),
     },
     deckConsentsSchema,
+  );
+}
+
+/**
+ * The repository's clone, when the user chose one, and the repository
+ * folders Ajour already knows whose remotes name it (#795).
+ */
+export function getDeckCloneSuggestions(
+  pluginId: string,
+  connectionId: string,
+  repository: string,
+  clone: DeckCloneSource,
+) {
+  return appApiRequest(
+    "getDeckCloneSuggestions",
+    deckPath(pluginId, connectionId, "clone/suggestions"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repository, clone }),
+    },
+    deckCloneSuggestionsSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Chooses a suggested folder as the repository's clone. A folder that isn't
+ * a clone of it answers 400 with the reason, for the picker.
+ */
+export function chooseDeckCloneFolder(
+  pluginId: string,
+  connectionId: string,
+  repository: string,
+  clone: DeckCloneSource,
+  folderId: string,
+) {
+  return appApiRequest(
+    "chooseDeckCloneFolder",
+    deckPath(pluginId, connectionId, "clone"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repository, clone, folderId }),
+    },
+    z.object({ clone: deckCloneSchema }),
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/** The clones the user chose, for Settings › Agents. */
+export function getDeckClones() {
+  return appApiRequest(
+    "getDeckClones",
+    "/api/deck/clones",
+    undefined,
+    deckClonesSchema,
+  );
+}
+
+/** Forgets a repository's clone: its asks read the pull request alone. */
+export function forgetDeckClone(repository: DeckConsentRevokeRequest) {
+  return appApiRequest(
+    "forgetDeckClone",
+    "/api/deck/clones/forget",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(repository),
+    },
+    deckClonesSchema,
   );
 }
 
@@ -648,6 +728,19 @@ export function saveDeckCacheCap(capBytes: number) {
       body: JSON.stringify(deckCacheSettingsUpdateSchema.parse({ capBytes })),
     },
     deckCacheStorageSchema,
+  );
+}
+
+/**
+ * Shows, in the file manager, the folder of the local clone checkouts Deck
+ * kept (ADR 0023). The page never names it: the local API opens its own.
+ */
+export function openKeptDeckCloneFolders() {
+  return appApiRequest(
+    "openKeptDeckCloneFolders",
+    "/api/deck/storage/kept/open",
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+    z.object({ ok: z.literal(true) }),
   );
 }
 

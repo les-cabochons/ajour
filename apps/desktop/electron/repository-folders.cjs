@@ -49,4 +49,49 @@ function createFolderChooser({ window, assertSender, show, add, cancel }) {
     return add(projectId, selected.filePaths[0]);
   };
 }
-module.exports = { protectedRepositoryFolders, createFolderChooser };
+/**
+ * Deck's clone chooser (#795): the native dialog picks the folder, and the
+ * local API keeps it only once git says it is a clone of the repository.
+ * The window names the repository; only this dialog names a new folder.
+ * Answers `{ clone }`, `{ refused }` with the sentence the picker shows, or
+ * null when the user cancelled.
+ */
+function createCloneChooser({ window, assertSender, show, choose, cancel }) {
+  const text = (value, max) =>
+    typeof value === "string" && value.trim() && value.length <= max;
+  return async (event, request) => {
+    assertSender(event);
+    if (
+      typeof request !== "object" ||
+      request === null ||
+      !text(request.pluginId, 200) ||
+      !text(request.connectionId, 200) ||
+      !text(request.repository, 240) ||
+      typeof request.clone !== "object" ||
+      request.clone === null
+    )
+      throw new Error("Choose a repository.");
+    const selected = await show(window(), {
+      title: `Choose your clone of ${request.repository}`,
+      properties: ["openDirectory"],
+    });
+    if (selected.canceled || selected.filePaths.length !== 1) {
+      cancel();
+      return null;
+    }
+    return choose(
+      {
+        pluginId: request.pluginId,
+        connectionId: request.connectionId,
+        repository: request.repository,
+      },
+      request.clone,
+      selected.filePaths[0],
+    );
+  };
+}
+module.exports = {
+  protectedRepositoryFolders,
+  createFolderChooser,
+  createCloneChooser,
+};

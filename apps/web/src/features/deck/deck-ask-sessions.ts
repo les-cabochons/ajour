@@ -3,6 +3,7 @@ import {
   DECK_CONCERN_DEFAULT_QUESTION,
   deckNeedsConsentSchema,
   type DeckAskAnchor,
+  type DeckCloneSource,
   type DeckNeedsConsent,
 } from "@ajour/shared/deck";
 import {
@@ -12,6 +13,7 @@ import {
   failAsk,
   startAsk,
   stopAsk,
+  withClone,
   type AskState,
 } from "@/domain/deck/ask";
 import { watchAgentTurn } from "@/lib/agent-turns";
@@ -36,6 +38,11 @@ export interface DeckAskTarget {
   repository: string;
   number: number;
   head: string;
+  /**
+   * Where the repository is cloned from, from the pull request's facts: an
+   * ask can then read the user's local clone too (#795).
+   */
+  clone?: DeckCloneSource;
 }
 
 /** True once the repository is allowed, false for Not now, or why recording the consent failed. */
@@ -60,6 +67,11 @@ export interface AskSession {
   awaitingConsent: boolean;
   /** The running turn, which Stop stops and whose events the ask follows. */
   turnId?: string;
+  /**
+   * Stops the ask before its turn starts, as while Ajour fetches the pull
+   * request into the clone. Set while the ask's request runs.
+   */
+  starting?: AbortController;
   /** When it was asked: a revocation from before then leaves it. */
   askedAt?: number;
 }
@@ -185,8 +197,20 @@ export class DeckAskSessions {
   }
 
   stop(key: string) {
-    const turnId = this.#sessions.get(key)?.turnId;
-    if (turnId) void cancelAgentTurn(turnId).catch(() => undefined);
+    const session = this.#sessions.get(key);
+    if (session?.turnId) {
+      void cancelAgentTurn(session.turnId).catch(() => undefined);
+      return;
+    }
+    if (!session?.starting) return;
+    // Before its turn: the request stops, and git with it.
+    this.#bump(key);
+    session.starting.abort();
+    this.#set(key, {
+      ...session,
+      starting: undefined,
+      state: stopAsk(session.state),
+    });
   }
 
   /**
@@ -213,18 +237,35 @@ export class DeckAskSessions {
     }));
     const current = () => this.#generations.get(key) === mine;
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const starting = new AbortController();
+      this.#update(key, () => ({ starting }));
+      const started = () =>
+        this.#update(key, (session) =>
+          session.starting === starting ? { starting: undefined } : {},
+        );
       try {
-        const asked = await askDeck(target.pluginId, target.connectionId, {
-          repository: target.repository,
-          number: target.number,
-          head: target.head,
-          anchor,
-          ...(question === undefined ? {} : { question }),
-        });
+        const asked = await askDeck(
+          target.pluginId,
+          target.connectionId,
+          {
+            repository: target.repository,
+            number: target.number,
+            head: target.head,
+            anchor,
+            ...(question === undefined ? {} : { question }),
+            ...(target.clone ? { clone: target.clone } : {}),
+          },
+          starting.signal,
+        );
         if (!current()) return;
+        started();
         if (asked.kind === "answer") {
           this.#update(key, (session) => ({
-            state: answerAsk(session.state, asked.text, asked.head),
+            state: answerAsk(
+              withClone(session.state, asked.clone),
+              asked.text,
+              asked.head,
+            ),
           }));
           return;
         }
@@ -232,11 +273,15 @@ export class DeckAskSessions {
           asked.turn.conversationId,
           this.#sessions.get(key)?.askedAt ?? Date.now(),
         );
-        this.#update(key, () => ({ turnId: asked.turn.id }));
+        this.#update(key, (session) => ({
+          state: withClone(session.state, asked.clone),
+          turnId: asked.turn.id,
+        }));
         this.#watch(key, asked.turn.id, target.head);
         return;
       } catch (error) {
         if (!current()) return;
+        started();
         const consent =
           error instanceof AppApiError
             ? deckNeedsConsentSchema.safeParse(error.payload)
@@ -312,7 +357,13 @@ export class DeckAskSessions {
         this.close(key);
       } else if (!session.turnId) {
         this.#bump(key);
-        this.#set(key, { ...session, state: stopAsk(session.state) });
+        // Its request stops too, and git with it while it prepares the clone.
+        session.starting?.abort();
+        this.#set(key, {
+          ...session,
+          starting: undefined,
+          state: stopAsk(session.state),
+        });
       }
     }
   }

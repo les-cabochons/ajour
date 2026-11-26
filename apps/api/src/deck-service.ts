@@ -402,6 +402,12 @@ export interface DeckFileVersions {
 
 /** A pull request Deck holds at one head, for an ask and the agent's reads (#791). */
 export interface DeckHeldPullRequest {
+  /**
+   * Its content cache entry's key, as `deckCacheKeyString` writes it. What
+   * lives with the entry, such as the worktree of the user's clone (#795),
+   * goes when the cache removes it.
+   */
+  key: string;
   diff: DeckPullRequestDiff;
   guide: DeckGuide | null;
   versions: DeckFileVersions;
@@ -1007,6 +1013,7 @@ export function createDeckService(options: {
     if (!found) return undefined;
     try {
       return {
+        key: deckCacheKeyString(found.key),
         diff: found.diff,
         versions: found.versions,
         guide: await found.guide,

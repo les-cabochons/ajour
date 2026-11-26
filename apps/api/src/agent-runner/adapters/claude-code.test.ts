@@ -238,6 +238,42 @@ describe("Claude Code conversation", () => {
     expect(files["prompt.md"]).toBe("Review pull request pr-1.");
   });
 
+  it("reads a clone's worktree with its read-only file tools only, and nothing without one", () => {
+    const without = conversation.buildInvocation(conversationInput).args;
+    expect(without[without.indexOf("--tools") + 1]).toBe("");
+    expect(without).not.toContain("--add-dir");
+
+    const { args } = conversation.buildInvocation({
+      ...conversationInput,
+      readRoot: "/cache/worktrees/0123456789abcdef",
+    });
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read,Grep,Glob");
+    expect(args[args.indexOf("--add-dir") + 1]).toBe(
+      "/cache/worktrees/0123456789abcdef",
+    );
+    // dontAsk refuses whatever isn't allowed: no write, no shell, no read elsewhere.
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("mcp__ajour");
+    expect(conversation.readsFiles).toBe(true);
+  });
+
+  it("allows reads of a WSL worktree by name, since Claude Code refuses a network folder otherwise", () => {
+    const root = String.raw`\\wsl.localhost\Ubuntu\home\alex\.cache\ajour\deck-worktrees\0123`;
+    const { args } = conversation.buildInvocation({
+      ...conversationInput,
+      readRoot: root,
+    });
+    expect(args[args.indexOf("--add-dir") + 1]).toBe(root);
+    const allowed = args.slice(
+      args.indexOf("--allowedTools") + 1,
+      args.indexOf("--permission-mode"),
+    );
+    expect(allowed).toEqual([
+      "mcp__ajour",
+      "Read(//wsl.localhost/Ubuntu/home/alex/.cache/ajour/deck-worktrees/0123/**)",
+    ]);
+  });
+
   it("resumes an earlier conversation by its session ID", () => {
     expect(
       conversation.buildInvocation({ ...conversationInput, resume: "s-1" })

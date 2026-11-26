@@ -364,23 +364,82 @@ it("shows Explain, Comment and Ask above lines dragged over, and E and C act onl
 
   press("e");
 
-  expect(api.askDeck).toHaveBeenCalledWith("github", "work", {
-    repository: "acme/billing-api",
-    number: 1,
-    head: HEAD,
-    anchor: {
-      kind: "lines",
-      path: "src/api.ts",
-      start: { side: "head", line: 1 },
-      end: { side: "head", line: 2 },
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    {
+      repository: "acme/billing-api",
+      number: 1,
+      head: HEAD,
+      anchor: {
+        kind: "lines",
+        path: "src/api.ts",
+        start: { side: "head", line: 1 },
+        end: { side: "head", line: 2 },
+      },
     },
-  });
+    expect.any(AbortSignal),
+  );
   await screen.findByText("It upper-cases the second line.");
   expect(toolbar()).toBeNull();
 
   // The selection is gone: C continues nothing here, and E asks nothing more.
   press("e");
   expect(api.askDeck).toHaveBeenCalledTimes(1);
+});
+
+it("sends where the repository is cloned from, and ends a line answer that read the clone with , and your clone", async () => {
+  const identity = {
+    repositoryIdentity: {
+      cloneUrls: ["https://github.com/acme/billing-api.git"],
+    },
+    headRef: "feature/login",
+  };
+  localStore.syncPullRequests(
+    {
+      pluginId: "github",
+      pluginName: "GitHub",
+      connectionId: "work",
+      connectionLabel: "Work",
+    },
+    {
+      viewer: { login: "alex", isBot: false },
+      pullRequests: [
+        { ...pullRequestFacts, repository: "acme/billing-api", ...identity },
+      ],
+    },
+  );
+  vi.mocked(api.askDeck).mockResolvedValue({
+    kind: "answer",
+    text: "It upper-cases the second line.",
+    head: HEAD,
+    clone: { state: "read" },
+  });
+  await renderReviewPage();
+
+  drag(FIRST, { start: 1, side: "additions", end: 2, endSide: "additions" });
+  press("e");
+
+  expect(api.askDeck).toHaveBeenCalledWith(
+    "github",
+    "work",
+    expect.objectContaining({
+      anchor: {
+        kind: "lines",
+        path: "src/api.ts",
+        start: { side: "head", line: 1 },
+        end: { side: "head", line: 2 },
+      },
+      clone: identity,
+    }),
+    expect.any(AbortSignal),
+  );
+  const answer = await screen.findByRole("region", {
+    name: "Explanation of lines 1–2",
+  });
+  expect(
+    await within(answer).findByText("From the code at a41c9e2, and your clone"),
+  ).toBeTruthy();
 });
 
 it("opens the composer on the selected lines with C, and Escape leaves them", async () => {
@@ -691,6 +750,7 @@ it("asks a typed question about the lines with A", async () => {
       },
       question: "Is it tested?",
     }),
+    expect.any(AbortSignal),
   );
   expect(await screen.findByText("No test covers it.")).toBeTruthy();
 });

@@ -609,6 +609,15 @@ export function PullRequestChanges({
   versions: ReviewVersionsView;
   viewing: ReviewViewedView;
 }) {
+  const { repositoryIdentity, headRef } = pullRequest.facts;
+  // Where the repository is cloned from, so an ask can read the user's clone.
+  const cloneSource = useMemo(
+    () =>
+      repositoryIdentity
+        ? { repositoryIdentity, ...(headRef ? { headRef } : {}) }
+        : undefined,
+    [repositoryIdentity, headRef],
+  );
   return (
     // Named outright: the heading's count would join its name.
     <section className="deck-changes" aria-label="Changes">
@@ -635,6 +644,7 @@ export function PullRequestChanges({
           repository={pullRequest.facts.repository}
           number={pullRequest.facts.number}
           head={state.value.headSha}
+          clone={cloneSource}
         >
           {versions.pushes ? (
             <NewPushesBanner

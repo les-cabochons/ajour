@@ -70,6 +70,7 @@ export function buildTurnPrompt(
   context: {
     headChange?: { from: string; to: string };
     historyLost?: boolean;
+    readRoot?: string;
   } = {},
 ): string {
   const notes = [
@@ -81,6 +82,11 @@ export function buildTurnPrompt(
     ...(context.headChange
       ? [
           `The pull request's head changed from ${context.headChange.from} to ${context.headChange.to}. Ajour's tools now answer for ${context.headChange.to} only, and earlier answers may describe ${context.headChange.from}.`,
+        ]
+      : []),
+    ...(context.readRoot
+      ? [
+          `For this turn you can also read the whole repository at the pull request's head, in ${context.readRoot}, with your Read, Grep and Glob tools. It is a checkout of that commit for reading only: never try to change it or run anything in it.`,
         ]
       : []),
   ];

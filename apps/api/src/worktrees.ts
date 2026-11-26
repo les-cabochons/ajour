@@ -15,7 +15,6 @@
  * runs git.
  */
 
-import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -52,8 +51,7 @@ import {
 } from "./agent-runner/cli-path.ts";
 import type { ApiEvents } from "./events.ts";
 import { childEnvironment, gitEnvironment } from "./process-broker.ts";
-import { resolveSpawn } from "./process-spawn/index.ts";
-import { endProcessTree } from "./process-tree.ts";
+import { checkedRef, Git, GitFailure, lastLine } from "./git-process.ts";
 import { worktreePathIn } from "./repository-folders.ts";
 import type { AppApiStorage } from "./storage.ts";
 
@@ -77,13 +75,6 @@ const DEFAULT_TIMEOUTS: WorktreeGitTimeouts = {
 const MAX_BRANCH_LENGTH = 480;
 /** How many `-2`, `-3` names are tried before the create gives up. */
 const MAX_SUFFIX = 50;
-/** Git's output kept per call. A call that writes more fails. */
-const MAX_OUTPUT_BYTES = 1024 * 1024;
-/**
- * How long a call waits for git's output to end once git has exited. A
- * process git started may hold that output open for as long as it runs.
- */
-const OUTPUT_DRAIN_MS = 1000;
 /** The line Ajour keeps in the repository's local exclude file. */
 const EXCLUDE_LINE = "/.ajour/";
 const DAY_MS = 86_400_000;
@@ -268,166 +259,9 @@ export interface WorktreesOptions {
   timeouts?: Partial<WorktreeGitTimeouts>;
 }
 
-interface GitResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-  timedOut: boolean;
-}
-
-/** A git call that failed, with what git said, for the user's message. */
-class GitFailure extends Error {
-  readonly reason: "git_failed" | "timeout";
-  constructor(reason: "git_failed" | "timeout", said: string) {
-    super(said);
-    this.reason = reason;
-  }
-}
-
-/** The last line git wrote, which says why it stopped. */
-function lastLine(text: string): string {
-  return (
-    text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .at(-1) ?? ""
-  );
-}
-
 /** Whether two paths name the same place, whatever the separators. */
 function samePath(a: string, b: string): boolean {
   return path.relative(a, b) === "";
-}
-
-/** A ref Ajour may hand git: never one git could read as an option. */
-function checkedRef(ref: string): string {
-  if (!ref || ref.startsWith("-") || /[\0\r\n]/.test(ref))
-    throw new GitFailure("git_failed", "Ajour refused an unsafe git ref.");
-  return ref;
-}
-
-/** Git, run in one repository folder under the module's rules. */
-class Git {
-  private readonly executable: string;
-  private readonly env: Record<string, string | undefined>;
-  private readonly cwd: string;
-  constructor(
-    executable: string,
-    env: Record<string, string | undefined>,
-    cwd: string,
-  ) {
-    this.executable = executable;
-    this.env = env;
-    this.cwd = cwd;
-  }
-
-  /**
-   * Runs git and answers its exit code and output. Rejects when git can't
-   * start, or wrote too much.
-   *
-   * A call never outlives its deadline, and never waits long on git's
-   * output once git is gone. A process git started, such as a hook's
-   * background child or a credential or fetch helper, can inherit that
-   * output and keep it open after git exits. So the call settles on git's
-   * exit, after at most `OUTPUT_DRAIN_MS` for what is left to read. At the
-   * deadline it ends git with everything it started, lets go of the output
-   * and answers `timedOut`. Otherwise the hand off would hang, and hold the
-   * repository's lock over every later operation there.
-   */
-  run(args: readonly string[], timeoutMs: number): Promise<GitResult> {
-    const plan = resolveSpawn(this.executable, args, this.env);
-    if ("refused" in plan)
-      return Promise.reject(
-        new GitFailure("git_failed", "Ajour couldn't start git."),
-      );
-    return new Promise<GitResult>((resolve, reject) => {
-      const child = spawn(plan.command, plan.args, {
-        env: plan.env,
-        cwd: this.cwd,
-        shell: false,
-        windowsHide: true,
-        // On POSIX git leads its own session: its helpers end with it, and
-        // it has no terminal to ask a password on.
-        detached: process.platform !== "win32",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      const chunks = { stdout: [] as Buffer[], stderr: [] as Buffer[] };
-      let size = 0;
-      let exited = false;
-      let settled = false;
-      let timedOut = false;
-      let draining: ReturnType<typeof setTimeout> | undefined;
-      const stop = () => endProcessTree(child, plan.env, () => exited);
-      /** Ends the call once, and stops reading: nothing waits on a stream after. */
-      const settle = (answer: GitFailure | { code: number | null }) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        clearTimeout(draining);
-        child.stdout.destroy();
-        child.stderr.destroy();
-        if (answer instanceof GitFailure) reject(answer);
-        else
-          resolve({
-            code: answer.code,
-            stdout: Buffer.concat(chunks.stdout).toString("utf8"),
-            stderr: Buffer.concat(chunks.stderr).toString("utf8"),
-            timedOut,
-          });
-      };
-      const timer = setTimeout(() => {
-        timedOut = true;
-        stop();
-        settle({ code: null });
-      }, timeoutMs);
-      for (const stream of ["stdout", "stderr"] as const)
-        child[stream].on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > MAX_OUTPUT_BYTES) {
-            stop();
-            settle(new GitFailure("git_failed", "Git wrote too much output."));
-          } else chunks[stream].push(chunk);
-        });
-      child.once("error", () =>
-        settle(new GitFailure("git_failed", "Ajour couldn't start git.")),
-      );
-      child.once("exit", (code) => {
-        exited = true;
-        // Git is gone. Its output closes at once unless something it
-        // started still holds it: that gets a moment, and no more.
-        draining = setTimeout(() => settle({ code }), OUTPUT_DRAIN_MS);
-      });
-      // The usual end: git exited and its output is read to the end.
-      child.once("close", (code) => settle({ code }));
-    });
-  }
-
-  /** The trimmed output of a call that must succeed. */
-  async read(args: readonly string[], timeoutMs: number): Promise<string> {
-    const result = await this.run(args, timeoutMs);
-    if (result.timedOut)
-      throw new GitFailure("timeout", "Git took too long to answer.");
-    if (result.code !== 0)
-      throw new GitFailure(
-        "git_failed",
-        lastLine(result.stderr) || "Git failed without saying why.",
-      );
-    return result.stdout.trim();
-  }
-
-  /** Whether a call that answers by its exit code said yes (0) or no (1). */
-  async test(args: readonly string[], timeoutMs: number): Promise<boolean> {
-    const result = await this.run(args, timeoutMs);
-    if (result.timedOut)
-      throw new GitFailure("timeout", "Git took too long to answer.");
-    if (result.code === 0) return true;
-    if (result.code === 1) return false;
-    throw new GitFailure(
-      "git_failed",
-      lastLine(result.stderr) || "Git failed without saying why.",
-    );
-  }
 }
 
 /** What the new branch starts from. */
@@ -2769,7 +2603,8 @@ function asRefusal(
   if (error instanceof WorktreeRefused) return error;
   if (error instanceof GitFailure)
     return new WorktreeRefused(
-      error.reason,
+      // A hand off's git is never stopped by its caller.
+      error.reason === "cancelled" ? "git_failed" : error.reason,
       error.reason === "timeout"
         ? `Ajour couldn't ${doing}: git took too long to answer.`
         : `Ajour couldn't ${doing}. Git said: ${error.message}`,

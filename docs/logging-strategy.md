@@ -587,6 +587,7 @@ The local API emits these (#305, #306):
 | `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                                                                  |
 | `agent.conversation`, `agent.turn`    | `AgentConversations` in `apps/api/src/agent-runner/conversations.ts`: a conversation from its first turn to its close, a turn from its start to its end |
 | `deck.guide_build`                    | `createGuideBuilds` in `apps/api/src/deck-guide-builds.ts`, for each guide build, from its start in the worker to its end                               |
+| `deck.clone_kept`                     | `createDeckClones` in `apps/api/src/deck-clones.ts`, once a run for each worktree folder its cleanup leaves where it was                                |
 
 ### Requests
 
@@ -1140,6 +1141,11 @@ channel to read the event each emits.
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
 | `deck.ask`                           | command, request                        | route, client call                               |
+| `deck.clone_choose`                  | command, request, ipc                   | route, IPC channel, client call                  |
+| `deck.clone_forget`                  | command, request                        | route, client call                               |
+| `deck.clone_kept`                    | job                                     | local API                                        |
+| `deck.clone_suggestions`             | command, request                        | route, client call                               |
+| `deck.clones`                        | command, request                        | route, client call                               |
 | `deck.comment_submission_prepare`    | command                                 | store command                                    |
 | `deck.consent`                       | command, request                        | route, client call                               |
 | `deck.consent_revoke`                | command, request                        | route, client call                               |
@@ -1157,6 +1163,7 @@ channel to read the event each emits.
 | `deck.review_submission_prepare`     | command                                 | store command                                    |
 | `deck.since_review`                  | command, request                        | route, client call                               |
 | `deck.storage_clear`                 | request, command                        | route, client call                               |
+| `deck.storage_open_kept`             | request, command                        | route, client call                               |
 | `deck.storage_read`                  | request, command                        | route, client call                               |
 | `deck.storage_update`                | request, command                        | route, client call                               |
 | `deck.viewed_files_adopt`            | command                                 | store command                                    |

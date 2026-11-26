@@ -1,3 +1,4 @@
+import type { DeckClone, DeckCloneSource } from "@ajour/shared/deck";
 import type { RepositoryFolder } from "@ajour/shared/repository-folders";
 import type {
   CatalogPluginDownloadResponse,
@@ -572,6 +573,16 @@ declare global {
         trace?: TraceCarrier,
       ) => Promise<void>;
       chooseFolder?: (projectId: string) => Promise<RepositoryFolder | null>;
+      /**
+       * Opens the native folder dialog to choose a repository's clone
+       * (#795). Null when cancelled; `refused` says why the folder isn't one.
+       */
+      chooseDeckClone?: (request: {
+        pluginId: string;
+        connectionId: string;
+        repository: string;
+        clone: DeckCloneSource;
+      }) => Promise<{ clone: DeckClone } | { refused: string } | null>;
       installPlugin?: (
         trace?: TraceCarrier,
       ) => Promise<PluginInstallResponse | null>;
