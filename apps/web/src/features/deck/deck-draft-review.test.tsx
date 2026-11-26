@@ -50,11 +50,10 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   submitPullRequestReview: vi.fn(),
   postPullRequestComment: vi.fn(),
 }));
-const toasts = vi.hoisted(() => ({ show: vi.fn(), error: vi.fn() }));
+const toasts = vi.hoisted(() => ({ show: vi.fn() }));
 vi.mock("@/components/ui/toast", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/ui/toast")>()),
   showToast: toasts.show,
-  showErrorToast: toasts.error,
 }));
 // Highlighting runs in the window here: jsdom has no workers.
 vi.mock("@/components/diff-highlighter", () => ({
@@ -257,7 +256,6 @@ afterEach(() => {
   vi.mocked(api.submitPullRequestReview).mockReset();
   vi.mocked(api.postPullRequestComment).mockReset();
   toasts.show.mockReset();
-  toasts.error.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -1204,7 +1202,7 @@ it("takes what was posted out of the draft when new commits held back the vote, 
   expect(second!.submissionId).not.toBe(first!.submissionId);
 });
 
-it("says the vote wasn't sent after R then Y, when new commits held it back", async () => {
+it("opens the dialog on why the vote wasn't sent after R then Y, when new commits held it back", async () => {
   vi.mocked(api.submitPullRequestReview).mockResolvedValueOnce({
     reviewId: "1-alex",
     voteWithheld: { reason: "new_commits" },
@@ -1212,12 +1210,12 @@ it("says the vote wasn't sent after R then Y, when new commits held it back", as
   await renderReviewPage();
   press("r");
   press("y");
-  await waitFor(() =>
-    expect(toasts.error).toHaveBeenCalledWith({
-      title: "Your vote wasn't sent",
-      description:
-        "New commits arrived while your review was sending. Review them, then vote again.",
-    }),
+  // As a failure does, it opens the dialog on why.
+  const dialog = await screen.findByRole("dialog", {
+    name: "Your vote wasn't sent",
+  });
+  expect(dialog.textContent).toContain(
+    "New commits arrived while your review was sending. Review them, then vote again.",
   );
   expect(toasts.show).not.toHaveBeenCalled();
   expect(localStore.snapshot().deckDraftReviews).toEqual([]);
