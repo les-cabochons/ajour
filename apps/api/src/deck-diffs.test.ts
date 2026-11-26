@@ -93,4 +93,26 @@ describe("Deck's diff workers", () => {
       text: expect.stringContaining("@@ -1,1 +1,1 @@"),
     });
   });
+
+  it("still stops a diff after it moved to a new worker", async () => {
+    const diffs = diffsOf();
+    const first = new AbortController();
+    const second = new AbortController();
+    const big = lockfile();
+    const stoppedFirst = diffs.write(
+      big.changes,
+      big.contents,
+      "open",
+      first.signal,
+    );
+    const moved = diffs.write(big.changes, big.contents, "open", second.signal);
+
+    // The first stop sends the second diff to a new worker; stopping it
+    // there must still end it.
+    first.abort();
+    second.abort();
+
+    await expect(stoppedFirst).rejects.toBeInstanceOf(DeckDiffCancelled);
+    await expect(moved).rejects.toBeInstanceOf(DeckDiffCancelled);
+  });
 });

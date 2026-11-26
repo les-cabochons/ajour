@@ -65,9 +65,15 @@ type Pending = Map<
  * Each worker answers only its own jobs.
  */
 function workerLane(workerUrl: URL) {
-  let current: { worker: Worker; pending: Pending } | undefined;
+  type Held = { worker: Worker; pending: Pending };
+  let current: Held | undefined;
   let idle: NodeJS.Timeout | undefined;
   let nextId = 0;
+  /**
+   * The worker holding each waiting diff now: a diff moved to a new worker
+   * is stopped there.
+   */
+  const holders = new Map<number, Held>();
 
   const failAll = (pending: Pending, error: Error) => {
     for (const job of pending.values()) job.reject(error);
@@ -124,26 +130,30 @@ function workerLane(workerUrl: URL) {
       };
       const written = new Promise<DiffJobWritten>((resolve, reject) => {
         pending.set(id, { job, resolve, reject });
-      });
+      }).finally(() => holders.delete(id));
+      holders.set(id, current);
       worker.postMessage(job);
       signal.addEventListener(
         "abort",
         () => {
-          const waiting = pending.get(id);
-          if (!waiting) return;
-          pending.delete(id);
+          const holder = holders.get(id);
+          const waiting = holder?.pending.get(id);
+          if (!holder || !waiting) return;
+          holder.pending.delete(id);
           waiting.reject(new DeckDiffCancelled());
-          if (current?.worker !== worker) return;
+          if (current?.worker !== holder.worker) return;
           // The worker may be writing this diff: end it, and send the
           // diffs behind it to a new one.
           void stop();
-          if (!pending.size) return;
-          current = start();
-          for (const [queued, entry] of pending) {
-            current.pending.set(queued, entry);
-            current.worker.postMessage(entry.job);
+          if (!holder.pending.size) return;
+          const next = start();
+          current = next;
+          for (const [queued, entry] of holder.pending) {
+            next.pending.set(queued, entry);
+            holders.set(queued, next);
+            next.worker.postMessage(entry.job);
           }
-          pending.clear();
+          holder.pending.clear();
         },
         { once: true },
       );
