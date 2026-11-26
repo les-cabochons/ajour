@@ -34,26 +34,18 @@ function write(job: DiffJob): DiffJobResult {
     for (const change of job.changes) {
       const content = job.contents.get(change.path)!;
       const { timeout, maxEditLength } = job.fileBudget;
-      const limited = Boolean(content.old && content.new);
-      // jsdiff's own clock, so a jump of it, as after a sleep, reads the same here.
-      const started = Date.now();
       const part = fileDiff(
         change,
         content,
-        limited ? { timeout, maxEditLength } : { timeout },
+        content.old && content.new ? { timeout, maxEditLength } : { timeout },
       );
       if (part !== undefined) {
         parts.push(part);
         continue;
       }
-      // jsdiff says only that it stopped: one that stopped before its time
-      // was up stopped at the edit limit. Any other counts as the clock's,
-      // so it's compared again rather than kept too large.
-      const took = Date.now() - started;
       tooLarge.set(change.path, {
         oldLines: lineCount(content.old),
         newLines: lineCount(content.new),
-        stoppedBy: limited && took < timeout ? "edits" : "clock",
       });
       // Written as a file too large to read, with git's index line after
       // its first: its versions' hashes stand for the lines it has none of,

@@ -19,14 +19,10 @@ export interface DiffJob {
   fileBudget: Required<DiffBudget>;
 }
 
-/**
- * A file whose diff passed its budget: its lines in each version, 0 for a version it has none in, and what stopped
- * it: its added and removed lines, which stop it on every computer alike, or the clock, which a faster try may beat.
- */
+/** A file whose diff passed its budget: its lines in each version, 0 for a version it has none in. */
 export interface DiffTooLarge {
   oldLines: number;
   newLines: number;
-  stoppedBy: "edits" | "clock";
 }
 
 /**
