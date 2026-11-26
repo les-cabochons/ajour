@@ -527,6 +527,42 @@ it("turns an answer into a draft comment on its lines", async () => {
   ]);
 });
 
+it("adds an answer after the words already typed in the composer on its lines", async () => {
+  vi.mocked(api.askDeck).mockResolvedValue({
+    kind: "answer",
+    text: "It shouts.",
+    head: HEAD,
+  });
+  await renderReviewPage();
+
+  drag(FIRST, { start: 2, side: "additions", end: 3, endSide: "additions" });
+  press("e");
+  const answer = await screen.findByRole("region", {
+    name: "Explanation of lines 2–3",
+  });
+  await within(answer).findByText("It shouts.");
+
+  // Comment on the same lines, and type before turning the answer in.
+  drag(FIRST, { start: 2, side: "additions", end: 3, endSide: "additions" });
+  press("c");
+  const form = await screen.findByRole("form", { name: "New comment" });
+  const field = within(form).getByRole("textbox", {
+    name: "Comment",
+  }) as HTMLTextAreaElement;
+  fireEvent.change(field, { target: { value: "Is this on purpose?" } });
+
+  fireEvent.click(
+    within(answer).getByRole("button", { name: "Turn into a comment" }),
+  );
+
+  await waitFor(() =>
+    expect(field.value).toBe("Is this on purpose?\n\nIt shouts."),
+  );
+  expect(
+    screen.queryByRole("region", { name: "Explanation of lines 2–3" }),
+  ).toBeNull();
+});
+
 it("asks a typed question about the lines with A", async () => {
   vi.mocked(api.askDeck).mockResolvedValue({
     kind: "answer",

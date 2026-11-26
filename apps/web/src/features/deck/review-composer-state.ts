@@ -66,6 +66,24 @@ export class ReviewComposerState {
     return this.#state;
   }
 
+  /**
+   * `target`'s composer takes `words`, an answer turned into a comment
+   * (#793): after the words it holds, when it's the one open, keeping its
+   * try's name and state; as its words, when it opens with them.
+   */
+  transfer(target: ComposerTarget, words: string) {
+    const held = this.holds(target) ? this.#state : undefined;
+    if (!held) {
+      this.close();
+      this.of({ ...target, body: words });
+      return;
+    }
+    const before = held.body.trimEnd();
+    this.update(target, {
+      body: before ? `${before}\n\n${words}` : words,
+    });
+  }
+
   /** Changes what `target`'s composer holds, while it's the one open. */
   update(target: ComposerTarget, change: Partial<ComposerState>) {
     if (composerIdentity(target) !== this.#identity || !this.#state) return;

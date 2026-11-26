@@ -13,13 +13,17 @@ import type { ReviewLineSelection } from "./review-line-selection";
  * (#793), apart from the toolbar so the asks' module reads it too.
  */
 
-/** Opens the composer on lines of a hunk of the file at `path`, holding `body` when given. */
+/**
+ * Opens the composer on lines of a hunk of the file at `path`. Given
+ * `body`, the composer takes it, after the words it holds when it's
+ * already open there. True once it has.
+ */
 export type AddComment = (
   path: string,
   hunkId: string,
   lines: DiffLineRange,
   body?: string,
-) => void;
+) => boolean;
 
 export interface ReviewLines {
   selection: ReviewLineSelection;
@@ -31,8 +35,11 @@ export interface ReviewLines {
     range: DiffLineHighlight | null,
     change: DiffSelectionChange,
   ) => void;
-  /** Opens the composer on the lines, with `body`; undefined when the pull request takes no comments. */
-  comment: ((selection: LineSelection, body?: string) => void) | undefined;
+  /**
+   * Opens the composer on the lines, handing it `body` (see `AddComment`);
+   * true once it took it. Undefined when the pull request takes no comments.
+   */
+  comment: ((selection: LineSelection, body?: string) => boolean) | undefined;
   /** Scrolls to a citation's line and highlights it. */
   cite: (href: string) => void;
 }

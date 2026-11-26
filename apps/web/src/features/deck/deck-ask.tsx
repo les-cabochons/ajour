@@ -496,9 +496,9 @@ function LinesAnswer({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  // The composer holds the answer now; asking again shows it at once.
-                  context.sessions.close(key);
-                  comment(anchorSelection(hunkId, anchor), text);
+                  // Closed once the composer holds the answer; asking again shows it at once.
+                  if (comment(anchorSelection(hunkId, anchor), text))
+                    context.sessions.close(key);
                 }}
               >
                 Turn into a comment
