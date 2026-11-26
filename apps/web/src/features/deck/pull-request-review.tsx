@@ -212,7 +212,7 @@ export function PullRequestReview({
             ...fields,
           });
         } catch (error) {
-          composerState.update(target, {
+          composerState.answer(target, submission.id, {
             posting: false,
             failure: writeFailure(error, pullRequest),
           });
@@ -220,16 +220,23 @@ export function PullRequestReview({
         }
         // Taken, or unsettled: the next try is a new post.
         if ("uncertain" in result) {
-          composerState.settle(target, submission.id, {
+          composerState.answer(target, submission.id, {
             posting: false,
             failure: mayAlreadyBeThere("comment", pullRequest),
             uncertain: true,
+            submission: undefined,
           });
           return;
         }
-        composerState.settle(target, submission.id, {});
-        // Another composer opened meanwhile keeps its words.
-        if (composerState.holds(target)) closeComposer();
+        // Words typed while it posted stay, as a new comment; a composer
+        // opened since, here or on other lines, is left be.
+        const sender = composerState.sender(target, submission.id);
+        if (sender?.body === body) closeComposer();
+        else
+          composerState.answer(target, submission.id, {
+            posting: false,
+            submission: undefined,
+          });
         retryConversation();
       },
       composer: composerState,

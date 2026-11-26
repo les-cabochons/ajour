@@ -580,6 +580,84 @@ it("keeps a later composer's name for its Retry when an earlier Comment now land
   });
 });
 
+/** Comment now waits for the code host until `land` answers. */
+function holdCommentNow() {
+  const held = {
+    land: (_value: { commentId: string }) => {},
+    fail: (_error: Error) => {},
+  };
+  vi.mocked(api.postPullRequestComment).mockImplementationOnce(
+    () =>
+      new Promise((resolve, reject) => {
+        held.land = resolve;
+        held.fail = reject;
+      }),
+  );
+  return held;
+}
+
+const commentField = (form: HTMLElement) =>
+  within(form).getByRole("textbox", { name: "Comment" }) as HTMLTextAreaElement;
+
+it("keeps the words typed while Comment now posts, once the post lands", async () => {
+  const post = holdCommentNow();
+  await renderReviewPage();
+  const form = compose("On B.");
+  fireEvent.click(within(form).getByRole("button", { name: "Comment now" }));
+  fireEvent.change(commentField(form), {
+    target: { value: "On B. And one more thing." },
+  });
+
+  await act(async () => post.land({ commentId: "comment-a" }));
+  const still = screen.getByRole("form", { name: "New comment" });
+  expect(commentField(still).value).toBe("On B. And one more thing.");
+  // What landed is posted: the words left are a new comment.
+  fireEvent.click(within(still).getByRole("button", { name: "Comment now" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("form", { name: "New comment" })).toBeNull(),
+  );
+  const [first, next] = vi
+    .mocked(api.postPullRequestComment)
+    .mock.calls.map((call) => call[2]);
+  expect(next).toMatchObject({ body: "On B. And one more thing." });
+  expect(next!.submissionId).not.toBe(first!.submissionId);
+  expect(next).not.toHaveProperty("firstTriedAt");
+});
+
+it("leaves a composer opened again on the same lines be when the earlier Comment now there lands", async () => {
+  const post = holdCommentNow();
+  await renderReviewPage();
+  const a = compose("On B.");
+  fireEvent.click(within(a).getByRole("button", { name: "Comment now" }));
+  // Another composer opens, then one on the first lines again.
+  fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
+  const again = compose("Second thoughts.");
+
+  await act(async () => post.land({ commentId: "comment-a" }));
+  const still = screen.getByRole("form", { name: "New comment" });
+  expect(still).toBe(again);
+  expect(commentField(still).value).toBe("Second thoughts.");
+  expect(
+    within(still).getByRole("button", { name: "Comment now" }),
+  ).toHaveProperty("disabled", false);
+});
+
+it("leaves a composer opened again on the same lines be when the earlier Comment now there fails", async () => {
+  const post = holdCommentNow();
+  await renderReviewPage();
+  const a = compose("On B.");
+  fireEvent.click(within(a).getByRole("button", { name: "Comment now" }));
+  fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
+  const again = compose("Second thoughts.");
+
+  await act(async () => post.fail(new Error("GitHub is down.")));
+  expect(within(again).queryByRole("alert")).toBeNull();
+  expect(commentField(again).value).toBe("Second thoughts.");
+  expect(
+    within(again).getByRole("button", { name: "Comment now" }),
+  ).toHaveProperty("disabled", false);
+});
+
 /** One file of 600 one-line hunks, so its rows mount only near the screen (#790). */
 const HUGE: DeckOpenedPullRequest = {
   headSha: "one",

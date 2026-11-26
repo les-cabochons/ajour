@@ -29,9 +29,10 @@ export interface ComposerState {
   uncertain: boolean;
   /**
    * Comment now's last try, named: Retry with the same words and lines
-   * sends the same name. Each composer keeps its own, so an earlier post
-   * that lands while another composer is open leaves that one's name be.
-   * Undefined after an answer, so the next try is a new post.
+   * sends the same name. Each composer keeps its own, and hears only the
+   * answers to it: an earlier post that lands while another composer is
+   * open, or one opened again on the same lines, leaves that one be.
+   * Undefined once a try lands or goes unsettled, so the next is a new post.
    */
   submission?: DeckReviewSubmission;
   /** The field takes the focus as it mounts, once: right after it opens. */
@@ -73,19 +74,26 @@ export class ReviewComposerState {
   }
 
   /**
-   * The code host answered the try named `submissionId`: `target`'s
-   * composer forgets that name, unless a later try renamed it.
+   * What `target`'s composer holds while it's the one that sent the try
+   * named `submissionId`. One closed and opened again on the same lines
+   * starts without a name, so an answer to the earlier one isn't its own.
    */
-  settle(
+  sender(target: ComposerTarget, submissionId: string) {
+    return this.holds(target) && this.#state?.submission?.id === submissionId
+      ? this.#state
+      : undefined;
+  }
+
+  /**
+   * The code host answered the try named `submissionId`: only the
+   * composer that sent it changes.
+   */
+  answer(
     target: ComposerTarget,
     submissionId: string,
     change: Partial<ComposerState>,
   ) {
-    const named = this.holds(target) ? this.#state?.submission : undefined;
-    this.update(target, {
-      ...change,
-      ...(named?.id === submissionId ? { submission: undefined } : {}),
-    });
+    if (this.sender(target, submissionId)) this.update(target, change);
   }
 
   /** True while `target`'s composer is the one open. */
