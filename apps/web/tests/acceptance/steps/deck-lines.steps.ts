@@ -34,6 +34,9 @@ async function dragOver(page: Page, from: number, to: number, path?: string) {
   let a = { x: 0, y: 0, width: 0, height: 0 };
   let b = a;
   await expect(async () => {
+    // A hunk draws its line numbers once it's on screen, and the summary
+    // above the changes can leave it below.
+    await hunkOf(page, path).scrollIntoViewIfNeeded({ timeout: 2_000 });
     await start.scrollIntoViewIfNeeded({ timeout: 2_000 });
     a = (await start.boundingBox({ timeout: 2_000 }))!;
     b = (await end.boundingBox({ timeout: 2_000 }))!;
@@ -83,6 +86,12 @@ Then(
     await expect(answer).toContainText(text);
   },
 );
+
+// A hunk takes the focus as its lines are dragged over, and a huge pull
+// request keeps the focused row mounted; the focus leaves it first.
+When("I move the focus out of the changes", async ({ page }) => {
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+});
 
 Then("no explanation is mounted", async ({ page }) => {
   await expect(

@@ -214,7 +214,8 @@ Feature: Deck lists the pull requests on your plate
     And I drag over the line numbers of "src/f000.ts" from line 1 to line 3
     And I press the "e" key
     Then the explanation of "lines 1–3" shows "Each step reads its own line."
-    When I scroll the changes down by 20000 pixels
+    When I move the focus out of the changes
+    And I scroll the changes down by 20000 pixels
     Then no explanation is mounted
     When I scroll the changes back to the top
     Then the explanation of "lines 1–3" shows "Each step reads its own line."
