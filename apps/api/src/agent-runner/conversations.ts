@@ -87,6 +87,14 @@ export interface AgentConversationsOptions {
    * user took the repository back from (#791).
    */
   admits: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
+  /**
+   * Why a turn the CLI ended as done failed all the same, or undefined:
+   * a guide turn that saved no guide (#794).
+   */
+  doneFailure?: (turn: {
+    id: string;
+    task: CoreAgentTask;
+  }) => string | undefined;
   idleMs?: number;
   killGraceMs?: number;
   interruptGraceMs?: number;
@@ -111,7 +119,9 @@ type TurnStopReason =
   | "shutdown"
   | "interrupt_timeout"
   | "stalled"
-  | "revoked";
+  | "revoked"
+  /** It gave back what its task asks for, so Ajour ended it: it counts as done. */
+  | "completed";
 
 /** How a turn ended, for the window and its event. */
 type TurnEnding =
@@ -121,7 +131,13 @@ type TurnEnding =
       outcome: "failed";
       /** For the window. Never logged. */
       message: string;
-      reason: "cli_failed" | "cli_exited" | "mcp_failed" | "stalled";
+      reason:
+        | "cli_failed"
+        | "cli_exited"
+        | "mcp_failed"
+        | "stalled"
+        /** Done, but it gave back nothing its task asks for, such as a guide. */
+        | "no_result";
     }
   | { outcome: "failed"; message: string; launchFailure: LaunchFailure }
   | {
@@ -342,9 +358,7 @@ export class AgentConversations {
    * of. Undefined between turns, once the turn is being stopped, and for
    * any other client.
    */
-  runningTurnOf(
-    clientId: string,
-  ):
+  runningTurnOf(clientId: string):
     | {
         id: string;
         task: CoreAgentTask;
@@ -359,8 +373,9 @@ export class AgentConversations {
     const turn = conversation.turns[0];
     if (!turn?.started || turn.settled || !turn.process) return undefined;
     // A turn being stopped, by the user or a stall, runs only until its
-    // CLI ends: its calls aren't part of it any more.
-    if (turn.stopReason) return undefined;
+    // CLI ends: its calls aren't part of it any more. A completed one still
+    // is, so a guide turn's late call hears its guide is saved.
+    if (turn.stopReason && turn.stopReason !== "completed") return undefined;
     return {
       id: turn.id,
       task: turn.task,
@@ -368,6 +383,18 @@ export class AgentConversations {
       head: conversation.binding.head,
       conversationId: conversation.id,
     };
+  }
+
+  /**
+   * Ends a running turn that gave back what its task asks for, such as a
+   * guide turn whose guide is saved (#794): the CLI is interrupted, as Stop
+   * does, and the turn ends done. False when it isn't running.
+   */
+  completeTurn(turnId: string): boolean {
+    const found = this.turns.get(turnId);
+    if (!found?.turn.started || found.turn.settled) return false;
+    this.stopTurn(found.conversation, found.turn, "completed");
+    return true;
   }
 
   /**
@@ -1040,20 +1067,39 @@ export class AgentConversations {
     if (turn.interrupting) return;
     turn.interrupting = true;
     const lines = cli.codec.interrupt();
-    if (lines.length === 0 || reason !== "user") {
+    // Only the user's Stop, and a turn that is done, keep a warm process.
+    if (lines.length === 0 || (reason !== "user" && reason !== "completed")) {
       this.terminate(cli);
       return;
     }
     cli.proc.write(lines);
     turn.interruptTimer = setTimeout(() => {
-      turn.stopReason = "interrupt_timeout";
+      // A completed turn stays completed: it is done whatever ends it.
+      if (turn.stopReason !== "completed")
+        turn.stopReason = "interrupt_timeout";
       this.terminate(cli);
     }, this.options.interruptGraceMs ?? INTERRUPT_GRACE_MS);
     turn.interruptTimer.unref();
   }
 
-  private endTurn(conversation: Conversation, turn: Turn, ending: TurnEnding) {
+  private endTurn(
+    conversation: Conversation,
+    turn: Turn,
+    reported: TurnEnding,
+  ) {
     this.turns.delete(turn.id);
+    // Ended by Ajour once its task's result was in: done, however it stopped.
+    const done: TurnEnding =
+      turn.stopReason === "completed" && reported.outcome === "cancelled"
+        ? { outcome: "done" }
+        : reported;
+    const failure =
+      done.outcome === "done"
+        ? this.options.doneFailure?.({ id: turn.id, task: turn.task })
+        : undefined;
+    const ending: TurnEnding = failure
+      ? { outcome: "failed", message: failure, reason: "no_result" }
+      : done;
     const { unit } = turn;
     unit.set({
       agent: {

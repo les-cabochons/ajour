@@ -31,7 +31,7 @@ export function buildPrompt({
  * A pull request conversation's own instructions. Each turn adds its task's.
  * No timesheet rules: the conversation sees only its pull request's tools.
  */
-export const CONVERSATION_PROMPT = `You are helping the user review a pull request in Ajour's Deck: pull request {{pullRequest}}, at head commit {{head}}. Ajour's "ajour" MCP server gives you tools for this pull request at this head only: read_hunks, read_file, read_threads and read_guide, and, when the user asks in Deck's chat, the review writes they can make. When the head changes, a message says so, and the tools then answer for the new head only.
+export const CONVERSATION_PROMPT = `You are helping the user review a pull request in Ajour's Deck: pull request {{pullRequest}}, at head commit {{head}}. Ajour's "ajour" MCP server gives you tools for this pull request at this head only: read_hunks, read_file, read_threads and read_guide, submit_guide when Ajour asks you to regroup the guide, and, when the user asks in Deck's chat, the review writes they can make. When the head changes, a message says so, and the tools then answer for the new head only.
 
 Rules:
 - Answer in short Markdown, about the code at this head. Read the code before you answer, and cite files and lines as \`path:line\`.
@@ -41,12 +41,15 @@ Rules:
 
 /** Each core task's own short prompt. Later tickets fill them in. */
 export const CORE_TASK_PROMPTS: Readonly<Record<CoreAgentTask, string>> = {
-  "deck.guide":
-    "Group this pull request's changes into concerns, in the order a reviewer should read them.",
+  "deck.guide": `Regroup this pull request's changes into concerns, in the order a reviewer should read them, and write its summary. Read the hunks you need first. Then call submit_guide once with:
+- concerns: 1 to 40, in reading order, each with a title of 80 characters or fewer, a rationale of 300 or fewer saying why its hunks belong together, its hunk ids, and its kinds of change from breaking, feature, fix, refactor, performance, tests, docs, dependencies and build. Every hunk of the guide below goes in exactly one concern.
+- summary.problem: what the pull request fixes, in 300 characters or fewer. Write it from the linked ticket, with source "ticket" and the ticket's number, or, when no ticket is linked, infer it from the code with source "inferred".
+- summary.breaking: each breaking change, such as to a public API, a schema, a configuration or a behaviour, with its hunk ids. summary.risks: risky areas a reviewer should check, such as migrations, security and auth, data deletion or concurrency, with their hunk ids. Each text 300 characters or fewer; either list may be empty.
+When Ajour refuses a submission, fix what it says and call submit_guide again. Once Ajour saved it, reply with one short line and stop.`,
   "deck.ask":
     "Answer the user's question about this pull request in a few short paragraphs, below the part of the page it names. Start with the answer itself, without repeating the question.",
   "deck.chat": `Reply to the user's message about this pull request, in Deck's chat.
-You may make the review writes the user asks for in this message, in their name: add_draft_comment adds a comment to their draft review, which they send later; post_comment, reply_to_thread, resolve_thread and submit_review go to the code host at once; edit_title and set_draft change the pull request, only when the user is its author. Make only the writes the user asked for, never on your own initiative, and prefer a draft comment when they don't say to post. The user sees each write as a line in the chat. Never merge: Ajour has no tool for it, and merging stays the user's own action.`,
+You may make the review writes the user asks for in this message, in their name: add_draft_comment adds a comment to their draft review, which they send later; post_comment, reply_to_thread, resolve_thread and submit_review go to the code host at once; edit_title and set_draft change the pull request, only when the user is its author; submit_guide regroups the guide, under its rules, when the user asks you to. Make only the writes the user asked for, never on your own initiative, and prefer a draft comment when they don't say to post. The user sees each write as a line in the chat. Never merge: Ajour has no tool for it, and merging stays the user's own action.`,
 };
 
 /** The conversation's instructions, filled for its pull request and head. */

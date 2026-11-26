@@ -510,6 +510,21 @@ export const ROUTES = {
     path: "/api/deck/:pluginId/connections/:connectionId/ask",
     name: "deck.ask",
   },
+  deckRegroup: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/regroup",
+    name: "deck.regroup",
+  },
+  deckGuide: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/guide",
+    name: "deck.guide_read",
+  },
+  deckGuideRevert: {
+    method: "POST",
+    path: "/api/deck/:pluginId/connections/:connectionId/guide/revert",
+    name: "deck.guide_revert",
+  },
   deckChat: {
     method: "POST",
     path: "/api/deck/:pluginId/connections/:connectionId/chat",

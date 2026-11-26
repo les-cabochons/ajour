@@ -35,6 +35,7 @@ import {
   AppApiError,
   isAccessOffError,
   postPullRequestComment,
+  readDeckGuide,
   replyToPullRequestThread,
   setPullRequestFileViewed,
   setPullRequestThreadResolved,
@@ -67,6 +68,7 @@ import {
 } from "./pull-request-conversation";
 import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestStatusLine } from "./pull-request-status-line";
+import { DeckAskProvider } from "./deck-ask";
 import { PullRequestSummary, type ReachHunk } from "./pull-request-summary";
 import { ReviewComposerState } from "./review-composer-state";
 import {
@@ -135,7 +137,15 @@ export function PullRequestReview({
   }, [composerState]);
 
   const { pluginId, connectionId } = pullRequest;
-  const { repository, number } = pullRequest.facts;
+  const { repository, number, repositoryIdentity, headRef } = pullRequest.facts;
+  // Where the repository is cloned from, so an ask can read the user's clone.
+  const cloneSource = useMemo(
+    () =>
+      repositoryIdentity
+        ? { repositoryIdentity, ...(headRef ? { headRef } : {}) }
+        : undefined,
+    [repositoryIdentity, headRef],
+  );
   const ref = useMemo(
     (): DeckReviewRef => ({ pluginId, connectionId, repository, number }),
     [pluginId, connectionId, repository, number],
@@ -509,6 +519,19 @@ export function PullRequestReview({
           ...action.edited,
         });
       }
+      if (action.kind === "regroup") {
+        // The agent's guide is saved: the page shows it.
+        if (headSha)
+          void readDeckGuide(pluginId, connectionId, {
+            repository,
+            number,
+            head: headSha,
+          }).then(
+            ({ guide }) => diff.replaceGuide(guide, headSha),
+            () => undefined,
+          );
+        return;
+      }
       if (action.kind !== "draft_comment") reloadConversation();
     };
   });
@@ -519,7 +542,6 @@ export function PullRequestReview({
         chatActionRef.current(action),
       ),
   );
-  const { repositoryIdentity, headRef } = pullRequest.facts;
   const author = authorActions(pullRequest.facts);
   const chatTarget = useMemo(
     (): DeckChatTarget | undefined =>
@@ -531,26 +553,10 @@ export function PullRequestReview({
             number,
             head: headSha,
             author,
-            ...(repositoryIdentity
-              ? {
-                  clone: {
-                    repositoryIdentity,
-                    ...(headRef ? { headRef } : {}),
-                  },
-                }
-              : {}),
+            ...(cloneSource ? { clone: cloneSource } : {}),
           }
         : undefined,
-    [
-      headSha,
-      pluginId,
-      connectionId,
-      repository,
-      number,
-      author,
-      repositoryIdentity,
-      headRef,
-    ],
+    [headSha, pluginId, connectionId, repository, number, author, cloneSource],
   );
   useShortcut("deck.chat", () => {
     if (chatTarget) setChatOpen((isOpen) => !isOpen);
@@ -722,31 +728,41 @@ export function PullRequestReview({
                   onPosted={retryConversation}
                 />
               ) : null}
-              {shown ? (
-                <PullRequestSummary
-                  pullRequest={shown}
-                  repository={pullRequest.facts.repository}
-                  onReach={onReach}
+              {/* The summary's lines and the concerns ask about the head on screen. */}
+              <DeckAskProvider
+                pluginId={pluginId}
+                connectionId={connectionId}
+                repository={repository}
+                number={number}
+                head={shown?.headSha}
+                clone={cloneSource}
+              >
+                {shown ? (
+                  <PullRequestSummary
+                    pullRequest={shown}
+                    repository={pullRequest.facts.repository}
+                    onReach={onReach}
+                  />
+                ) : null}
+                <DescriptionDrawer
+                  state={conversation.state}
+                  retry={conversation.retry}
                 />
-              ) : null}
-              <DescriptionDrawer
-                state={conversation.state}
-                retry={conversation.retry}
-              />
-              <PullRequestChanges
-                pullRequest={pullRequest}
-                state={diff.state}
-                retry={diff.retry}
-                notes={{
-                  notes,
-                  floating,
-                  hovered,
-                  onAddComment: open ? onAddComment : undefined,
-                }}
-                reachHunkRef={reachHunk}
-                versions={versionsView}
-                viewing={viewing}
-              />
+                <PullRequestChanges
+                  state={diff.state}
+                  retry={diff.retry}
+                  onGuide={diff.replaceGuide}
+                  notes={{
+                    notes,
+                    floating,
+                    hovered,
+                    onAddComment: open ? onAddComment : undefined,
+                  }}
+                  reachHunkRef={reachHunk}
+                  versions={versionsView}
+                  viewing={viewing}
+                />
+              </DeckAskProvider>
               {outdated.length ? (
                 <section
                   className="deck-draft-elsewhere"

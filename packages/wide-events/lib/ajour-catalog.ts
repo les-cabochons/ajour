@@ -620,6 +620,8 @@ export const catalog = defineCatalog({
         "stalled",
         /** Refused: the repository isn't allowed with the conversation's agent now (#791). */
         "repository_not_allowed",
+        /** Done, but it gave back nothing its task asks for: a guide turn that saved no guide (#794). */
+        "no_result",
       ],
       fields: {
         agent: {
@@ -645,6 +647,8 @@ export const catalog = defineCatalog({
             | "interrupt_timeout"
             | "stalled"
             | "revoked"
+            /** It gave back what its task asks for, such as a saved guide, and Ajour ended it (#794). */
+            | "completed"
           >(),
           exit_code: operational<number | null>(),
         },
@@ -3315,8 +3319,10 @@ export const catalog = defineCatalog({
         "repository_not_allowed",
         /** Ajour no longer holds the pull request at this head. */
         "not_open",
-        /** The guide has no such concern, or the diff no such lines. */
+        /** The guide has no such concern or summary line, or the diff no such lines. */
         "unknown_anchor",
+        /** The pull request has no guide to ask about. */
+        "no_guide",
         /** No agent is picked or installed. */
         "blocked",
         "already_running",
@@ -3327,7 +3333,7 @@ export const catalog = defineCatalog({
         plugin: { id: operational() },
         connection: { id: operational() },
         deck: {
-          anchor_kind: operational<"concern" | "lines">(),
+          anchor_kind: operational<"concern" | "summary" | "lines">(),
           /** The user typed a question in place of the default one. */
           typed_question: operational<boolean>(),
           /** Answered from the cache, with no turn. */
@@ -3358,18 +3364,20 @@ export const catalog = defineCatalog({
       },
     },
     /**
-     * A message in Deck's chat (#796): a `deck.chat` turn of the pull
-     * request's conversation. The message, the reply and what the chat
-     * writes are content, so none of them is here.
+     * A regroup in Deck (#794): the `deck.guide` turn it started, whose
+     * agent hands the guide back through `submit_guide`. The instruction is
+     * the user's words, so only whether one was given is here.
      */
-    "deck.chat": {
+    "deck.regroup": {
       kinds: ["command", "request"],
       reasons: [
         /** The user hasn't allowed the repository with this agent yet. */
         "repository_not_allowed",
         /** Ajour no longer holds the pull request at this head. */
         "not_open",
-        /** The chip's concern or lines aren't in the guide or the diff. */
+        /** The pull request has no guide to regroup. */
+        "no_guide",
+        /** Never a regroup's, but its refusals share an ask's reasons. */
         "unknown_anchor",
         /** No agent is picked or installed. */
         "blocked",
@@ -3381,8 +3389,69 @@ export const catalog = defineCatalog({
         plugin: { id: operational() },
         connection: { id: operational() },
         deck: {
+          /** The user changed the prefilled instruction. */
+          instructed: operational<boolean>(),
+        },
+        agent: { turn_id: operational() },
+      },
+    },
+    /** The guide Deck shows for a pull request at one head, read again after a regroup (#794). */
+    "deck.guide_read": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: { made_with: operational<"code" | "agent">() },
+      },
+    },
+    /** Back to the guide built from the code: the agent's guide is dropped (#794). */
+    "deck.guide_revert": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+      },
+    },
+    /**
+     * A message in Deck's chat (#796): a `deck.chat` turn of the pull
+     * request's conversation. The message, the reply and what the chat
+     * writes are content, so none of them is here.
+     */
+    "deck.chat": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The user hasn't allowed the repository with this agent yet. */
+        "repository_not_allowed",
+        /** Ajour no longer holds the pull request at this head. */
+        "not_open",
+        /** The chip's concern, summary line or lines aren't in the guide or the diff. */
+        "unknown_anchor",
+        /** Never a chat's, but its refusals share an ask's reasons. */
+        "no_guide",
+        /** No agent is picked or installed. */
+        "blocked",
+        "already_running",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        deck: {
           /** The anchor a Continue in chat chip carried in, if any. */
-          anchor_kind: operational<"concern" | "lines">(),
+          anchor_kind: operational<"concern" | "summary" | "lines">(),
           /** What the turn did with the user's local clone, as for an ask. */
           clone: operational<
             | "read"

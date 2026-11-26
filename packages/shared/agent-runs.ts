@@ -189,7 +189,10 @@ export const agentTurnActionSchema = z.object({
   posted: z
     .discriminatedUnion("kind", [
       z.object({ kind: z.literal("comment"), commentId: z.string().min(1) }),
-      z.object({ kind: z.literal("draft_comment"), draftId: z.string().min(1) }),
+      z.object({
+        kind: z.literal("draft_comment"),
+        draftId: z.string().min(1),
+      }),
     ])
     .optional(),
 });

@@ -739,6 +739,7 @@ describe("a conversation's tools", () => {
         "read_file",
         "read_threads",
         "read_guide",
+        "submit_guide",
         // The chat's writes, which only a chat turn may call (#796).
         "add_draft_comment",
         "post_comment",
@@ -1503,6 +1504,7 @@ describe("a conversation on OpenCode", () => {
         "read_file",
         "read_threads",
         "read_guide",
+        "submit_guide",
         // The chat's writes, which only a chat turn may call (#796).
         "add_draft_comment",
         "post_comment",

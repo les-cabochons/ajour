@@ -152,6 +152,7 @@ describe("the Deck content cache", () => {
       key: key(1),
       ...content(1),
       guide: null,
+      agentGuide: null,
     });
     await cache.putGuide(key(1), guide);
 
@@ -231,7 +232,40 @@ describe("the Deck content cache", () => {
       key: key(1),
       ...content(1),
       guide,
+      agentGuide: null,
     });
+  });
+
+  it("keeps the agent's guide beside the built one, across a restart, counted, until it is dropped", async () => {
+    const directory = await cacheFolder();
+    const first = start(directory);
+    await first.put(key(1), content(1), FRESH);
+    await first.putGuide(key(1), guide);
+    const withBuilt = (await first.usage()).sizeBytes;
+    const agentGuide: DeckGuide = {
+      ...guide,
+      madeWith: "agent",
+      provider: { cli: "claude-code", label: "Claude Code" },
+    };
+
+    await first.putAgentGuide(key(1), agentGuide);
+    // Another entry's guide isn't written anywhere.
+    await first.putAgentGuide(key(2), agentGuide);
+
+    expect((await first.usage()).sizeBytes).toBeGreaterThan(withBuilt);
+    const second = start(directory);
+    expect(await second.get(key(1))).toEqual({
+      key: key(1),
+      ...content(1),
+      guide,
+      agentGuide,
+    });
+
+    await second.dropAgentGuide(key(1));
+
+    expect(await second.get(key(1))).toMatchObject({ guide, agentGuide: null });
+    expect((await second.usage()).sizeBytes).toBe(withBuilt);
+    expect((await start(directory).get(key(1)))?.agentGuide).toBeNull();
   });
 
   it("keeps what changed since each reviewed version with its entry, across a restart, counted and removed with it", async () => {

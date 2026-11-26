@@ -86,11 +86,7 @@ const VERDICT_TEXT = {
 } as const;
 
 /** How an action line names lines of a file: `src/api.ts:12` or `src/api.ts:10–12`. */
-function placeName(lines: {
-  path: string;
-  line: number;
-  startLine?: number;
-}) {
+function placeName(lines: { path: string; line: number; startLine?: number }) {
   return lines.startLine !== undefined && lines.startLine < lines.line
     ? `${lines.path}:${lines.startLine}–${lines.line}`
     : `${lines.path}:${lines.line}`;
@@ -123,7 +119,8 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
       );
     }
     const source = parseDeckPullRequestKey(binding.pullRequest);
-    if (!source) throw new DeckChatRefused("Deck doesn't know this pull request.");
+    if (!source)
+      throw new DeckChatRefused("Deck doesn't know this pull request.");
     return { turn, source, facts: chatTurns.get(turn.id) };
   }
 
@@ -141,7 +138,12 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
   /** The text of the lines a comment is on, or a refusal when the diff doesn't show them. */
   async function linesOf(
     binding: McpClientPullRequestBinding,
-    lines: { path: string; side: "base" | "head"; line: number; startLine?: number },
+    lines: {
+      path: string;
+      side: "base" | "head";
+      line: number;
+      startLine?: number;
+    },
   ) {
     const { diff } = await heldFor(binding);
     const text = deckLineText(diff, lines);
@@ -319,13 +321,31 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
       return done(
         turn,
         edited.draft
-          ? { kind: "draft", text: "Turned the pull request into a draft", edited }
-          : { kind: "ready", text: "Marked the pull request ready for review", edited },
+          ? {
+              kind: "draft",
+              text: "Turned the pull request into a draft",
+              edited,
+            }
+          : {
+              kind: "ready",
+              text: "Marked the pull request ready for review",
+              edited,
+            },
       );
     },
   };
 
   return {
+    /**
+     * A chat turn's `submit_guide` saved the agent's guide (#794): its
+     * action line shows, and the page reads the guide again.
+     */
+    regrouped(clientId: string, turnId: string) {
+      const turn = options.runningTurnOf(clientId);
+      if (turn?.id !== turnId) return;
+      done(turn, { kind: "regroup", text: "Regrouped the guide" });
+    },
+
     /** Records what the page said about a chat turn as it started it. */
     chatStarted(turnId: string, facts: ChatTurnFacts) {
       chatTurns.set(turnId, facts);

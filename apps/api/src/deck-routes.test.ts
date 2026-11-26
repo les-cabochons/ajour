@@ -1260,7 +1260,10 @@ export async function deleteComment(connection, request) {
 
     await expect(remove(api.baseUrl, connectionId)).resolves.toEqual({
       status: 404,
-      body: { error: "GitHub doesn't offer this yet.", reason: "not_supported" },
+      body: {
+        error: "GitHub doesn't offer this yet.",
+        reason: "not_supported",
+      },
     });
   });
 });

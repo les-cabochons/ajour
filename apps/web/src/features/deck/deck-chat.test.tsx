@@ -136,7 +136,10 @@ const RUNNER: AgentRunnerOverview = {
   currentRun: null,
 };
 
-const turn = (id: string, task: AgentTurn["task"] = "deck.chat"): AgentTurn => ({
+const turn = (
+  id: string,
+  task: AgentTurn["task"] = "deck.chat",
+): AgentTurn => ({
   id,
   conversationId: "c1",
   task,
@@ -365,7 +368,9 @@ it("sends a message, streams the reply, and shows each write as an action line w
   text("t1", 1, "it.");
   ended("t1");
 
-  const line = within(log).getByText("Commented on src/api.ts:1").closest("li")!;
+  const line = within(log)
+    .getByText("Commented on src/api.ts:1")
+    .closest("li")!;
   expect(
     within(line).getByRole("link", { name: "Open" }).getAttribute("href"),
   ).toBe("https://github.com/acme/billing-api/pull/1#c1");
@@ -484,9 +489,12 @@ it("carries an answer's anchor in as a removable chip with Continue in chat, and
     name: "Concern 1: Handle the request",
   });
   fireEvent.click(within(concern).getByRole("button", { name: "More detail" }));
-  fireEvent.keyDown(within(concern).getByRole("textbox", { name: "Question" }), {
-    key: "Enter",
-  });
+  fireEvent.keyDown(
+    within(concern).getByRole("textbox", { name: "Question" }),
+    {
+      key: "Enter",
+    },
+  );
   await within(concern).findByText("It shouts.");
 
   fireEvent.click(
@@ -541,7 +549,9 @@ it("asks once for the repository before a first message, then sends it", async (
   sendMessage("Hi");
 
   const dialog = await screen.findByRole("alertdialog");
-  expect(within(dialog).getByText("Ajour asks once for billing-api")).toBeTruthy();
+  expect(
+    within(dialog).getByText("Ajour asks once for billing-api"),
+  ).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Allow" }));
 
   await waitFor(() => expect(api.chatDeck).toHaveBeenCalledTimes(2));
@@ -550,6 +560,8 @@ it("asks once for the repository before a first message, then sends it", async (
     "work",
     "acme/billing-api",
     "claude-code",
+    // What the dialog lists, which covers a chat message too.
+    "context",
   );
 });
 

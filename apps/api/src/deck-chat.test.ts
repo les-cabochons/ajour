@@ -83,14 +83,18 @@ export async function mergePullRequest(connection, request) {
 
 const guideRuntime: DeckGuideRuntime = {
   build: async (input) =>
-    builtFrom(input, [
-      {
-        id: "g1",
-        title: "Upper-case the second line",
-        rationale: "The handler now shouts.",
-        hunkIds: ["src/api.ts#0"],
-      },
-    ]),
+    builtFrom(
+      input,
+      // A regroup's concerns get the rules alone.
+      input.concerns ?? [
+        {
+          id: "g1",
+          title: "Upper-case the second line",
+          rationale: "The handler now shouts.",
+          hunkIds: ["src/api.ts#0"],
+        },
+      ],
+    ),
   close: async () => {},
 };
 
@@ -208,6 +212,13 @@ async function startChatApi(conversation: FakeConversation) {
   return {
     ...api,
     stream,
+    guide() {
+      return apiRequest(api.baseUrl, `${deck}/guide`, {
+        repository: REPOSITORY,
+        number: 482,
+        head: HEAD,
+      });
+    },
     consent() {
       return apiRequest(api.baseUrl, `${deck}/consent`, {
         repository: REPOSITORY,
@@ -336,6 +347,8 @@ describe("Deck's chat writes", () => {
         "read_file",
         "read_threads",
         "read_guide",
+        // A regroup asked for in the chat (#794).
+        "submit_guide",
         "add_draft_comment",
         "post_comment",
         "reply_to_thread",
@@ -451,7 +464,10 @@ describe("Deck's chat writes", () => {
           text: "Approved the pull request",
           url: "https://github.com/acme/billing-api/pull/482#r1",
         },
-        { kind: "title", text: "Renamed the pull request “Shout the second line”" },
+        {
+          kind: "title",
+          text: "Renamed the pull request “Shout the second line”",
+        },
         { kind: "draft", text: "Turned the pull request into a draft" },
         {
           kind: "draft_comment",
@@ -572,6 +588,67 @@ describe("Deck's chat writes", () => {
         "doesn't show src/api.ts:40",
       );
       expect(hostWrites()).toEqual([]);
+    },
+  );
+});
+
+describe("regroup from the chat (#794)", () => {
+  it(
+    "saves the guide the chat's agent submits, shows it as an action line, and goes on with the chat",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startChatApi(() => [
+        { readTurn: true },
+        call("submit_guide", {
+          concerns: [
+            {
+              title: "Shout the second line",
+              rationale: "The handler upper-cases it.",
+              hunkIds: ["src/api.ts#0"],
+              kinds: ["feature"],
+            },
+          ],
+          summary: {
+            problem: {
+              text: "Quiet handlers go unnoticed.",
+              source: "inferred",
+            },
+            breaking: [],
+            risks: [],
+          },
+        }),
+        { stream: ["Regrouped."] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await api.consent();
+
+      const chatted = await api.chat({ message: "Regroup the guide." });
+      await api.ended(chatted.body.turn.id);
+
+      const [saved] = await api.mcpReplies();
+      expect(saved!.reply.result.structuredContent).toEqual({
+        saved: true,
+        concernCount: 1,
+      });
+      expect(
+        api.actions(chatted.body.turn.id).map(({ kind, text }) => ({
+          kind,
+          text,
+        })),
+      ).toEqual([{ kind: "regroup", text: "Regrouped the guide" }]);
+      expect(
+        api.stream.events.find(
+          (event) =>
+            event.event === "agent-turn" &&
+            (event.data as AgentTurnEvent).type === "ended",
+        )?.data,
+      ).toMatchObject({ outcome: "done" });
+      const guide = await api.guide();
+      expect(guide.body.guide).toMatchObject({
+        madeWith: "agent",
+        concerns: [expect.objectContaining({ title: "Shout the second line" })],
+      });
     },
   );
 });

@@ -6,8 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentTurnEvent } from "../../../packages/shared/agent-runs.ts";
 import {
   DECK_LINES_DEFAULT_QUESTION,
+  deckAgentConsentSchema,
   deckPullRequestKey,
+  type DeckConsentCovers,
 } from "../../../packages/shared/deck.ts";
+import { createDeckAsks } from "./deck-asks.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import {
   fakeCliAdapter,
@@ -220,10 +223,12 @@ async function startAskApi(conversation: FakeConversation) {
         ...body,
       });
     },
-    consent(cli = "claude-code") {
+    /** Allows the repository, as a dialog that listed what `covers` names would. */
+    consent(cli = "claude-code", covers?: DeckConsentCovers) {
       return apiRequest(api.baseUrl, `${deck}/consent`, {
         repository: REPOSITORY,
         cli,
+        ...(covers ? { covers } : {}),
       });
     },
     /** Picks the agent in Settings › Agents. */
@@ -365,7 +370,7 @@ describe("consent", () => {
     async () => {
       const api = await startAskApi(() => [...answer("It ", "shouts.")]);
 
-      expect((await api.consent()).status).toBe(200);
+      expect((await api.consent("claude-code", "context")).status).toBe(200);
       const asked = await api.ask();
 
       expect(asked.status).toBe(201);
@@ -378,6 +383,8 @@ describe("consent", () => {
           connectionId: api.connectionId,
           repository: REPOSITORY,
           cli: "claude-code",
+          // The dialog said a regroup sends the description and tickets too.
+          covers: "context",
         }),
       ]);
     },
@@ -400,6 +407,54 @@ describe("consent", () => {
     expect((await api.consents()).body.consents).toEqual([]);
     expect(await api.turnsRead()).toHaveLength(1);
   });
+});
+
+describe("what a consent covers", () => {
+  it(
+    "records the code only for a dialog that didn't say what a regroup sends",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [{ readTurn: true }]);
+
+      // An older page's dialog, which listed the code alone, sends no scope.
+      expect((await api.consent()).status).toBe(200);
+
+      expect((await api.consents()).body.consents).toEqual([
+        expect.objectContaining({ cli: "claude-code", covers: "code" }),
+      ]);
+    },
+  );
+
+  it(
+    "keeps a consent that covers the context when an older dialog allows the code later",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [{ readTurn: true }]);
+
+      await api.consent("claude-code", "context");
+      expect((await api.consent("claude-code", "code")).status).toBe(200);
+
+      expect((await api.consents()).body.consents).toEqual([
+        expect.objectContaining({ cli: "claude-code", covers: "context" }),
+      ]);
+    },
+  );
+
+  it(
+    "doesn't carry the context over to another agent",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startAskApi(() => [{ readTurn: true }]);
+
+      await api.consent("claude-code", "context");
+      await api.pick("codex");
+      expect((await api.consent("codex")).status).toBe(200);
+
+      expect((await api.consents()).body.consents).toEqual([
+        expect.objectContaining({ cli: "codex", covers: "code" }),
+      ]);
+    },
+  );
 });
 
 describe("consent for one agent", () => {
@@ -709,9 +764,90 @@ describe("answers", () => {
   );
 });
 
+describe("a consent's scope", () => {
+  const pullRequest = deckPullRequestKey({
+    pluginId: "github",
+    connectionId: "work",
+    repository: REPOSITORY,
+    number: 482,
+  });
+  /** A consent as the dialog before Regroup recorded it: no scope. */
+  const before = {
+    pluginId: "github",
+    connectionId: "work",
+    repository: REPOSITORY,
+    cli: "claude-code",
+    consentedAt: 1_795_600_000_000,
+  };
+  const asksWith = (stored: unknown[]) =>
+    createDeckAsks({
+      storage: {
+        getDeckConsents: async () =>
+          stored.map((consent) => deckAgentConsentSchema.parse(consent)),
+        getAgentRunnerSettings: async () => ({ cli: "claude-code" }),
+      },
+      selectedCli: async () => ({
+        id: "claude-code",
+        label: "Claude Code",
+        supported: true,
+        installed: true,
+        version: "2.1.0",
+      }),
+      deck: { held: async () => undefined },
+      startTurn: async () => {
+        throw new Error("No turn starts here.");
+      },
+    });
+
+  it("reads a consent stored before Regroup as covering the code only", () => {
+    expect(deckAgentConsentSchema.parse(before).covers).toBe("code");
+  });
+
+  it("lets asks through with it, and asks again before a regroup sends more", async () => {
+    const asks = asksWith([before]);
+
+    await expect(asks.requireTurnConsent(pullRequest)).resolves.toBeUndefined();
+    await expect(
+      asks.requireTurnConsent(pullRequest, "context"),
+    ).rejects.toMatchObject({
+      status: 409,
+      body: {
+        reason: "needs_consent",
+        repository: REPOSITORY,
+        provider: {
+          cli: "claude-code",
+          label: "Claude Code",
+          version: "2.1.0",
+        },
+        again: "regroup",
+      },
+    });
+  });
+
+  it("lets a regroup through once the consent covers the context", async () => {
+    const asks = asksWith([{ ...before, covers: "context" }]);
+
+    await expect(
+      asks.requireTurnConsent(pullRequest, "context"),
+    ).resolves.toBeUndefined();
+    await expect(asks.requireTurnConsent(pullRequest)).resolves.toBeUndefined();
+  });
+
+  it("asks a repository never allowed without saying it asks again", async () => {
+    const asks = asksWith([]);
+
+    const refused = await asks
+      .requireTurnConsent(pullRequest, "context")
+      .catch((error: unknown) => error);
+
+    expect(refused).toMatchObject({ body: { reason: "needs_consent" } });
+    expect((refused as { body: object }).body).not.toHaveProperty("again");
+  });
+});
+
 describe("the agent's reads", () => {
   it(
-    "lists Deck's reads and the chat's writes, and answers the reads for this pull request at this head",
+    "lists Deck's reads, submit_guide and the chat's writes, and answers the reads for this pull request at this head",
     { timeout: 20_000 },
     async () => {
       const call = (name: string, args: Record<string, unknown> = {}) => ({
@@ -743,6 +879,7 @@ describe("the agent's reads", () => {
         "read_file",
         "read_threads",
         "read_guide",
+        "submit_guide",
         // The chat's writes, which only a chat turn may call (#796).
         "add_draft_comment",
         "post_comment",

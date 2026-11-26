@@ -1,6 +1,8 @@
 import { useCallback, useSyncExternalStore } from "react";
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
+  DECK_LINES_DEFAULT_QUESTION,
+  DECK_SUMMARY_DEFAULT_QUESTION,
   deckNeedsConsentSchema,
   type DeckAskAnchor,
   type DeckCloneSource,
@@ -20,15 +22,15 @@ import { watchAgentTurn } from "@/lib/agent-turns";
 import { AppApiError, askDeck, cancelAgentTurn } from "@/lib/app-api";
 
 /*
- * The open asks of Deck's review page (#791, #793), kept by the page rather
- * than by the concern header or the hunk that shows one. A huge pull
- * request mounts only the rows near the screen (#790), so a header or a
- * hunk scrolled away unmounts: its question, its answer and the turn
- * writing it carry on here, and show again as it comes back. Each ask is
- * keyed by the head it is about and its anchor, a concern or lines of a
- * hunk, and each hunk finds the asks about its lines. A revoked consent
- * drops the repository's answers, cached ones too, and stops the asks
- * still waiting for one.
+ * The open asks of Deck's review page (#791, #793, #794), kept by the
+ * page rather than by the concern header, the summary line or the hunk that
+ * shows one. A huge pull request mounts only the rows near the screen
+ * (#790), so a header or a hunk scrolled away unmounts: its question, its
+ * answer and the turn writing it carry on here, and show again as it comes
+ * back. Each ask is keyed by the head it is about and its anchor, a
+ * concern, a summary line or lines of a hunk, and each hunk finds the asks
+ * about its lines. A revoked consent drops the repository's answers, cached
+ * ones too, and stops the asks still waiting for one.
  */
 
 /** The pull request the page asks about, at the head it shows. */
@@ -48,7 +50,7 @@ export interface DeckAskTarget {
 /** True once the repository is allowed, false for Not now, or why recording the consent failed. */
 export type ConsentAnswer = boolean | { error: string };
 
-/** A concern's or selected lines' open ask. */
+/** A concern's, a summary line's or selected lines' open ask. */
 export interface AskSession {
   /** What it asks about. */
   anchor: DeckAskAnchor;
@@ -80,17 +82,27 @@ export interface AskSession {
 const holdsAnswer = (session: AskSession) =>
   !session.composing && !session.awaitingConsent && !askGoing(session.state);
 
-/** The key of the ask about `anchor` at `head`: a concern by its id, lines by their path and ends. */
+/**
+ * The key of the ask about `anchor` at `head`: a concern by its id, a
+ * summary line by its id, lines by their path and ends.
+ */
 export function askKey(head: string, anchor: DeckAskAnchor) {
-  return anchor.kind === "concern"
-    ? `${head} ${anchor.id}`
-    : `${head} lines:${JSON.stringify([
-        anchor.path,
-        anchor.start.side,
-        anchor.start.line,
-        anchor.end.side,
-        anchor.end.line,
-      ])}`;
+  if (anchor.kind === "concern") return `${head} ${anchor.id}`;
+  if (anchor.kind === "summary") return `${head} summary:${anchor.id}`;
+  return `${head} lines:${JSON.stringify([
+    anchor.path,
+    anchor.start.side,
+    anchor.start.line,
+    anchor.end.side,
+    anchor.end.line,
+  ])}`;
+}
+
+/** The question an ask about `anchor` opens on, which it sends as no question. */
+export function defaultQuestionOf(anchor: DeckAskAnchor) {
+  if (anchor.kind === "concern") return DECK_CONCERN_DEFAULT_QUESTION;
+  if (anchor.kind === "summary") return DECK_SUMMARY_DEFAULT_QUESTION;
+  return DECK_LINES_DEFAULT_QUESTION;
 }
 
 const NO_ASKS: readonly string[] = [];
@@ -99,6 +111,60 @@ const NO_ASKS: readonly string[] = [];
 const hunkChannel = (hunkId: string) => `hunk:${hunkId}`;
 
 const headOf = (key: string) => key.slice(0, key.indexOf(" "));
+
+/** What a request that may need the repository's consent came to. */
+export type ConsentedOutcome<T> =
+  | { kind: "done"; value: T }
+  /** Not now in the consent dialog. */
+  | { kind: "declined" }
+  /** Why it failed, when the error said. */
+  | { kind: "failed"; message: string | undefined }
+  /** A later request replaced it: nothing of it shows. */
+  | { kind: "stale" };
+
+/**
+ * Runs `run`, an ask's or a regroup's request. When the local API refuses
+ * it for the repository's consent, asks the user once, through the page's
+ * consent dialog, and runs it again once allowed. `onAsking` says while the
+ * dialog is open; once `current` says false, nothing more is asked or run.
+ */
+export async function withConsent<T>(
+  run: () => Promise<T>,
+  {
+    requestConsent,
+    current,
+    onAsking,
+  }: {
+    requestConsent: (request: DeckNeedsConsent) => Promise<ConsentAnswer>;
+    current: () => boolean;
+    onAsking?: (asking: boolean) => void;
+  },
+): Promise<ConsentedOutcome<T>> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const value = await run();
+      return current() ? { kind: "done", value } : { kind: "stale" };
+    } catch (error) {
+      if (!current()) return { kind: "stale" };
+      const consent =
+        attempt === 0 && error instanceof AppApiError
+          ? deckNeedsConsentSchema.safeParse(error.payload)
+          : undefined;
+      if (!consent?.success) {
+        return {
+          kind: "failed",
+          message: error instanceof Error ? error.message : undefined,
+        };
+      }
+      onAsking?.(true);
+      const answer = await requestConsent(consent.data);
+      if (!current()) return { kind: "stale" };
+      onAsking?.(false);
+      if (answer === false) return { kind: "declined" };
+      if (answer !== true) return { kind: "failed", message: answer.error };
+    }
+  }
+}
 
 export class DeckAskSessions {
   readonly #requestConsent: (
@@ -150,16 +216,24 @@ export class DeckAskSessions {
   }
 
   /**
-   * Opens the ask about `anchor` at `head` on its default question, the
-   * concern's unless `question` says, to send as is or edit. `hunkId`
-   * shows it under that hunk's lines. An ask already open there starts
-   * again, and an answer still coming for it is dropped.
+   * Asks the user to allow the repository, with the page's one consent
+   * dialog, as a regroup does before its turn (#794).
+   */
+  requestConsent(request: DeckNeedsConsent): Promise<ConsentAnswer> {
+    return this.#requestConsent(request);
+  }
+
+  /**
+   * Opens the ask about `anchor` at `head` on its default question, unless
+   * `question` says, to send as is or edit. `hunkId` shows it under that
+   * hunk's lines. An ask already open there starts again, and an answer
+   * still coming for it is dropped.
    */
   open(
     head: string,
     anchor: DeckAskAnchor,
     {
-      question = DECK_CONCERN_DEFAULT_QUESTION,
+      question = defaultQuestionOf(anchor),
       hunkId,
     }: { question?: string; hunkId?: string } = {},
   ) {
@@ -236,83 +310,75 @@ export class DeckAskSessions {
       state: startAsk(question),
     }));
     const current = () => this.#generations.get(key) === mine;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const starting = new AbortController();
-      this.#update(key, () => ({ starting }));
-      const started = () =>
-        this.#update(key, (session) =>
-          session.starting === starting ? { starting: undefined } : {},
-        );
-      try {
-        const asked = await askDeck(
-          target.pluginId,
-          target.connectionId,
-          {
-            repository: target.repository,
-            number: target.number,
-            head: target.head,
-            anchor,
-            ...(question === undefined ? {} : { question }),
-            ...(target.clone ? { clone: target.clone } : {}),
-          },
-          starting.signal,
-        );
-        if (!current()) return;
-        started();
-        if (asked.kind === "answer") {
-          this.#update(key, (session) => ({
-            state: answerAsk(
-              withClone(session.state, asked.clone),
-              asked.text,
-              asked.head,
-            ),
-          }));
-          return;
-        }
-        this.#conversations.set(
-          asked.turn.conversationId,
-          this.#sessions.get(key)?.askedAt ?? Date.now(),
-        );
-        this.#update(key, (session) => ({
-          state: withClone(session.state, asked.clone),
-          turnId: asked.turn.id,
-        }));
-        this.#watch(key, asked.turn.id, target.head);
-        return;
-      } catch (error) {
-        if (!current()) return;
-        started();
-        const consent =
-          error instanceof AppApiError
-            ? deckNeedsConsentSchema.safeParse(error.payload)
-            : undefined;
-        if (consent?.success && attempt === 0) {
-          this.#update(key, () => ({ awaitingConsent: true }));
-          const answer = await this.#requestConsent(consent.data);
-          if (!current()) return;
-          this.#update(key, () => ({ awaitingConsent: false }));
-          if (answer === true) continue;
-          if (answer === false) {
-            this.close(key);
-            declined();
-            return;
+    const outcome = await withConsent(
+      async () => {
+        // Until its turn starts, Stop aborts the request, and git with it.
+        const starting = new AbortController();
+        this.#update(key, () => ({ starting }));
+        try {
+          return await askDeck(
+            target.pluginId,
+            target.connectionId,
+            {
+              repository: target.repository,
+              number: target.number,
+              head: target.head,
+              anchor,
+              ...(question === undefined ? {} : { question }),
+              ...(target.clone ? { clone: target.clone } : {}),
+            },
+            starting.signal,
+          );
+        } finally {
+          if (current()) {
+            this.#update(key, (session) =>
+              session.starting === starting ? { starting: undefined } : {},
+            );
           }
-          this.#update(key, (session) => ({
-            state: failAsk(session.state, answer.error),
-          }));
-          return;
         }
-        this.#update(key, (session) => ({
-          state: failAsk(
-            session.state,
-            error instanceof Error
-              ? error.message
-              : "Ajour couldn't get more detail.",
-          ),
-        }));
-        return;
-      }
+      },
+      {
+        requestConsent: this.#requestConsent,
+        current,
+        onAsking: (asking) =>
+          this.#update(key, () => ({ awaitingConsent: asking })),
+      },
+    );
+    if (outcome.kind === "stale") return;
+    if (outcome.kind === "declined") {
+      this.close(key);
+      declined();
+      return;
     }
+    if (outcome.kind === "failed") {
+      this.#update(key, (session) => ({
+        state: failAsk(
+          session.state,
+          outcome.message ?? "Ajour couldn't get more detail.",
+        ),
+      }));
+      return;
+    }
+    const asked = outcome.value;
+    if (asked.kind === "answer") {
+      this.#update(key, (session) => ({
+        state: answerAsk(
+          withClone(session.state, asked.clone),
+          asked.text,
+          asked.head,
+        ),
+      }));
+      return;
+    }
+    this.#conversations.set(
+      asked.turn.conversationId,
+      this.#sessions.get(key)?.askedAt ?? Date.now(),
+    );
+    this.#update(key, (session) => ({
+      state: withClone(session.state, asked.clone),
+      turnId: asked.turn.id,
+    }));
+    this.#watch(key, asked.turn.id, target.head);
   }
 
   /** The page shows: its asks follow their turns again. */

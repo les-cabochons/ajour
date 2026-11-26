@@ -16,7 +16,7 @@ import {
  */
 
 /** A linked ticket as the page shows it: never its text. */
-const ticketOf = (ticket: CodeHostLinkedTicket): DeckTicket => ({
+export const ticketOf = (ticket: CodeHostLinkedTicket): DeckTicket => ({
   number: ticket.number,
   ...(ticket.repository ? { repository: ticket.repository } : {}),
   title: ticket.title,

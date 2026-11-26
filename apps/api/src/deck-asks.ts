@@ -8,6 +8,8 @@ import type {
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
   DECK_LINES_DEFAULT_QUESTION,
+  DECK_SUMMARY_DEFAULT_QUESTION,
+  deckConsentCovers,
   deckHunkRows,
   deckLinesLabel,
   deckPullRequestKey,
@@ -15,18 +17,21 @@ import {
   repositoryName,
   sameLinePoint,
   type DeckAgentConsent,
+  type DeckConsentCovers,
   type DeckAskAnchor,
   type DeckAskRequest,
-  type DeckAskResponse,
-  type DeckAskRefusal,
   type DeckChatRequest,
   type DeckChatResponse,
   type DeckCloneSource,
+  type DeckAskResponse,
   type DeckCloneUse,
+  type DeckTurnRefusal,
   type DeckConcern,
+  type DeckGuide,
   type DeckLinesAnchor,
   type DeckPullRequestDiff,
   type DeckPullRequestSource,
+  type DeckSummaryLine,
 } from "../../../packages/shared/deck.ts";
 import type { TurnOptions } from "./agent-runner/conversations.ts";
 import { AgentRunError, PICK_AN_AGENT } from "./agent-runner/launch.ts";
@@ -39,10 +44,10 @@ import type {
 import type { DeckHeldPullRequest } from "./deck-service.ts";
 
 /*
- * Deck's asks (#791, #793). An ask is a `deck.ask` turn of the pull
- * request's conversation, anchored to a concern or to lines selected in one
- * hunk: Ajour writes the turn from the guide and the diff it holds, never
- * from the page's words, with the anchor's default question
+ * Deck's asks (#791, #793, #794). An ask is a `deck.ask` turn of the pull
+ * request's conversation, anchored to a concern, a summary line or lines
+ * selected in one hunk: Ajour writes the turn from the guide and the diff
+ * it holds, never from the page's words, with the anchor's default question
  * or the user's own. Nothing reaches the agent before the user allowed the
  * repository with that agent. A done answer is cached per anchor, typed
  * question and head commit, so asking again answers at once. The cache lives
@@ -53,6 +58,10 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * never stops the ask: the agent reads the pull request alone, and the
  * answer says why.
  */
+
+/** Why a turn about a pull request Deck no longer holds at its head is refused. */
+export const NOT_HELD =
+  "Open the pull request again: Ajour no longer holds it at this commit.";
 
 /** Answers kept. Older ones are asked again. */
 const ANSWERS_KEPT = 200;
@@ -65,11 +74,11 @@ export class DeckAskStopped extends Error {
 }
 
 /** Why an ask, or a core turn, can't run: its status and the body the page reads. */
-export class DeckAskRefused extends Error {
+export class DeckTurnRefused extends Error {
   readonly status: 404 | 409;
-  readonly body: DeckAskRefusal;
+  readonly body: DeckTurnRefusal;
 
-  constructor(status: DeckAskRefused["status"], body: DeckAskRefusal) {
+  constructor(status: DeckTurnRefused["status"], body: DeckTurnRefusal) {
     super(body.error);
     this.status = status;
     this.body = body;
@@ -161,6 +170,37 @@ function selectedRows(diff: DeckPullRequestDiff, anchor: DeckLinesAnchor) {
   return undefined;
 }
 
+/** The summary's sections, as the page names them, for an ask about one of their lines. */
+const SUMMARY_SECTIONS = [
+  ["breaking", "Breaking changes"],
+  ["risks", "Risky areas"],
+  ["tests", "Tests"],
+  ["untested", "Tests"],
+  ["leftovers", "Leftovers"],
+] as const;
+
+/** A summary line of the guide, with the section it is in. */
+function summaryLineOf(guide: DeckGuide | null, id: string) {
+  for (const [field, section] of SUMMARY_SECTIONS) {
+    const line = guide?.summary[field].find((candidate) => candidate.id === id);
+    if (line) return { line, section };
+  }
+  return undefined;
+}
+
+/** The turn's words for a summary line: the line as Ajour holds it, then the question. */
+function summaryLineMessage(
+  { line, section }: { line: DeckSummaryLine; section: string },
+  question: string | undefined,
+) {
+  return [
+    `The user reads this line of the summary, under "${section}": ${line.text}`,
+    `Its hunks: ${line.hunkIds.join(", ")}. Read them with read_hunks.`,
+    "",
+    `The question: ${question ?? DECK_SUMMARY_DEFAULT_QUESTION}`,
+  ].join("\n");
+}
+
 /** The turn's words for selected lines: where they are, the rows as the diff has them, then the question. */
 function linesMessage(
   anchor: DeckLinesAnchor,
@@ -184,16 +224,26 @@ function turnMessage(held: DeckHeldPullRequest, request: DeckAskRequest) {
   if (anchor.kind === "lines") {
     const selected = selectedRows(held.diff, anchor);
     if (!selected) {
-      throw new DeckAskRefused(404, {
+      throw new DeckTurnRefused(404, {
         error: "The diff doesn't show those lines.",
         reason: "unknown_anchor",
       });
     }
     return linesMessage(anchor, selected, question);
   }
+  if (anchor.kind === "summary") {
+    const line = summaryLineOf(held.guide, anchor.id);
+    if (!line) {
+      throw new DeckTurnRefused(404, {
+        error: "The summary has no such line.",
+        reason: "unknown_anchor",
+      });
+    }
+    return summaryLineMessage(line, question);
+  }
   const concern = held.guide?.concerns.find(({ id }) => id === anchor.id);
   if (!concern) {
-    throw new DeckAskRefused(404, {
+    throw new DeckTurnRefused(404, {
       error: "The guide has no such concern.",
       reason: "unknown_anchor",
     });
@@ -208,37 +258,48 @@ function turnMessage(held: DeckHeldPullRequest, request: DeckAskRequest) {
 function chatMessage(held: DeckHeldPullRequest, request: DeckChatRequest) {
   const { anchor, message } = request;
   if (!anchor) return message;
-  let context: string;
+  if (anchor.kind === "summary") {
+    const line = summaryLineOf(held.guide, anchor.id);
+    if (!line) {
+      throw new DeckTurnRefused(404, {
+        error: "The summary has no such line.",
+        reason: "unknown_anchor",
+      });
+    }
+    return `The user continues from this line of the summary, under "${line.section}": ${line.line.text} Its hunks: ${line.line.hunkIds.join(", ")}.\n\n${message}`;
+  }
   if (anchor.kind === "lines") {
     const selected = selectedRows(held.diff, anchor);
     if (!selected) {
-      throw new DeckAskRefused(404, {
+      throw new DeckTurnRefused(404, {
         error: "The diff doesn't show those lines.",
         reason: "unknown_anchor",
       });
     }
-    context = [
+    const context = [
       `The user continues from ${deckLinesLabel(anchor)} of ${anchor.path}, in hunk ${selected.hunkId}:`,
       "```diff",
       ...selected.rows,
       "```",
     ].join("\n");
-  } else {
-    const concern = held.guide?.concerns.find(({ id }) => id === anchor.id);
-    if (!concern) {
-      throw new DeckAskRefused(404, {
-        error: "The guide has no such concern.",
-        reason: "unknown_anchor",
-      });
-    }
-    context = `The user continues from the guide's concern "${concern.title}", whose hunks are ${concern.hunkIds.join(", ")}.`;
+    return `${context}\n\n${message}`;
   }
-  return `${context}\n\n${message}`;
+  const concern = held.guide?.concerns.find(({ id }) => id === anchor.id);
+  if (!concern) {
+    throw new DeckTurnRefused(404, {
+      error: "The guide has no such concern.",
+      reason: "unknown_anchor",
+    });
+  }
+  return `The user continues from the guide's concern "${concern.title}", whose hunks are ${concern.hunkIds.join(", ")}.\n\n${message}`;
 }
 
-/** The anchor as its answers are cached: a concern by its id, lines by their path and ends. */
+/**
+ * The anchor as its answers are cached: a concern or a summary line by its
+ * id, lines by their path and ends.
+ */
 const anchorKey = (anchor: DeckAskAnchor) =>
-  anchor.kind === "concern"
+  anchor.kind !== "lines"
     ? [anchor.kind, anchor.id]
     : [
         anchor.kind,
@@ -346,10 +407,14 @@ export function createDeckAsks(options: DeckAsksOptions) {
   ) =>
     JSON.stringify([pullRequest, head, ...anchorKey(anchor), question ?? null]);
 
-  /** Whether the user allowed the repository with this agent. */
+  /**
+   * Whether the user allowed the repository with this agent, for what
+   * `covers` names: a consent that covers the context covers the code too.
+   */
   async function consentedWith(
     source: DeckPullRequestSource,
     cli: AgentCliId | null,
+    covers: DeckConsentCovers = "code",
   ) {
     if (!cli) return false;
     const consents = await options.storage.getDeckConsents();
@@ -358,27 +423,37 @@ export function createDeckAsks(options: DeckAsksOptions) {
         consent.pluginId === source.pluginId &&
         consent.connectionId === source.connectionId &&
         consent.repository === source.repository &&
-        consent.cli === cli,
+        consent.cli === cli &&
+        deckConsentCovers(consent.covers, covers),
     );
   }
 
   /**
    * Refuses unless the user allowed the pull request's repository with the
-   * agent Settings › Agents picks. The check reads only the saved choices, so
-   * a cached answer shows at once; the refusal names the agent and its
-   * version. Throws an AgentRunError when no agent is picked or installed,
-   * as the turn's start would.
+   * agent Settings › Agents picks, for what `covers` names. The check reads
+   * only the saved choices, so a cached answer shows at once; the refusal
+   * names the agent and its version, and says when the repository is
+   * allowed for the code only. Throws an AgentRunError when no agent is
+   * picked or installed, as the turn's start would.
    */
-  async function requireConsent(source: DeckPullRequestSource) {
+  async function requireConsent(
+    source: DeckPullRequestSource,
+    covers: DeckConsentCovers,
+  ) {
     const { cli: picked } = await options.storage.getAgentRunnerSettings();
-    if (await consentedWith(source, picked)) return;
+    if (await consentedWith(source, picked, covers)) return;
     const cli = await options.selectedCli();
     if (!cli) throw new AgentRunError(PICK_AN_AGENT, 400);
     if (!cli.installed) {
       throw new AgentRunError(`${cli.label} is not installed.`, 400);
     }
-    throw new DeckAskRefused(409, {
-      error: `Ajour asks once for ${repositoryName(source.repository)} before it sends its code to ${cli.label}.`,
+    const again =
+      covers === "context" && (await consentedWith(source, cli.id, "code"));
+    const name = repositoryName(source.repository);
+    throw new DeckTurnRefused(409, {
+      error: again
+        ? `Ajour asks again for ${name} before a regroup sends its description and linked tickets to ${cli.label}.`
+        : `Ajour asks once for ${name} before it sends its code to ${cli.label}.`,
       reason: "needs_consent",
       repository: source.repository,
       provider: {
@@ -386,14 +461,16 @@ export function createDeckAsks(options: DeckAsksOptions) {
         label: cli.label,
         ...(cli.version ? { version: cli.version } : {}),
       },
+      ...(again ? { again: "regroup" as const } : {}),
     });
   }
 
   return {
     /**
      * Whether a pull request's repository is allowed now with `cli`, the
-     * agent a conversation runs: asked before each turn is sent to it, and
-     * at each of its reads. Another agent's consent never counts.
+     * agent a conversation runs, whatever the consent covers: asked before
+     * each turn is sent to it, and at each of its reads. Another agent's
+     * consent never counts.
      */
     async allowedWith(pullRequest: string, cli: AgentCliId | undefined) {
       const source = parseDeckPullRequestKey(pullRequest);
@@ -402,17 +479,21 @@ export function createDeckAsks(options: DeckAsksOptions) {
 
     /**
      * The gate of every core turn, whoever starts it: a turn about anything
-     * but a Deck pull request whose repository the user allowed is refused.
+     * but a Deck pull request whose repository the user allowed, for what
+     * `covers` names, is refused. A regroup's turn needs the context.
      */
-    async requireTurnConsent(pullRequest: string) {
+    async requireTurnConsent(
+      pullRequest: string,
+      covers: DeckConsentCovers = "code",
+    ) {
       const source = parseDeckPullRequestKey(pullRequest);
       if (!source) {
-        throw new DeckAskRefused(404, {
+        throw new DeckTurnRefused(404, {
           error: "Deck doesn't know that pull request.",
           reason: "not_open",
         });
       }
-      await requireConsent(source);
+      await requireConsent(source, covers);
     },
 
     /** Answers an ask from the cache, or starts the turn that answers it. */
@@ -426,7 +507,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
         repository: request.repository,
         number: request.number,
       };
-      await requireConsent(pullRequestSource);
+      await requireConsent(pullRequestSource, "code");
       const pullRequest = deckPullRequestKey(pullRequestSource);
       const key = cacheKey(
         pullRequest,
@@ -450,11 +531,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
       }
       const held = await options.deck.held(pullRequest, request.head);
       if (!held) {
-        throw new DeckAskRefused(409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
       }
       const message = turnMessage(held, request);
       const clone = await cloneFor(pullRequestSource, held, request, signal);
@@ -462,11 +539,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
       // worktree goes with it, and the ask asks to open it again.
       if (clone.root && !(await options.deck.held(pullRequest, request.head))) {
         void options.clones?.release(held.key).catch(() => undefined);
-        throw new DeckAskRefused(409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
       }
       // A stop that came while the ask waited starts no turn.
       if (signal?.aborted) throw new DeckAskStopped();
@@ -494,8 +567,9 @@ export function createDeckAsks(options: DeckAsksOptions) {
 
     /**
      * Starts a chat message's `deck.chat` turn (#796): never from a cache,
-     * since each message follows the ones before it. It reads the user's
-     * clone as an ask does, and its writes are the chat's tools.
+     * since each message follows the ones before it. It sends what an ask
+     * sends, so the same consent covers it, and reads the user's clone as
+     * an ask does. Its writes are the chat's tools.
      */
     async chat(
       source: Pick<DeckPullRequestSource, "pluginId" | "connectionId">,
@@ -507,25 +581,18 @@ export function createDeckAsks(options: DeckAsksOptions) {
         repository: request.repository,
         number: request.number,
       };
-      await requireConsent(pullRequestSource);
+      await requireConsent(pullRequestSource, "code");
       const pullRequest = deckPullRequestKey(pullRequestSource);
       const held = await options.deck.held(pullRequest, request.head);
       if (!held) {
-        throw new DeckAskRefused(409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
       }
       const message = chatMessage(held, request);
       const clone = await cloneFor(pullRequestSource, held, request, signal);
+      // The pull request may have left while the clone was prepared.
       if (clone.root && !(await options.deck.held(pullRequest, request.head))) {
         void options.clones?.release(held.key).catch(() => undefined);
-        throw new DeckAskRefused(409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
       }
       if (signal?.aborted) throw new DeckAskStopped();
       const turn = await options.startTurn(

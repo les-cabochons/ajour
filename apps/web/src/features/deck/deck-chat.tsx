@@ -7,7 +7,11 @@ import {
   useState,
 } from "react";
 import { RiCloseLine } from "@remixicon/react";
-import type { DeckAskAnchor, DeckNeedsConsent } from "@ajour/shared/deck";
+import type {
+  DeckAskAnchor,
+  DeckConsentCovers,
+  DeckNeedsConsent,
+} from "@ajour/shared/deck";
 import { DECK_QUESTION_MAX } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
 import { SidePanel } from "@/components/side-panel";
@@ -78,11 +82,11 @@ export function useChatConsent(target: {
       ),
     [],
   );
-  const answer = async (allowed: boolean) => {
+  const answer = async (covers: DeckConsentCovers | null) => {
     const current = asking;
     if (!current) return;
     setAsking(undefined);
-    if (!allowed) {
+    if (!covers) {
       current.resolve(false);
       return;
     }
@@ -92,6 +96,7 @@ export function useChatConsent(target: {
         target.connectionId,
         current.request.repository,
         current.request.provider.cli,
+        covers,
       );
       current.resolve(true);
     } catch (error) {
@@ -106,7 +111,7 @@ export function useChatConsent(target: {
   const dialog = (
     <DeckConsentDialog
       request={asking?.request}
-      onAnswer={(allowed) => void answer(allowed)}
+      onAnswer={(covers) => void answer(covers)}
     />
   );
   return { requestConsent, dialog };

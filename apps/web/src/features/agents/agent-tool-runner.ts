@@ -270,7 +270,10 @@ function addDeckDraftComment(call: BridgeToolCall): BridgeToolResult {
     repository: input.repository,
     number: input.number,
   };
-  const draft = draftReviewOf(localStore.snapshot().deckDraftReviews ?? [], ref);
+  const draft = draftReviewOf(
+    localStore.snapshot().deckDraftReviews ?? [],
+    ref,
+  );
   if (draft && draft.headSha !== input.headSha) {
     throw new AgentToolRefusal(
       "The user's draft review is on another head of this pull request, so Ajour added nothing. Tell the user to refresh the page.",

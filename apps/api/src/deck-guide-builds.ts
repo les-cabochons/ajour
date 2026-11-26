@@ -5,6 +5,7 @@ import {
   type GuideJobBuilt,
   type GuideJobResult,
 } from "../../../packages/review-deck/guide-job.ts";
+import type { GroupedConcern } from "../../../packages/review-deck/summary.ts";
 import type { ApiEvents } from "./events.ts";
 
 /*
@@ -23,6 +24,11 @@ export interface GuideBuildInput {
   old: Map<string, string>;
   /** Each file's head version, by its head path. */
   new: Map<string, string>;
+  /**
+   * Concerns grouped already, as an agent regrouped them (#794): the build
+   * skips the pipeline and runs only the summary's rules on them.
+   */
+  concerns?: GroupedConcern[];
 }
 
 /**
