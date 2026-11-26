@@ -63,6 +63,16 @@ When the author pushes and you open the pull request again, a draft comment whos
 
 Commenting and reviewing need the connection's **Review pull requests** access, and a token that can write to pull requests: **Code (Read & write)** on Azure DevOps. It starts off. Turn it on in the connection's settings under **Settings › Plugins**.
 
+## Land your own pull request
+
+On a pull request you opened, Deck lets you finish it without leaving Ajour. Each change goes to the code host at once.
+
+- **Edit the title**: the pencil beside the title edits it in place. <kbd>Enter</kbd> saves it, <kbd>Esc</kbd> leaves it as it was. If saving fails, your words stay, with **Retry**.
+- **Convert to draft** and **Ready for review** (**Mark as draft** and **Publish** on Azure DevOps) switch it between draft and ready.
+- **Merge…** asks first. It names the head you read and the branch it merges into, offers only the merge methods the repository allows, and starts the commit title the way the code host would write it, which you can change. A rebase has no merge commit, so no title. If the merge fails, the dialog keeps your method and title and says why, with **Retry**; Retry never merges twice. While a newer push than the one on screen came in, or while the pull request is a draft, Merge waits: refresh to read the new push, or mark it ready.
+
+These need the connection's **Review pull requests** access too. The chat can't merge: only this page does.
+
 ## Ask for more detail
 
 Each concern's reason ends with a faint **more ›**. Click it and the question it asks shows in place, ready: what the concern changes, why, and what to check. Press Enter to ask it as is, or type your own question first; Escape closes it. The answer is written in place under the reason by the agent you picked in **Settings › Agents**. It shows **Getting more detail…** until the answer starts, then the answer comes in as it is written, and ends with the commit it is about. Type in **Ask something else…** under an answer to ask another question about the concern. **Stop** stops an answer, and **Dismiss** closes it. An answer you already got, for the same question and commit, shows at once.

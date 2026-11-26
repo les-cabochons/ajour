@@ -149,8 +149,18 @@ Deck's draft review writes through two operations, each sent as soon as the user
 - Ajour runs the writes of one `submissionId` on a connection one at a time, so two windows retrying the same draft don't both find nothing and both post. A try that waited behind another runs as a retry, with that one's `firstTriedAt`.
 - Check the head before writing: refuse a `headSha` the pull request doesn't have, and an approval that a vote on the whole pull request would give to commits the user didn't read.
 
+### What the author writes
+
+On a pull request the user opened (`viewerIsAuthor`), Deck edits the title, toggles draft and ready, and merges, each sent as soon as the user acts (ADR 0002).
+
+- `updatePullRequest`: the new `title`, the `draft` state, or both. Return the `title` and `draft` the code host holds after the update, which Deck shows. Setting a draft state the pull request already has changes nothing. The GitHub plugin edits the title over REST and changes the draft state through GraphQL; the Azure DevOps plugin sends both in one update of the pull request.
+- `mergePullRequest`: merge with `method`, one of the conversation's `mergeMethods`, at `headSha`, the head the user read, with an optional `commitTitle` and `commitMessage`. Deck asks the user first, offers only the `mergeMethods` you return, and sends no commit title for `rebase`. Return the `mergeCommitSha`, or leave it out while the code host is still completing the merge, as Azure DevOps can.
+- A merge happens at most once, and only at that head. Before you merge, read the pull request: one already merged at `headSha` is a retry whose first answer was lost, so return that merge and merge nothing again; refuse one merged at another head, one that's closed, a draft, and one whose head moved on. Then merge with the head attached, so the code host refuses it if a push lands in between: GitHub's `sha`, Azure DevOps's `lastMergeSourceCommit`. When the merge call fails, read the pull request again, since the code host may have merged before its answer was lost.
+- Ajour runs the merges of one pull request on a connection one at a time, so a second window's merge finds the first one's.
+- Return `mergeMethods` from what the repository allows: GitHub's repository settings, or the target branch's "Limit merge types" policies on Azure DevOps.
+
 Put the write endpoints and operations behind their own access choice, such as the official plugins' `reviewPullRequests`, "Review pull requests", so a connection reads pull requests without being able to write to them. An update that adds the choice asks for consent once, and the choice starts off.
 
 ::: info Not used yet
-Ajour does not call `replyToThread`, `setThreadResolved`, `setFileViewed`, `updatePullRequest` or `mergePullRequest` yet. They and their schemas may change before Ajour uses them.
+Ajour does not call `replyToThread`, `setThreadResolved` or `setFileViewed` yet. They and their schemas may change before Ajour uses them.
 :::

@@ -11,7 +11,7 @@ next: false
 
 # Conditions d'utilisation
 
-Dernière mise à jour : 24 novembre 2026
+Dernière mise à jour : 26 novembre 2026
 
 <a href="/legal/terms" lang="en">English version</a>. Consulter la version anglaise ou l'utiliser ne constitue pas un choix exprès de renoncer à la version française ou à un droit linguistique.
 
@@ -57,7 +57,7 @@ Activer MCP ou démarrer une tâche d'agent peut donner à un agent accès aux d
 
 Demander plus de détails sur une demande de tirage dans Deck envoie des parties du code et des fils de revue de ce dépôt à l'agent choisi et à son fournisseur d'IA, une fois le dépôt autorisé. N'autorisez un dépôt que si votre organisation permet d'envoyer son code à ce fournisseur. Les réponses peuvent être fausses : vérifiez-les dans le code avant de vous y fier.
 
-Les commentaires et les revues que vous envoyez depuis Deck partent aussitôt vers l'hébergeur de code, sous votre compte et en votre nom : une approbation ou une demande de changements y compte comme si vous l'aviez faite sur GitHub ou Azure DevOps. Ajour garde votre brouillon de revue sur votre appareil jusqu'à son envoi, et ne peut pas reprendre ce que l'hébergeur a reçu.
+Les commentaires et les revues que vous envoyez depuis Deck partent aussitôt vers l'hébergeur de code, sous votre compte et en votre nom : une approbation ou une demande de changements y compte comme si vous l'aviez faite sur GitHub ou Azure DevOps. Ajour garde votre brouillon de revue sur votre appareil jusqu'à son envoi, et ne peut pas reprendre ce que l'hébergeur a reçu. Il en va de même d'un titre, d'un changement de brouillon ou d'une fusion que vous faites sur votre propre demande : une fusion que vous confirmez arrive chez l'hébergeur et ne peut pas être annulée depuis Ajour.
 
 Nous ne garantissons pas la disponibilité, la sécurité ou l'exactitude des services indépendants. Les présentes conditions ne proposent pas de service d'équipe hébergé par Ajour.
 
