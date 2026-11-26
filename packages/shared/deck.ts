@@ -285,13 +285,53 @@ export function deckPullRequestLabel(key: string): string {
   return source ? `${source.repository}#${source.number}` : key;
 }
 
-/** What an ask is about. Only a concern for now; selected lines come with #790. */
-export const deckAskAnchorSchema = z.object({
-  kind: z.literal("concern"),
-  /** The concern's id in the guide. */
-  id: z.string().min(1).max(100),
+/**
+ * The question an ask about selected lines opens on (#793): Explain sends
+ * it as is, so its answer is cached as the default one.
+ */
+export const DECK_LINES_DEFAULT_QUESTION =
+  "Explain these lines: what they do, why they changed, and what a reviewer should check.";
+
+/** A line of a hunk: a removed line by the base's number, any other by the head's. */
+export const deckLinePointSchema = z.object({
+  side: z.enum(["base", "head"]),
+  line: z.number().int().positive(),
 });
+export type DeckLinePoint = z.infer<typeof deckLinePointSchema>;
+
+/**
+ * What an ask is about: a concern of the guide, or lines selected in one
+ * hunk, from `start` to `end` in the hunk's row order. The lines can run
+ * over both sides, as a change's removed and added lines do.
+ */
+export const deckAskAnchorSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("concern"),
+    /** The concern's id in the guide. */
+    id: z.string().min(1).max(100),
+  }),
+  z.object({
+    kind: z.literal("lines"),
+    /** The file's path, as the diff names it. */
+    path: pathSchema,
+    start: deckLinePointSchema,
+    end: deckLinePointSchema,
+  }),
+]);
 export type DeckAskAnchor = z.infer<typeof deckAskAnchorSchema>;
+export type DeckLinesAnchor = Extract<DeckAskAnchor, { kind: "lines" }>;
+
+const pointName = (point: DeckLinePoint) =>
+  point.side === "base" ? `removed line ${point.line}` : `line ${point.line}`;
+
+/** How the page and the agent name selected lines: "line 12", "lines 12–14", "removed line 3 to line 5". */
+export function deckLinesLabel({ start, end }: DeckLinesAnchor): string {
+  if (start.side === end.side && start.line === end.line)
+    return pointName(start);
+  if (start.side === end.side)
+    return `${start.side === "base" ? "removed lines" : "lines"} ${start.line}–${end.line}`;
+  return `${pointName(start)} to ${pointName(end)}`;
+}
 
 /** Asks about a pull request at one head, on its default question or a typed one. */
 export const deckAskRequestSchema = z.object({

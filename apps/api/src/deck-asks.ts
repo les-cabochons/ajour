@@ -7,6 +7,8 @@ import type {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   DECK_CONCERN_DEFAULT_QUESTION,
+  DECK_LINES_DEFAULT_QUESTION,
+  deckLinesLabel,
   deckPullRequestKey,
   parseDeckPullRequestKey,
   repositoryName,
@@ -16,15 +18,19 @@ import {
   type DeckAskResponse,
   type DeckAskRefusal,
   type DeckConcern,
+  type DeckLinePoint,
+  type DeckLinesAnchor,
+  type DeckPullRequestDiff,
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { AgentRunError, PICK_AN_AGENT } from "./agent-runner/launch.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
 
 /*
- * Deck's asks (#791). An ask is a `deck.ask` turn of the pull request's
- * conversation, anchored to a concern: Ajour writes the turn from the guide
- * it holds, never from the page's words, with the anchor's default question
+ * Deck's asks (#791, #793). An ask is a `deck.ask` turn of the pull
+ * request's conversation, anchored to a concern or to lines selected in one
+ * hunk: Ajour writes the turn from the guide and the diff it holds, never
+ * from the page's words, with the anchor's default question
  * or the user's own. Nothing reaches the agent before the user allowed the
  * repository with that agent. A done answer is cached per anchor, typed
  * question and head commit, so asking again answers at once. The cache lives
@@ -85,6 +91,100 @@ function concernMessage(concern: DeckConcern, question: string | undefined) {
     .join("\n");
 }
 
+/** A hunk's rows, each with the line it is on: a removed row by the base's number, any other by the head's. */
+function hunkRows(patch: string) {
+  const rows = patch.split("\n");
+  const at = rows.findIndex((row) => row.startsWith("@@"));
+  const [, oldStart = 1, newStart = 1] =
+    /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(rows[at] ?? "")?.map(Number) ?? [];
+  let base = oldStart;
+  let head = newStart;
+  const lines: { point: DeckLinePoint; row: string }[] = [];
+  for (const row of rows.slice(at + 1)) {
+    if (row.startsWith("-")) {
+      lines.push({ point: { side: "base", line: base++ }, row });
+    } else if (row.startsWith("+") || row.startsWith(" ")) {
+      lines.push({ point: { side: "head", line: head++ }, row });
+      if (row.startsWith(" ")) base += 1;
+    }
+  }
+  return lines;
+}
+
+const samePoint = (a: DeckLinePoint, b: DeckLinePoint) =>
+  a.side === b.side && a.line === b.line;
+
+/** The selected rows of the hunk that shows them, in its order, or undefined when none does. */
+function selectedRows(diff: DeckPullRequestDiff, anchor: DeckLinesAnchor) {
+  const file = diff.files.find((entry) => entry.path === anchor.path);
+  for (const hunk of file?.hunks ?? []) {
+    const rows = hunkRows(hunk.patch);
+    const first = rows.findIndex(({ point }) => samePoint(point, anchor.start));
+    const last = rows.findIndex(({ point }) => samePoint(point, anchor.end));
+    if (first < 0 || last < 0) continue;
+    return {
+      hunkId: hunk.id,
+      rows: rows
+        .slice(Math.min(first, last), Math.max(first, last) + 1)
+        .map(({ row }) => row),
+    };
+  }
+  return undefined;
+}
+
+/** The turn's words for selected lines: where they are, the rows as the diff has them, then the question. */
+function linesMessage(
+  anchor: DeckLinesAnchor,
+  selected: { hunkId: string; rows: string[] },
+  question: string | undefined,
+) {
+  return [
+    `The user selected ${deckLinesLabel(anchor)} of ${anchor.path}, in hunk ${selected.hunkId}:`,
+    "```diff",
+    ...selected.rows,
+    "```",
+    "Read the hunk with read_hunks, and the file with read_file, for what is around them.",
+    "",
+    `The question: ${question ?? DECK_LINES_DEFAULT_QUESTION}`,
+  ].join("\n");
+}
+
+/** The turn's words for the ask's anchor; refused when Ajour holds no such anchor. */
+function turnMessage(held: DeckHeldPullRequest, request: DeckAskRequest) {
+  const { anchor, question } = request;
+  if (anchor.kind === "lines") {
+    const selected = selectedRows(held.diff, anchor);
+    if (!selected) {
+      throw new DeckAskRefused(404, {
+        error: "The diff doesn't show those lines.",
+        reason: "unknown_anchor",
+      });
+    }
+    return linesMessage(anchor, selected, question);
+  }
+  const concern = held.guide?.concerns.find(({ id }) => id === anchor.id);
+  if (!concern) {
+    throw new DeckAskRefused(404, {
+      error: "The guide has no such concern.",
+      reason: "unknown_anchor",
+    });
+  }
+  return concernMessage(concern, question);
+}
+
+/** The anchor as its answers are cached: a concern by its id, lines by their path and ends. */
+const anchorKey = (anchor: DeckAskAnchor) =>
+  anchor.kind === "concern"
+    ? [anchor.kind, anchor.id]
+    : [
+        anchor.kind,
+        anchor.path,
+        anchor.start.side,
+        anchor.start.line,
+        anchor.end.side,
+        anchor.end.line,
+      ];
+
 export function createDeckAsks(options: DeckAsksOptions) {
   /** Done answers by `cacheKey`, oldest first. */
   const answers = new Map<string, string>();
@@ -97,13 +197,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
     anchor: DeckAskAnchor,
     question: string | undefined,
   ) =>
-    JSON.stringify([
-      pullRequest,
-      head,
-      anchor.kind,
-      anchor.id,
-      question ?? null,
-    ]);
+    JSON.stringify([pullRequest, head, ...anchorKey(anchor), question ?? null]);
 
   /** Whether the user allowed the repository with this agent. */
   async function consentedWith(
@@ -206,19 +300,11 @@ export function createDeckAsks(options: DeckAsksOptions) {
           reason: "not_open",
         });
       }
-      const concerns = held.guide?.concerns ?? [];
-      const concern = concerns.find(({ id }) => id === request.anchor.id);
-      if (!concern) {
-        throw new DeckAskRefused(404, {
-          error: "The guide has no such concern.",
-          reason: "unknown_anchor",
-        });
-      }
       const turn = await options.startTurn({
         task: "deck.ask",
         pullRequest,
         head: request.head,
-        message: concernMessage(concern, request.question),
+        message: turnMessage(held, request),
       });
       streaming.set(turn.id, { key, pieces: [] });
       return { kind: "turn", turn };
