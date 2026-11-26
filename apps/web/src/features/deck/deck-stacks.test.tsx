@@ -395,6 +395,40 @@ it("offers Next in stack after sending a review, which opens the layer above", a
   expect(screen.queryByRole("dialog", { name: "Approved" })).toBeNull();
 });
 
+it("keeps saying the review was sent when the layer above leaves the stack meanwhile", async () => {
+  await renderReviewPage(482);
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Finish review",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Finish review" }));
+  const dialog = await screen.findByRole("dialog", { name: "Finish review" });
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Approve" }));
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Submit review" }),
+  );
+  await screen.findByRole("dialog", { name: "Approved" });
+
+  // A sync drops #485, the layer above.
+  act(() => sync(STACK.filter((pullRequest) => pullRequest.number !== 485)));
+
+  const sent = screen.getByRole("dialog", { name: "Approved" });
+  expect(
+    within(sent).queryByRole("button", { name: "Next in stack" }),
+  ).toBeNull();
+  expect(
+    within(sent).queryByRole("button", { name: "Submit review" }),
+  ).toBeNull();
+  fireEvent.click(within(sent).getAllByRole("button", { name: "Close" })[0]!);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(api.submitPullRequestReview).toHaveBeenCalledTimes(1);
+});
+
 it("closes as before after a review of the top layer", async () => {
   await renderReviewPage(485);
   await waitFor(() =>

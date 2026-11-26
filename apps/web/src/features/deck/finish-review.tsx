@@ -228,11 +228,17 @@ export function FinishReview({
         }}
       >
         <DialogContent>
-          {sent && nextLayer ? (
+          {sent ? (
+            // Once sent it stays sent: a sync that drops the layer above
+            // takes Next in stack away, never back to the form.
             <>
               <DialogHeader>
                 <DialogTitle>{sentTitle(sent)}</DialogTitle>
-                <DialogDescription>{nextInStack(nextLayer)}</DialogDescription>
+                <DialogDescription>
+                  {nextLayer
+                    ? nextInStack(nextLayer)
+                    : "The layer above left the stack."}
+                </DialogDescription>
               </DialogHeader>
               <DialogFooter>
                 <Button
@@ -245,9 +251,11 @@ export function FinishReview({
                 >
                   Close
                 </Button>
-                <Button type="button" autoFocus onClick={openNext}>
-                  Next in stack
-                </Button>
+                {nextLayer ? (
+                  <Button type="button" autoFocus onClick={openNext}>
+                    Next in stack
+                  </Button>
+                ) : null}
               </DialogFooter>
             </>
           ) : (
