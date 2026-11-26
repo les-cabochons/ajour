@@ -200,6 +200,10 @@ export function LinesToolbar({
       style={top === undefined ? undefined : { top }}
       data-placed={top === undefined ? undefined : ""}
     >
+      {/* Read out as the lines are picked, from the keyboard too. */}
+      <span className="sr-only" role="status">
+        {`${capitalized(label)} selected.`}
+      </span>
       {asks ? (
         <>
           <ToolbarButton label="Explain" shortcut="E" onClick={explain} />
