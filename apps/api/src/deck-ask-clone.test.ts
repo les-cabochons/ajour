@@ -150,6 +150,8 @@ async function startCloneApi() {
   }
   let mcpUrl = "";
   const sink = createRecordingSink<AjourEvent>();
+  /** The folders the API asked the file manager to show. */
+  const shown: string[] = [];
   const plugin = await createCodeHostPlugin(root);
   const boot = () =>
     startAppApiServer({
@@ -165,6 +167,9 @@ async function startCloneApi() {
       allowDevelopmentPlugins: true,
       developmentPluginDirectories: [plugin],
       deckGuideRuntime: guideRuntime,
+      openFolder: async (folder) => {
+        shown.push(folder);
+      },
       agentCliPath: bin,
       agentCliAdapters: [
         fakeCliAdapter(
@@ -232,6 +237,8 @@ async function startCloneApi() {
       mcpUrl = `${baseUrl}/mcp/ajour`;
     },
     events: sink.events,
+    shown,
+    root,
     open,
     source,
     ask(body: Record<string, unknown> = {}) {
@@ -601,7 +608,7 @@ describe("the clone routes' events", () => {
       await api.ended(asked.body.turn.id);
       const [argv] = await api.launches();
       const root = argv![argv!.indexOf("--add-dir") + 1]!;
-      // A file of the user's in Deck's worktree: git won't remove it.
+      // A file of the user's in Deck's worktree: it stays.
       const mine = path.join(root, "my notes.txt");
       await writeFile(mine, "mine\n");
 
@@ -615,13 +622,28 @@ describe("the clone routes' events", () => {
       expect(await readFile(mine, "utf8")).toBe("mine\n");
       expect(eventNamed(api.events, "deck.clone_kept")).toMatchObject({
         outcome: "ok",
-        deck: { clone_kept: "git_refused", clone_environment: "native" },
+        deck: { clone_kept: "not_clean", clone_environment: "native" },
       });
       const recorded = JSON.stringify(
         eventNamed(api.events, "deck.clone_kept"),
       );
       expect(recorded).not.toContain(fixture.root);
       expect(recorded).not.toContain(fixture.root.replaceAll("\\", "/"));
+
+      // Settings › Storage counts it, and shows its folder on request.
+      expect(
+        (await apiRequest(api.baseUrl, "/api/deck/storage")).body,
+      ).toMatchObject({ keptCloneFolderCount: 1 });
+      expect(
+        (await apiRequest(api.baseUrl, "/api/deck/storage/kept/open", {}))
+          .status,
+      ).toBe(200);
+      expect(api.shown).toEqual([
+        path.join(api.root, "data", "deck-cache", "worktrees"),
+      ]);
+      expect(
+        JSON.stringify(eventNamed(api.events, "deck.storage_open_kept")),
+      ).not.toContain("deck-cache");
     },
   );
 

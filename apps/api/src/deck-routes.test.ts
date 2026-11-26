@@ -275,6 +275,7 @@ async function startDeck(
       capBytes: number;
       entryCount: number;
       pendingRemovalCount: number;
+      keptCloneFolderCount: number;
     };
   return {
     get api() {
@@ -1667,6 +1668,7 @@ describe("the content cache", () => {
       capBytes: 1024 ** 3,
       entryCount: 0,
       pendingRemovalCount: 0,
+      keptCloneFolderCount: 0,
     });
     await deck.open(7);
     const used = await deck.storage();
@@ -1690,6 +1692,7 @@ describe("the content cache", () => {
         capBytes: 250 * 1024 ** 2,
         entryCount: 0,
         pendingRemovalCount: 0,
+        keptCloneFolderCount: 0,
       },
     });
     await deck.open(7, "head");

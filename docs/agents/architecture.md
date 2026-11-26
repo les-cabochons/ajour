@@ -1987,21 +1987,25 @@ ADR 0023), in `apps/api/src/deck-clones.ts`, core code in the local API.
   entry's repository and finds the worktree through the saved clone. Once
   the API listens, `sweepAtStart` removes, in every clone on this computer,
   Deck's worktrees and refs whose entries the cache no longer holds
-  (`liveEntries`), and the folders under `deck-cache/worktrees/` no live
-  entry owns; a WSL clone is swept at its first use, so a start never wakes
-  WSL. Forgetting or replacing a clone removes its worktrees first, while
+  (`liveEntries`), and reports the folders under `deck-cache/worktrees/`
+  that no live entry owns and no clone's git removed; a WSL clone is swept
+  at its first use, so a start never wakes WSL. Forgetting or replacing a clone removes its worktrees first, while
   its mapping says where they are. The start's sweep waits for the state's
   first load rather than loading it, so the load stays the first request's.
-- **What cleanup may remove.** Only a folder Deck proves its own: a direct
-  child of the worktrees folder, named like an `<id>`, with its `<id>.deck`
-  mark. Anything else there, a worktree the user made included, stays, and
-  git's `worktree remove --force --force` runs only on a proven one. A junction
-  or link at that path goes itself, never what it points to; a folder goes
-  only when its real path is the `<id>` under the worktrees folder's real
-  path, and the worktrees folder itself isn't a link. In WSL, Windows can't
-  read a Linux link over `\\wsl.localhost`, so one stays.
-  `git worktree prune`, which is repository-wide, runs only when every stale
-  registration is a proven one whose folder is gone. A sweep counts as done once it
+- **What cleanup may remove.** Nothing of the user's (ADR 0023). Deck never
+  deletes a worktree folder itself. It runs `git worktree remove <path>`,
+  without `--force`, in the clone that lists the worktree, and only right
+  after `git status --porcelain --ignored --untracked-files=all` inside it
+  printed nothing. A folder whose clone is gone, one no clone lists, a link
+  or junction, a linked worktrees folder, or a check that can't finish:
+  it stays, and `deck.clone_kept` says why (`onKept`), once a run per
+  folder. `git worktree prune`, which is repository-wide, runs only when
+  every stale registration is named like Deck's under the worktrees folder
+  and its folder is gone. A kept folder never blocks an ask: the next
+  checkout goes to `<id>-<8 hex>` beside it. `keptFolderCount` counts the
+  kept folders on this computer for Settings › Storage, whose **Open
+  folder** (`deck.storage_open_kept`) shows the worktrees folder through
+  the desktop's `openFolder`; the page never gets a path. A sweep counts as done once it
   finishes, so a removal that comes during it waits for it.
 - **Failure.** Any failure leaves the ask on the pull request alone, with a
   reason in the response's `clone` (`deckCloneUseSchema`) and a code in

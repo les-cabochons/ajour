@@ -210,6 +210,12 @@ export const deckCacheStorageSchema = z.object({
    * scan does on Windows: they count until a later pass deletes them.
    */
   pendingRemovalCount: z.number().int().nonnegative(),
+  /**
+   * The folders of Deck's local clone worktrees left on this computer
+   * because git found something in them, or no clone could check them
+   * (ADR 0023). Ajour never deletes them; the user can.
+   */
+  keptCloneFolderCount: z.number().int().nonnegative(),
 });
 export type DeckCacheStorage = z.infer<typeof deckCacheStorageSchema>;
 

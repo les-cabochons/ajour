@@ -67,6 +67,7 @@ export const APP_API_CLIENT = {
   getDeckCacheStorage: "deck.storage_read",
   saveDeckCacheCap: "deck.storage_update",
   clearDeckCache: "deck.storage_clear",
+  openKeptDeckCloneFolders: "deck.storage_open_kept",
   readPullRequestConversation: "pull_request.load_conversation",
   readPullRequestChecks: "pull_request.load_checks",
   submitPullRequestReview: "pull_request.submit_review",

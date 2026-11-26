@@ -7,6 +7,7 @@ import { showErrorToast, showToast } from "@/components/ui/toast";
 import {
   clearDeckCache,
   getDeckCacheStorage,
+  openKeptDeckCloneFolders,
   saveDeckCacheCap,
 } from "@/lib/app-api";
 import { formatBytes } from "./diagnostics-settings-model";
@@ -33,9 +34,13 @@ const describeEntries = (count: number) =>
     ? "Nothing cached."
     : `${count} ${count === 1 ? "version" : "versions"} of pull requests.`;
 
+const describeKept = (count: number) =>
+  `${count} ${count === 1 ? "folder" : "folders"} of local clone checkouts that hold files of yours, or that no clone could check. Ajour never deletes them.`;
+
 /**
  * Settings › Storage (#781): Deck's content cache on this computer, its size
- * and its cap, with Clear cache. The local API owns the cache; the page
+ * and its cap, with Clear cache, and the local clone checkouts Deck kept
+ * (ADR 0023), with Open folder. The local API owns the cache; the page
  * never learns where it is on disk.
  */
 export function SettingsStoragePage() {
@@ -104,6 +109,14 @@ export function SettingsStoragePage() {
       .finally(() => setBusy(false));
   };
 
+  const openKept = () =>
+    openKeptDeckCloneFolders().catch(() =>
+      showErrorToast({
+        title: "Couldn't open the folder",
+        description: "Ajour shows it from the desktop app.",
+      }),
+    );
+
   const locked = !storage || busy;
   return (
     <div className="settings-sections settings-measure">
@@ -166,6 +179,16 @@ export function SettingsStoragePage() {
               onChange={saveCap}
             />
           </SettingRow>
+          {storage && storage.keptCloneFolderCount > 0 ? (
+            <SettingRow
+              label="Clone folders kept"
+              description={describeKept(storage.keptCloneFolderCount)}
+            >
+              <Button variant="outline" size="sm" onClick={openKept}>
+                Open folder
+              </Button>
+            </SettingRow>
+          ) : null}
         </AppPanel>
       </section>
     </div>

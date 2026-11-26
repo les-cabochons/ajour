@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { BigIntStats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -49,20 +48,16 @@ import { childEnvironment, gitEnvironment } from "./process-broker.ts";
  * Forgetting or replacing a clone removes its worktrees first, while its
  * mapping still says where they are.
  *
- * Removal touches the user's disk, so it proves each folder is the very
- * one Deck made first, and fails closed: what it can't prove stays, and
- * `onKept` says why. Deck makes the folder itself, empty, a direct child of
- * the worktrees folder named by an entry's hash, and writes beside it a
- * mark (`<id>.deck`) with the folder's identity (device, file id, creation
- * time), then, once git checked out into it, the name of its Git folder in
- * the clone. A folder is Deck's only while its identity is the mark's, at
- * its real path under the worktrees folder, which is itself no link.
- * Git removes it, without `--force`, only while the clone lists it and its
- * `.git` file names the mark's Git folder: git refuses one with changes or
- * files of the user's. The file system removes only one no clone knows, by
- * first renaming it into Deck's `.trash` and checking its identity there.
- * A link or junction where a worktree was goes itself, never what it points
- * to; another folder where Deck's was stays, and only the mark goes.
+ * Removal touches the user's disk, and nothing of the user's may go with
+ * it, so Deck never deletes a worktree's files itself. Git removes a
+ * worktree, with `git worktree remove` and never `--force`, in the clone
+ * that lists it, and only right after `git status --ignored
+ * --untracked-files=all` run inside it printed nothing. Everything else
+ * stays where it is, and `onKept` says why: a folder whose clone is gone
+ * or that no clone lists, a link or junction, a worktrees folder that is
+ * one, anything git shows in it, and any check that can't be completed.
+ * A folder left at an entry's name never stops an ask: the next checkout
+ * goes to a fresh name beside it.
  *
  * A clone that can't be prepared never stops an ask: `prepare` answers why,
  * and the agent reads the pull request alone. No reason holds a path, a
@@ -107,15 +102,21 @@ export type DeckClonePrepared =
 
 /**
  * Why cleanup left a worktree folder where it was, for the wide event:
- * - `worktrees_linked`: the worktrees folder is a link or junction, so
- *   nothing under it is removed;
- * - `not_proved`: no mark Deck wrote proves the folder the one Deck made;
- * - `replaced`: another folder is where Deck's was (its mark goes);
- * - `git_refused`: git wouldn't remove the worktree without `--force`
- *   (changes or files of the user's in it), or a clone still knows it.
+ * - `linked`: the folder, or the worktrees folder, is a link or junction;
+ * - `clone_gone`: its clone can't be opened, so no git can check it;
+ * - `not_listed`: no clone lists it as a worktree;
+ * - `not_clean`: `git status` shows a change, an untracked or an ignored
+ *   file in it;
+ * - `check_failed`: git couldn't say what is in it;
+ * - `git_refused`: `git worktree remove`, without `--force`, refused it.
  */
 export type DeckCloneKept =
-  "worktrees_linked" | "not_proved" | "replaced" | "git_refused";
+  | "linked"
+  | "clone_gone"
+  | "not_listed"
+  | "not_clean"
+  | "check_failed"
+  | "git_refused";
 
 /** A folder that can't be the repository's clone, with a sentence for the picker. */
 export class DeckCloneRefused extends Error {}
@@ -278,13 +279,15 @@ function quietGit(git: Git, hooksPath: string, signal?: AbortSignal): DeckGit {
 /** A prepared worktree, kept while its cache entry is. */
 interface Prepared {
   clone: DeckClone;
+  /** The worktree's folder, in its clone's environment. */
+  folder: string;
   /** The worktree's folder, as the agent reads it. */
   root: string;
   ref: string;
   head: string;
 }
 
-/** Where a clone's worktrees go, as removal checks them. */
+/** Where a clone's worktrees go. */
 interface Place {
   environmentKind: DeckCloneEnvironment["kind"];
   /** The path style of the clone's environment. */
@@ -305,85 +308,32 @@ interface Opened extends Place {
   top: string;
 }
 
-/** A worktree's name: the hash `idOf` makes of its cache entry's key. */
-const DECK_ID = /^[0-9a-f]{16}$/;
-
-/** Deck's own folder beside its worktrees, where a folder goes to be removed. */
-const TRASH = ".trash";
-
-const MARK_KIND = "ajour-deck-worktree";
+/**
+ * A worktree folder's name: the hash `idOf` makes of its cache entry's key,
+ * with a fresh suffix when a folder Deck kept already has that name.
+ */
+const DECK_FOLDER = /^([0-9a-f]{16})(?:-[0-9a-f]{8})?$/;
 
 /**
- * A folder's identity on its file system: its device, its file id (an
- * inode, or NTFS's file id) and its creation time. A folder made again at
- * the same path has another.
+ * What git reads a worktree with, as Deck checked it out: its committed
+ * links are plain files, and its long paths are allowed.
  */
-interface Identity {
-  dev: string;
-  ino: string;
-  birth: string;
-}
-
-/**
- * What Deck's mark records of the worktree folder it made: the folder's
- * identity, taken when Deck made it empty, and once git checked it out,
- * the name of its Git folder in the clone (`.git/worktrees/<admin>`).
- */
-interface Mark extends Identity {
-  admin?: string;
-}
-
-const identityOf = (stats: BigIntStats): Identity => ({
-  dev: String(stats.dev),
-  ino: String(stats.ino),
-  birth: String(stats.birthtimeNs),
-});
-
-const sameIdentity = (a: Identity, b: Identity) =>
-  a.dev === b.dev && a.ino === b.ino && a.birth === b.birth;
-
-/** The mark in what a `<id>.deck` file holds, when it's one Deck wrote for `id`. */
-function markIn(value: unknown, id: string): Mark | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const mark = value as Record<string, unknown>;
-  const number = (field: unknown): field is string =>
-    typeof field === "string" && /^\d{1,40}$/.test(field);
-  if (
-    mark.kind !== MARK_KIND ||
-    mark.version !== 1 ||
-    mark.id !== id ||
-    !number(mark.dev) ||
-    !number(mark.ino) ||
-    mark.ino === "0" ||
-    !number(mark.birth)
-  ) {
-    return undefined;
-  }
-  if (
-    mark.admin !== undefined &&
-    (typeof mark.admin !== "string" || !/^[0-9a-f]{16}[0-9]*$/.test(mark.admin))
-  ) {
-    return undefined;
-  }
-  return {
-    dev: mark.dev,
-    ino: mark.ino,
-    birth: mark.birth,
-    ...(mark.admin === undefined ? {} : { admin: mark.admin as string }),
-  };
-}
-
-/**
- * What is at a worktree folder, by Deck's mark for it: nothing, a link or
- * junction (which goes itself), a folder or file other than the one Deck
- * made (Deck's is gone, and it stays), or the very folder Deck made.
- */
-type Found =
-  | { kind: "missing" | "link" | "replaced"; mark: Mark }
-  | { kind: "folder"; mark: Mark };
+const AS_CHECKED_OUT = [
+  "-c",
+  "core.symlinks=false",
+  "-c",
+  "core.longpaths=true",
+] as const;
 
 const isMissing = (error: unknown) =>
   ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException)?.code ?? "");
+
+/** Whether anything, a link included, is at `here`. */
+const occupied = (here: string) =>
+  fs.lstat(here).then(
+    () => true,
+    (error: unknown) => !isMissing(error),
+  );
 
 const unavailable = (
   failure: DeckCloneFailure,
@@ -675,7 +625,7 @@ export function createDeckClones(options: DeckClonesOptions) {
     await locked(clone, async () => {
       const opened = await open(clone.environment, clone.path);
       if (typeof opened === "string") {
-        for (const [key] of mine) await removeFolder(clone, idOf(key));
+        for (const [, kept] of mine) await keptWithoutClone(kept);
         return;
       }
       const others = [
@@ -686,40 +636,44 @@ export function createDeckClones(options: DeckClonesOptions) {
     });
   }
 
-  /** Deck's mark beside a worktree it made: removal's proof the folder is Deck's. */
-  const markOf = (place: Place, id: string) =>
-    place.style.join(place.worktrees, `${id}.deck`);
-
-  /** The worktree folder of `id`, in its clone's environment. */
-  const folderOf = (place: Place, id: string) =>
-    place.style.join(place.worktrees, id);
-
   /**
-   * The worktree's id when `folder`, in the clone's environment, is a
-   * direct child of the worktrees folder named like Deck's. Its mark still
-   * has to prove Deck made it.
+   * The entry id of a worktree folder, in the clone's environment, when it
+   * is a direct child of the worktrees folder named like Deck's.
    */
   function idIn(place: Place, folder: string): string | undefined {
-    const id = place.style.basename(folder);
-    return DECK_ID.test(id) &&
+    const id = DECK_FOLDER.exec(place.style.basename(folder))?.[1];
+    return id &&
       place.style.relative(place.worktrees, place.style.dirname(folder)) === ""
       ? id
       : undefined;
   }
 
-  /** Says why cleanup left something where it was. */
-  const keep = (place: Place, reason: DeckCloneKept) => {
+  /** The folders this run said it kept, so each is said once. */
+  const reported = new Set<string>();
+
+  /** Says why cleanup left a worktree folder where it was: never its path. */
+  function keep(
+    environment: DeckCloneEnvironment["kind"],
+    folder: string,
+    reason: DeckCloneKept,
+  ) {
+    const said = `${environment}\0${
+      environment === "native" && process.platform === "win32"
+        ? folder.toLowerCase()
+        : folder
+    }`;
+    if (reported.has(said)) return;
+    reported.add(said);
     try {
-      options.onKept?.({ reason, environment: place.environmentKind });
+      options.onKept?.({ reason, environment });
     } catch {
       // A log never stops cleanup.
     }
-  };
+  }
 
   /**
    * Whether the worktrees folder, as configured, is a real folder rather
-   * than a link or junction to one, and still the one `place` resolved:
-   * through a link, a removal would reach outside Deck's folder.
+   * than a link or junction to one, and still the one `place` resolved.
    */
   async function plainRoot(place: Place) {
     try {
@@ -732,312 +686,112 @@ export function createDeckClones(options: DeckClonesOptions) {
     }
   }
 
-  /** The mark Deck wrote for `id`, or undefined when it isn't one Deck wrote. */
-  async function readMark(place: Place, id: string): Promise<Mark | undefined> {
-    const here = place.here(markOf(place, id));
-    try {
-      const stats = await fs.lstat(here);
-      if (!stats.isFile() || stats.size > 4096) return undefined;
-      return markIn(JSON.parse(await fs.readFile(here, "utf8")), id);
-    } catch {
-      return undefined;
-    }
+  /** A prepared worktree whose clone can't be opened: it stays, said once. */
+  async function keptWithoutClone(kept: Prepared) {
+    // Over \\wsl.localhost, looking would wake WSL.
+    if (kept.clone.environment.kind !== "native") return;
+    if (await occupied(kept.root)) keep("native", kept.folder, "clone_gone");
   }
-
-  /** Writes Deck's mark for `id` whole, never half: a new file, then a rename over the old. */
-  async function writeMark(place: Place, id: string, mark: Mark) {
-    const here = place.here(markOf(place, id));
-    const next = `${here}.${randomBytes(4).toString("hex")}.tmp`;
-    await fs.writeFile(
-      next,
-      `${JSON.stringify({ kind: MARK_KIND, version: 1, id, ...mark })}\n`,
-      { flag: "wx" },
-    );
-    try {
-      await fs.rename(next, here);
-    } catch (error) {
-      await fs.rm(next, { force: true }).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  const dropMark = (place: Place, id: string) =>
-    fs
-      .rm(place.here(markOf(place, id)), { force: true })
-      .catch(() => undefined);
 
   /**
-   * What is at the worktree folder of `id`, judged by Deck's mark for it:
-   * nothing, a link or junction, another folder or file than the one Deck
-   * made, or that very folder, at its real path under the worktrees
-   * folder's. Undefined, Deck can't prove anything there is its own, and
-   * it stays as it is.
+   * What `git status` prints in a worktree, run inside it, read as Deck
+   * checked it out; undefined when git can't say.
    */
-  async function find(place: Place, id: string): Promise<Found | undefined> {
-    if (!DECK_ID.test(id) || !(await plainRoot(place))) return undefined;
-    const mark = await readMark(place, id);
-    if (!mark) return undefined;
-    const here = place.here(folderOf(place, id));
-    let found: BigIntStats;
+  async function statusIn(
+    opened: Opened,
+    folder: string,
+    args: readonly string[],
+  ): Promise<string | undefined> {
     try {
-      found = await fs.lstat(here, { bigint: true });
-    } catch (error) {
-      return isMissing(error) ? { kind: "missing", mark } : undefined;
-    }
-    // A junction is a link here too: it goes itself, never what it points to.
-    if (found.isSymbolicLink()) return { kind: "link", mark };
-    if (!found.isDirectory() || !sameIdentity(identityOf(found), mark)) {
-      return { kind: "replaced", mark };
-    }
-    try {
-      const [root, real] = await Promise.all([
-        fs.realpath(place.here(place.worktrees)),
-        fs.realpath(here),
-      ]);
-      return real === path.join(root, id)
-        ? { kind: "folder", mark }
+      const inside = await gitIn(opened.environment, folder);
+      if (!inside) return undefined;
+      const result = await inside.run(
+        [
+          ...AS_CHECKED_OUT,
+          ...(await filterOverrides(opened.git)),
+          "status",
+          "--porcelain",
+          ...args,
+        ],
+        timeouts.checkoutMs,
+      );
+      return result.code === 0 && !result.timedOut
+        ? result.stdout.trim()
         : undefined;
     } catch {
       return undefined;
     }
   }
 
-  /** Unlinks a link or junction itself: never what it points to. */
-  const unlinkOnly = (here: string) =>
-    fs
-      .unlink(here)
-      // rmdir is a directory junction's fallback on Windows.
-      .catch(() => fs.rmdir(here))
-      .catch(() => undefined);
-
-  /** Whether anything, a link included, is at `here`. */
-  const occupied = (here: string) =>
-    fs.lstat(here).then(
-      () => true,
-      (error: unknown) => !isMissing(error),
+  /**
+   * Removes one worktree folder of Deck's, and only with git: Deck never
+   * deletes a worktree's files itself. The clone must list the folder, and
+   * `git status --ignored --untracked-files=all`, run inside it, must print
+   * nothing: no change, no untracked file, no ignored one. Then
+   * `git worktree remove`, without `--force`, which itself refuses a
+   * worktree with changes or untracked files, or one that isn't the
+   * clone's. Anything else stays, and `onKept` says why.
+   */
+  async function removeWorktree(opened: Opened, folder: string) {
+    const here = opened.here(folder);
+    if (!(await occupied(here))) return;
+    const kept = (reason: DeckCloneKept) =>
+      keep(opened.environmentKind, folder, reason);
+    if (!(await plainRoot(opened))) return kept("linked");
+    try {
+      if ((await fs.lstat(here)).isSymbolicLink()) return kept("linked");
+    } catch {
+      return kept("check_failed");
+    }
+    let listed: Awaited<ReturnType<typeof worktreesOf>>;
+    try {
+      listed = await worktreesOf(opened.git);
+    } catch {
+      return kept("check_failed");
+    }
+    const tree = listed.find(
+      (each) => normalized(opened, each.folder) === folder,
     );
-
-  /**
-   * The Git folder a worktree's `.git` file names, in its clone's Git
-   * folder, and that folder's name; undefined when it names none.
-   */
-  async function adminOf(place: Place, folder: string) {
-    const dotGit = place.here(place.style.join(folder, ".git"));
-    try {
-      const stats = await fs.lstat(dotGit);
-      if (!stats.isFile() || stats.size > 4096) return undefined;
-      const gitdir = /^gitdir: (.+?)\s*$/m.exec(
-        await fs.readFile(dotGit, "utf8"),
-      )?.[1];
-      if (!gitdir) return undefined;
-      const resolved = place.style.resolve(folder, gitdir);
-      return { gitdir: resolved, name: place.style.basename(resolved) };
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
-   * Whether a folder may be a worktree some clone still knows: it has a
-   * `.git`, whose Git folder, when it names one, is there. Only git
-   * removes it then.
-   */
-  async function knownWorktree(place: Place, folder: string) {
-    const admin = await adminOf(place, folder);
-    return admin
-      ? occupied(place.here(admin.gitdir))
-      : occupied(place.here(place.style.join(folder, ".git")));
-  }
-
-  /**
-   * Removes a folder Deck proved its own with the file system, when no
-   * clone's git will: it first moves the folder into Deck's own `.trash`
-   * folder, in one rename, then checks there that it's still the very
-   * folder Deck made, and only then removes it. Anything else goes back.
-   */
-  async function discard(place: Place, id: string, mark: Mark) {
-    const folder = folderOf(place, id);
-    if (await knownWorktree(place, folder)) {
-      keep(place, "git_refused");
-      return;
-    }
-    const here = place.here(folder);
-    const trash = place.here(place.style.join(place.worktrees, TRASH));
-    const moved = path.join(trash, `${id}-${randomBytes(6).toString("hex")}`);
-    try {
-      await fs.mkdir(trash, { recursive: true });
-      const there = await fs.lstat(trash);
-      if (!there.isDirectory() || there.isSymbolicLink()) {
-        throw new Error("Not Deck's trash.");
-      }
-      await fs.rename(here, moved);
-    } catch {
-      keep(place, "not_proved");
-      return;
-    }
-    let same = false;
-    try {
-      const there = await fs.lstat(moved, { bigint: true });
-      same =
-        there.isDirectory() &&
-        !there.isSymbolicLink() &&
-        sameIdentity(identityOf(there), mark);
-    } catch {
-      same = false;
-    }
-    if (!same) {
-      // Not what Deck made: it goes back, or stays in the trash, never removed.
-      await fs.rename(moved, here).catch(() => undefined);
-      keep(place, "not_proved");
-      return;
-    }
-    await fs
-      .rm(moved, { recursive: true, force: true, maxRetries: 5 })
+    if (!tree || tree.prunable) return kept("not_listed");
+    const status = await statusIn(opened, folder, [
+      "--ignored",
+      "--untracked-files=all",
+    ]);
+    if (status === undefined) return kept("check_failed");
+    if (status) return kept("not_clean");
+    const removed = await filterOverrides(opened.git)
+      .then((filters) =>
+        opened.git.run(
+          [...AS_CHECKED_OUT, ...filters, "worktree", "remove", "--", folder],
+          timeouts.checkoutMs,
+        ),
+      )
       .catch(() => undefined);
-  }
-
-  /**
-   * Forgets Deck's mark once its worktree is gone: nothing is left at its
-   * folder (and, with `git`, in its clone's registrations), or another
-   * folder is there now, which stays.
-   */
-  async function forgetMark(place: Place, id: string, git?: DeckGit) {
-    const found = await find(place, id);
-    if (found?.kind === "replaced") {
-      await dropMark(place, id);
-      return;
+    if (!removed || removed.timedOut || removed.code !== 0) {
+      kept("git_refused");
     }
-    if (found?.kind !== "missing") return;
-    if (git) {
-      const listed = await worktreesOf(git).catch(() => undefined);
-      if (
-        !listed ||
-        listed.some(
-          (tree) => idIn(place, place.style.resolve(tree.folder)) === id,
-        )
-      ) {
-        return;
-      }
-    }
-    await dropMark(place, id);
   }
 
   /**
-   * A worktree's folder on this computer, when git can't remove it: its
-   * clone is gone. Only one Deck proves its own.
+   * Removes every worktree folder of the entry `id` the clone lists, and
+   * `also`, then its ref; registrations whose folders are gone are pruned.
    */
-  async function removeFolder(clone: DeckClone, id: string) {
-    if (clone.environment.kind === "native") await removeNativeFolder(id);
-  }
-
-  /** A worktree's folder under the cache on this computer, once proved Deck's. */
-  async function removeNativeFolder(id: string) {
-    const place = await nativePlace();
-    await removeFound(place, id, await find(place, id));
-    await forgetMark(place, id);
-  }
-
-  /**
-   * What cleanup does at a worktree folder with no clone's git, by what
-   * `find` says is there: a link goes itself, the folder Deck made goes
-   * once no clone knows it, and anything else stays.
-   */
-  async function removeFound(
-    place: Place,
-    id: string,
-    found: Found | undefined,
-  ) {
-    const here = place.here(folderOf(place, id));
-    if (!found) {
-      if (DECK_ID.test(id) && (await occupied(here))) {
-        keep(
-          place,
-          (await plainRoot(place)) ? "not_proved" : "worktrees_linked",
-        );
-      }
-      return;
-    }
-    if (found.kind === "link") await unlinkOnly(here);
-    else if (found.kind === "replaced") keep(place, "replaced");
-    else if (found.kind === "folder") await discard(place, id, found.mark);
-  }
-
-  /**
-   * Removes one worktree and its ref, in its clone. Git removes a worktree
-   * Deck proves its own, the very folder Deck made, which the clone lists
-   * and whose `.git` file names the Git folder Deck's checkout made, and
-   * never with `--force`: one with changes or files of the user's stays.
-   */
-  async function removeWorktree(
+  async function removeEntry(
     opened: Opened,
     id: string,
     ref: string | undefined,
+    also: readonly string[] = [],
   ) {
-    const found = await find(opened, id);
-    if (found?.kind === "folder") {
-      const folder = folderOf(opened, id);
-      const listed = await worktreesOf(opened.git).catch(() => undefined);
-      const tree = listed?.find(
-        (each) => normalized(opened, each.folder) === folder,
-      );
-      if (!listed) {
-        keep(opened, "git_refused");
-      } else if (!tree || tree.prunable) {
-        // Half made, or not this clone's: no clone's git removes it.
-        await discard(opened, id, found.mark);
-      } else if (!(await gitRemoves(opened, id, found.mark))) {
-        keep(opened, "git_refused");
-      }
-    } else {
-      // A link's registration is then stale, and goes with the prune.
-      await removeFound(opened, id, found);
-    }
+    const listed = await worktreesOf(opened.git).catch(() => []);
+    const folders = new Set([
+      ...also,
+      ...listed
+        .map((tree) => normalized(opened, tree.folder))
+        .filter((folder) => idIn(opened, folder) === id),
+    ]);
+    for (const folder of folders) await removeWorktree(opened, folder);
     if (ref) await dropRef(opened.git, ref);
     await pruneDeckOnly(opened);
-    await forgetMark(opened, id, opened.git);
-  }
-
-  /**
-   * Whether the worktree folder of `id` is the very folder Deck made and
-   * checked out: its identity and its Git folder's name are the mark's.
-   */
-  async function checkedOutByDeck(place: Place, id: string) {
-    const found = await find(place, id);
-    if (found?.kind !== "folder" || found.mark.admin === undefined) {
-      return false;
-    }
-    const admin = await adminOf(place, folderOf(place, id));
-    return admin?.name === found.mark.admin;
-  }
-
-  /**
-   * `git worktree remove`, without `--force`, of the worktree Deck proved
-   * its own, once its `.git` file still names the Git folder Deck's
-   * checkout made: git refuses one with changes or untracked files.
-   */
-  async function gitRemoves(opened: Opened, id: string, mark: Mark) {
-    const folder = folderOf(opened, id);
-    const admin = await adminOf(opened, folder);
-    if (!admin || (mark.admin !== undefined && admin.name !== mark.admin)) {
-      return false;
-    }
-    if ((await find(opened, id))?.kind !== "folder") return false;
-    const removed = await opened.git
-      .run(
-        [
-          // As Deck checked it out, so its own files read as unchanged.
-          "-c",
-          "core.symlinks=false",
-          ...(await filterOverrides(opened.git)),
-          "worktree",
-          "remove",
-          "--",
-          folder,
-        ],
-        timeouts.checkoutMs,
-      )
-      .catch(() => undefined);
-    return removed?.code === 0 && !removed.timedOut;
   }
 
   /** A folder git printed, in the clone environment's own form. */
@@ -1050,15 +804,25 @@ export function createDeckClones(options: DeckClonesOptions) {
       ["worktree", "list", "--porcelain", "-z"],
       timeouts.localMs,
     );
-    const worktrees: { folder: string; head?: string; prunable: boolean }[] =
-      [];
+    const worktrees: {
+      folder: string;
+      head?: string;
+      detached: boolean;
+      prunable: boolean;
+    }[] = [];
     let current: (typeof worktrees)[number] | undefined;
     for (const field of listed.split("\0")) {
       if (field.startsWith("worktree ")) {
-        current = { folder: field.slice("worktree ".length), prunable: false };
+        current = {
+          folder: field.slice("worktree ".length),
+          detached: false,
+          prunable: false,
+        };
         worktrees.push(current);
       } else if (current && field.startsWith("HEAD ")) {
         current.head = field.slice("HEAD ".length);
+      } else if (current && field === "detached") {
+        current.detached = true;
       } else if (current && field.startsWith("prunable")) {
         current.prunable = true;
       }
@@ -1068,8 +832,9 @@ export function createDeckClones(options: DeckClonesOptions) {
 
   /**
    * `git worktree prune`, which is repository-wide, only when every
-   * registration it would drop is one Deck proves its own, its folder gone:
-   * the user's own stay as they are.
+   * registration it would drop is one named like Deck's under the worktrees
+   * folder, whose folder is already gone: those of worktrees elsewhere stay.
+   * Pruning drops only git's records, never a file.
    */
   async function pruneDeckOnly(opened: Opened) {
     try {
@@ -1078,8 +843,10 @@ export function createDeckClones(options: DeckClonesOptions) {
       );
       if (!prunable.length) return;
       for (const tree of prunable) {
-        const id = idIn(opened, normalized(opened, tree.folder));
-        if (!id || (await find(opened, id))?.kind !== "missing") return;
+        const folder = normalized(opened, tree.folder);
+        if (!idIn(opened, folder) || (await occupied(opened.here(folder)))) {
+          return;
+        }
       }
       await opened.git.run(
         ["worktree", "prune", "--expire=now"],
@@ -1222,26 +989,27 @@ export function createDeckClones(options: DeckClonesOptions) {
     opened: Opened,
     liveIds: ReadonlySet<string>,
   ) {
-    const kept = new Set<string>();
-    leftovers.set(cloneKey(clone), kept);
+    const held = new Set<string>();
+    leftovers.set(cloneKey(clone), held);
     const ours = new Set(
       [...prepared]
         .filter(([, each]) => cloneKey(each.clone) === cloneKey(clone))
         .map(([key]) => idOf(key)),
     );
-    const keep = (id: string) => {
-      if (!ours.has(id)) kept.add(id);
+    const hold = (id: string) => {
+      if (!ours.has(id)) held.add(id);
     };
     try {
       for (const tree of await worktreesOf(opened.git)) {
-        // Only a direct child named like Deck's; its mark proves the rest.
-        const id = idIn(opened, normalized(opened, tree.folder));
+        // Only a direct child of the worktrees folder named like Deck's.
+        const folder = normalized(opened, tree.folder);
+        const id = idIn(opened, folder);
         if (!id) continue;
         if (liveIds.has(id)) {
-          keep(id);
+          hold(id);
           continue;
         }
-        await removeWorktree(opened, id, undefined);
+        await removeWorktree(opened, folder);
       }
       const refs = await opened.git.read(
         ["for-each-ref", "--format=%(refname)", "refs/ajour/deck/"],
@@ -1250,7 +1018,7 @@ export function createDeckClones(options: DeckClonesOptions) {
       for (const ref of refs.split(/\r?\n/).filter(Boolean)) {
         const id = /^refs\/ajour\/deck\/([0-9a-f]+)\/head$/.exec(ref)?.[1];
         if (id && liveIds.has(id)) {
-          keep(id);
+          hold(id);
           continue;
         }
         await dropRef(opened.git, ref);
@@ -1339,8 +1107,6 @@ export function createDeckClones(options: DeckClonesOptions) {
     const { git } = opened;
     const id = idOf(entry.key);
     const ref = `refs/ajour/deck/${id}/head`;
-    const folder = opened.style.join(opened.worktrees, id);
-    const root = opened.here(folder);
 
     await sweepFirstTime(clone, opened, { keep: entry.key });
 
@@ -1364,24 +1130,37 @@ export function createDeckClones(options: DeckClonesOptions) {
     }
 
     const kept = prepared.get(entry.key);
-    if (kept && kept.head === entry.head) return { state: "read", root };
+    if (kept && kept.head === entry.head) {
+      return { state: "read", root: kept.root };
+    }
 
-    // A worktree an earlier run left for this entry, still at its head.
+    // A worktree an earlier run left for this entry, detached at its head,
+    // with nothing of the user's in it. The others of the entry go, by the
+    // rule of any removal.
     try {
-      const listed = (await worktreesOf(git)).find(
-        (tree) => normalized(opened, tree.folder) === folder,
-      );
-      if (
-        listed &&
-        !listed.prunable &&
-        listed.head === entry.head &&
-        (await checkedOutByDeck(opened, id))
-      ) {
-        leftovers.get(cloneKey(clone))?.delete(id);
-        prepared.set(entry.key, { clone, root, ref, head: entry.head });
-        return { state: "read", root };
+      const mine = (await worktreesOf(git))
+        .map((tree) => ({ ...tree, folder: normalized(opened, tree.folder) }))
+        .filter((tree) => idIn(opened, tree.folder) === id);
+      for (const tree of mine) {
+        if (
+          !tree.prunable &&
+          tree.detached &&
+          tree.head === entry.head &&
+          (await untouched(opened, tree.folder))
+        ) {
+          leftovers.get(cloneKey(clone))?.delete(id);
+          const root = opened.here(tree.folder);
+          prepared.set(entry.key, {
+            clone,
+            folder: tree.folder,
+            root,
+            ref,
+            head: entry.head,
+          });
+          return { state: "read", root };
+        }
       }
-      if (listed) await removeWorktree(opened, id, undefined);
+      for (const tree of mine) await removeWorktree(opened, tree.folder);
     } catch {
       return signal?.aborted ? CANCELLED : missing;
     }
@@ -1449,44 +1228,37 @@ export function createDeckClones(options: DeckClonesOptions) {
       "checkout_failed",
       "Ajour couldn't check out this pull request's head from your clone.",
     );
-    // The folder is free, or holds only what Deck left there, which goes;
-    // anything else's stays, and the clone isn't read. Then Deck makes the
-    // folder itself, empty, and marks it with the folder's identity before
-    // git checks out into it, so a removal can prove it the very one.
-    let identity: Identity;
+    // A folder Deck kept, or anything else at the entry's name, never stops
+    // the ask: git checks out at a fresh name beside it, in a folder of its
+    // own making. Nothing is checked out under a linked worktrees folder,
+    // which cleanup would never remove.
+    let folder = opened.style.join(opened.worktrees, id);
     try {
       await fs.mkdir(opened.here(opened.worktrees), { recursive: true });
       if (!(await plainRoot(opened))) return failed(checkoutFailed);
-      if (await occupied(opened.here(folder))) {
-        await removeWorktree(opened, id, undefined);
+      for (let tries = 0; await occupied(opened.here(folder)); tries++) {
+        if (tries === 4) return failed(checkoutFailed);
+        folder = opened.style.join(
+          opened.worktrees,
+          `${id}-${randomBytes(4).toString("hex")}`,
+        );
       }
-      // Fails when anything is there: the folder is then the one made now.
-      await fs.mkdir(root);
-      identity = identityOf(await fs.lstat(root, { bigint: true }));
-      if (identity.ino === "0") {
-        // No file id to prove it by later: Deck doesn't check out there.
-        await fs.rmdir(root).catch(() => undefined);
-        return failed(checkoutFailed);
-      }
-      await writeMark(opened, id, identity);
     } catch {
       return failed(checkoutFailed);
     }
+    const root = opened.here(folder);
 
     try {
       const added = await git.run(
         [
           // A committed link could point the agent outside the worktree.
-          "-c",
-          "core.symlinks=false",
+          ...AS_CHECKED_OUT,
           // Every file, whatever the user's clone leaves out of its own
           // checkout: git then copies none of its sparse patterns.
           "-c",
           "core.sparseCheckout=false",
           "-c",
           "core.sparseCheckoutCone=false",
-          "-c",
-          "core.longpaths=true",
           "-c",
           "submodule.recurse=false",
           ...(await filterOverrides(git)),
@@ -1500,28 +1272,44 @@ export function createDeckClones(options: DeckClonesOptions) {
         ],
         timeouts.checkoutMs,
       );
-      if (added.code !== 0 || added.timedOut)
+      if (added.code !== 0 || added.timedOut || signal?.aborted) {
         throw new Error("Not checked out.");
-      // The Git folder git made for the worktree, recorded with the folder.
-      const admin = await adminOf(opened, folder);
-      if (!admin) throw new Error("No Git folder.");
-      // Read again: over \\wsl.localhost a folder's creation time changes
-      // once something is written in it. Still the folder Deck made.
-      const checkedOut = identityOf(await fs.lstat(root, { bigint: true }));
-      if (checkedOut.dev !== identity.dev || checkedOut.ino !== identity.ino) {
-        throw new Error("Not the folder Deck made.");
       }
-      await writeMark(opened, id, { ...checkedOut, admin: admin.name });
       await notSparse(opened, folder, signal);
+      if (signal?.aborted) throw new Error("Stopped.");
     } catch {
-      // Taken back with git that no stop cuts short.
+      // Taken back with git that no stop cuts short, by the same rule as
+      // any removal: a checkout cut short stays.
       const cleanup = await open(clone.environment, clone.path);
-      if (typeof cleanup !== "string") await removeWorktree(cleanup, id, ref);
+      if (typeof cleanup !== "string") {
+        await removeWorktree(cleanup, folder);
+        await dropRef(cleanup.git, ref);
+        await pruneDeckOnly(cleanup);
+      }
       return signal?.aborted ? CANCELLED : checkoutFailed;
     }
     leftovers.get(cloneKey(clone))?.delete(id);
-    prepared.set(entry.key, { clone, root, ref, head: entry.head });
+    prepared.set(entry.key, { clone, folder, root, ref, head: entry.head });
     return { state: "read", root };
+  }
+
+  /**
+   * Whether a worktree is still exactly the commit Deck checked out, by the
+   * same `git status` a removal runs: nothing of the user's is in it.
+   */
+  async function untouched(opened: Opened, folder: string) {
+    try {
+      const here = await fs.lstat(opened.here(folder));
+      if (!here.isDirectory() || here.isSymbolicLink()) return false;
+    } catch {
+      return false;
+    }
+    return (
+      (await statusIn(opened, folder, [
+        "--ignored",
+        "--untracked-files=all",
+      ])) === ""
+    );
   }
 
   /**
@@ -1540,10 +1328,10 @@ export function createDeckClones(options: DeckClonesOptions) {
     await locked(kept.clone, async () => {
       const opened = await open(kept.clone.environment, kept.clone.path);
       if (typeof opened === "string") {
-        await removeFolder(kept.clone, idOf(key));
+        await keptWithoutClone(kept);
         return;
       }
-      await removeWorktree(opened, idOf(key), kept.ref);
+      await removeEntry(opened, idOf(key), kept.ref, [kept.folder]);
     });
   }
 
@@ -1563,23 +1351,35 @@ export function createDeckClones(options: DeckClonesOptions) {
     }
     await locked(clone, async () => {
       const opened = await open(clone.environment, clone.path);
-      if (typeof opened === "string") {
-        await removeFolder(clone, id);
-        return;
-      }
+      // No clone's git can check what is left: it stays.
+      if (typeof opened === "string") return;
       await sweepFirstTime(clone, opened, { drop: key });
       if (prepared.has(key) || !leftovers.get(cloneKey(clone))?.delete(id)) {
         return;
       }
-      await removeWorktree(opened, id, `refs/ajour/deck/${id}/head`);
+      await removeEntry(opened, id, `refs/ajour/deck/${id}/head`);
     });
+  }
+
+  /** The ids of the entries the cache holds or an ask prepares now. */
+  async function liveIds() {
+    return new Set(
+      [
+        ...prepared.keys(),
+        ...preparing.keys(),
+        ...[...((await options.liveEntries?.().catch(() => [])) ?? [])].map(
+          ({ key }) => key,
+        ),
+      ].map(idOf),
+    );
   }
 
   /**
    * At start: what an earlier run left in every clone on this computer for
-   * entries the cache no longer holds goes, and so do folders under the
-   * cache that no chosen clone or live entry owns. A WSL clone is swept the
-   * first time it's used, so a start never wakes WSL.
+   * entries the cache no longer holds goes, by the same rule as any
+   * removal. A WSL clone is swept the first time it's used, so a start
+   * never wakes WSL. A folder under the worktrees folder that no live
+   * entry owns and no clone's git removed stays, and `onKept` says so.
    */
   async function sweepAtStart() {
     const clones = await options.storage.getDeckClones();
@@ -1591,22 +1391,47 @@ export function createDeckClones(options: DeckClonesOptions) {
         await sweepFirstTime(clone, opened);
       });
     }
+    const names = (
+      await fs.readdir(options.worktreesFolder).catch(() => [] as string[])
+    ).filter((name) => DECK_FOLDER.test(name));
+    // Nothing is made at start: without a folder there is nothing to say.
+    if (!names.length) return;
+    const place = await nativePlace();
+    const linked = !(await plainRoot(place));
+    for (const name of names) {
+      const id = DECK_FOLDER.exec(name)?.[1];
+      // Read at each folder: an ask may have started meanwhile.
+      if (!id || (await liveIds()).has(id)) continue;
+      const folder = path.join(place.worktrees, name);
+      if (await occupied(folder)) {
+        keep("native", folder, linked ? "linked" : "not_listed");
+      }
+    }
+  }
+
+  /**
+   * The worktree folders on this computer Deck keeps and no ask reads: a
+   * clone's git found something of the user's in them, or none lists them.
+   * A WSL clone's aren't counted, so this never wakes WSL.
+   */
+  async function keptFolderCount() {
     const names = await fs
       .readdir(options.worktreesFolder)
       .catch(() => [] as string[]);
-    const cached = new Set(
-      [...((await options.liveEntries?.().catch(() => [])) ?? [])].map(
-        ({ key }) => idOf(key),
-      ),
+    const live = await liveIds();
+    const read = new Set(
+      [...prepared.values()]
+        .filter((each) => each.clone.environment.kind === "native")
+        .map((each) => path.basename(each.folder)),
     );
-    for (const name of names) {
-      if (!DECK_ID.test(name) || cached.has(name)) continue;
-      // Read at each folder: an ask may have started meanwhile.
-      const asked = [...prepared.keys(), ...preparing.keys()].map(idOf);
-      if (asked.includes(name)) continue;
-      // Only a folder Deck proves its own, and a link only itself.
-      await removeNativeFolder(name);
-    }
+    const readIds = new Set([...prepared.keys()].map(idOf));
+    return names.filter((name) => {
+      const id = DECK_FOLDER.exec(name)?.[1];
+      if (!id || read.has(name)) return false;
+      // An entry an ask reads elsewhere keeps this one; an earlier run's
+      // live entry may still read it.
+      return readIds.has(id) || !live.has(id);
+    }).length;
   }
 
   return {
@@ -1614,6 +1439,10 @@ export function createDeckClones(options: DeckClonesOptions) {
     prepare,
     release,
     sweepAtStart,
+    keptFolderCount,
+
+    /** Where the worktrees on this computer go, for the file manager. */
+    worktreesFolder: options.worktreesFolder,
 
     /** The clones the user chose. */
     clones: () => options.storage.getDeckClones(),

@@ -659,6 +659,19 @@ export function saveDeckCacheCap(capBytes: number) {
   );
 }
 
+/**
+ * Shows, in the file manager, the folder of the local clone checkouts Deck
+ * kept (ADR 0023). The page never names it: the local API opens its own.
+ */
+export function openKeptDeckCloneFolders() {
+  return appApiRequest(
+    "openKeptDeckCloneFolders",
+    "/api/deck/storage/kept/open",
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+    z.object({ ok: z.literal(true) }),
+  );
+}
+
 /** Clear cache: removes every pull request Deck kept on this computer. */
 export function clearDeckCache() {
   return appApiRequest(

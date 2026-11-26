@@ -3274,6 +3274,19 @@ export const catalog = defineCatalog({
       },
     },
     /**
+     * Settings › Storage: the file manager shows the folder of the clone
+     * worktrees Deck kept (ADR 0023). The API knows the folder; never a path.
+     */
+    "deck.storage_open_kept": {
+      kinds: ["request", "command"],
+      reasons: [
+        ...requestReasons,
+        /** The file manager didn't open it, or this is not the desktop app. */
+        "open_failed",
+      ],
+      fields: { ...requestFields },
+    },
+    /**
      * An ask in Deck (#791): "more detail" on a concern, answered from the
      * cache or by a `deck.ask` turn of the pull request's conversation. The
      * question and the answer are content, so neither is here.
@@ -3363,8 +3376,8 @@ export const catalog = defineCatalog({
     },
     /**
      * Cleanup of Deck's worktrees left one where it was (#795, ADR 0023):
-     * it couldn't prove it the folder Deck made, or git wouldn't remove it
-     * without `--force`. Never a path.
+     * no clone's git could check it, or git showed something in it. Once
+     * per folder and run, never a path.
      */
     "deck.clone_kept": {
       kinds: ["job"],
@@ -3372,7 +3385,12 @@ export const catalog = defineCatalog({
       fields: {
         deck: {
           clone_kept: operational<
-            "worktrees_linked" | "not_proved" | "replaced" | "git_refused"
+            | "linked"
+            | "clone_gone"
+            | "not_listed"
+            | "not_clean"
+            | "check_failed"
+            | "git_refused"
           >(),
           clone_environment: operational<"native" | "wsl">(),
         },

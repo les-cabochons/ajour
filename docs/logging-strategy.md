@@ -587,7 +587,7 @@ The local API emits these (#305, #306):
 | `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                                                                                  |
 | `agent.conversation`, `agent.turn`    | `AgentConversations` in `apps/api/src/agent-runner/conversations.ts`: a conversation from its first turn to its close, a turn from its start to its end |
 | `deck.guide_build`                    | `createGuideBuilds` in `apps/api/src/deck-guide-builds.ts`, for each guide build, from its start in the worker to its end                               |
-| `deck.clone_kept`                     | `createDeckClones` in `apps/api/src/deck-clones.ts`, once for each worktree folder its cleanup leaves where it was                                      |
+| `deck.clone_kept`                     | `createDeckClones` in `apps/api/src/deck-clones.ts`, once a run for each worktree folder its cleanup leaves where it was                                |
 
 ### Requests
 
@@ -1163,6 +1163,7 @@ channel to read the event each emits.
 | `deck.review_submission_prepare`     | command                                 | store command                                    |
 | `deck.since_review`                  | command, request                        | route, client call                               |
 | `deck.storage_clear`                 | request, command                        | route, client call                               |
+| `deck.storage_open_kept`             | request, command                        | route, client call                               |
 | `deck.storage_read`                  | request, command                        | route, client call                               |
 | `deck.storage_update`                | request, command                        | route, client call                               |
 | `description.read`                   | command, request, plugin_operation      | route, plugin method, client call                |

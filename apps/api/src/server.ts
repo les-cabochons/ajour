@@ -1960,9 +1960,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const deckCacheStorage = async (unit: {
     set(fields: object): unknown;
   }): Promise<DeckCacheStorage> => {
-    const [usage, capBytes] = await Promise.all([
+    const [usage, capBytes, keptCloneFolderCount] = await Promise.all([
       deckService.cache.usage(),
       storage.getDeckCacheCapBytes(),
+      deckClones.keptFolderCount(),
     ]);
     unit.set({
       deck: {
@@ -1971,7 +1972,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         entry_count: usage.entryCount,
       },
     });
-    return { ...usage, capBytes };
+    return { ...usage, capBytes, keptCloneFolderCount };
   };
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
@@ -5139,6 +5140,23 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         deck: { removed_count: before.entryCount - cleared.entryCount },
       });
       writeJson(response, 200, cleared);
+    },
+    // The page never names the folder: the API opens its own.
+    deckStorageOpenKept: async ({ response, unit }) => {
+      const shown = await (options.openFolder
+        ? options.openFolder(deckClones.worktreesFolder).then(
+            () => true,
+            () => false,
+          )
+        : false);
+      if (!shown) {
+        unit.refuse("open_failed");
+        writeJson(response, 409, {
+          error: "Ajour couldn't show this folder in the file manager.",
+        });
+        return;
+      }
+      writeJson(response, 200, { ok: true });
     },
 
     backlogComment: async ({ request, response, url, params, unit }) => {
