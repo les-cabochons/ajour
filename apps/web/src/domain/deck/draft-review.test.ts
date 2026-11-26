@@ -531,6 +531,20 @@ describe("a review's submission", () => {
     expect(after?.submission).toBeUndefined();
   });
 
+  it("once the code host posted it and withheld its vote, approving again sends only the vote, by a new name", () => {
+    const { reviews } = withComment([], 2);
+    const first = press(reviews);
+    // New commits arrived before the vote: the comments and summary are
+    // on the pull request, so they leave the draft as on success.
+    const done = completeReviewSubmission(first.reviews, REF, first.sent);
+    expect(done).toEqual([]);
+
+    const again = press(done, "approve", "");
+    expect(again.request).toMatchObject({ verdict: "approve", comments: [] });
+    expect(again.request).not.toHaveProperty("body");
+    expect(again.request.submissionId).not.toBe(first.request.submissionId);
+  });
+
   it("keeps a comment edited while the review was sending as a draft, with its new words", () => {
     const { reviews, comment } = withComment([], 2);
     const other = withComment(reviews, 3, "Fine.");

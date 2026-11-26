@@ -48,8 +48,10 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * host, so an id the agent was handed could reach another pull request. The
  * chat submits a comment review only: approving and requesting changes stay
  * the user's, with Finish review, so no text the agent read can vote. A post
- * keeps one submission across the agent's tries, named by its conversation,
- * pull request and content, so the plugin finds what an earlier try left.
+ * keeps one submission across the agent's tries, named by its turn, the
+ * user's message, with its pull request and content, so the plugin finds
+ * what an earlier try left; the same post asked for in a later message is
+ * a new one.
  */
 
 /** The chat's writes that post: each keeps its submission across tries. */
@@ -215,9 +217,11 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
   const createId = options.createId ?? (() => randomUUID());
   const now = options.now ?? Date.now;
   /**
-   * Each post's submission, by its conversation, pull request and content:
-   * the agent repeating a post whose answer was lost names the same one,
-   * and the plugin finds the earlier post instead of posting it twice.
+   * Each post's submission, by its turn, pull request and content: the
+   * agent repeating a post whose answer was lost names the same one, and
+   * the plugin finds the earlier post instead of posting it twice. A turn
+   * is one message of the user's, so a post they ask for again in a later
+   * message posts again.
    */
   const submissions = new Map<string, ChatSubmission>();
 
@@ -229,12 +233,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
   ) {
     const key = createHash("sha256")
       .update(
-        JSON.stringify([
-          turn.conversationId,
-          binding.pullRequest,
-          operation,
-          content,
-        ]),
+        JSON.stringify([turn.id, binding.pullRequest, operation, content]),
       )
       .digest("base64url");
     let submission = submissions.get(key);
@@ -312,7 +311,7 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
   ) {
     if (submission.shown && submission.shown.id === id) {
       throw new DeckChatRefused(
-        `Ajour made this post earlier in this conversation ("${submission.shown.output.action}"), and the code host still has it, so Ajour didn't post it again. Tell the user it's there.`,
+        `Ajour made this post earlier in this turn ("${submission.shown.output.action}"), and the code host still has it, so Ajour didn't post it again. Tell the user it's there.`,
       );
     }
     const output = show();

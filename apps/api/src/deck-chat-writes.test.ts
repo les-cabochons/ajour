@@ -648,6 +648,27 @@ describe("a chat write tried again (council round 1)", () => {
     expect(chat.actions()).toHaveLength(1);
   });
 
+  it("posts the same words again when a later message of the user's asks for them", async () => {
+    const chat = setup();
+    const comment = { body: "Why upper case?", lines: onLine() };
+    await chat.writes.run("post_comment", "client-1", binding, comment);
+
+    // The user asks again, in a new message of the same conversation.
+    const next: RunningTurn = { ...chat.state.running!, id: "turn-2" };
+    chat.state.running = next;
+    chat.writes.chatStarted(next.id, {
+      author: true,
+      pullRequestUrl: PULL_REQUEST_URL,
+    });
+    chat.state.now += 60_000;
+    await chat.writes.run("post_comment", "client-1", binding, comment);
+
+    const [first, second] = chat.hostRequests;
+    expect(second!.request.submissionId).not.toBe(first!.request.submissionId);
+    expect(second!.request.firstTriedAt).toBeUndefined();
+    expect(chat.actions()).toHaveLength(2);
+  });
+
   it("tries a write refused before it was sent afresh", async () => {
     const chat = setup();
     let tries = 0;

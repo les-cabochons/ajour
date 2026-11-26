@@ -1117,6 +1117,24 @@ export async function replyToThread(connection, request) { return write("reply",
     expect(second!.firstTriedAt).toBeGreaterThanOrEqual(before);
   });
 
+  it("passes on a review whose vote the code host withheld for new commits", async () => {
+    const { api, connectionId } = await startDeck(`${pluginSource}
+export async function submitReview() {
+  return { reviewId: "1", voteWithheld: { reason: "new_commits" } };
+}
+`);
+    expect(
+      await apiRequest(
+        api.baseUrl,
+        `/api/code-hosts/github/connections/${connectionId}/submitReview`,
+        requests.submitReview("review_submission_1"),
+      ),
+    ).toEqual({
+      status: 200,
+      body: { reviewId: "1", voteWithheld: { reason: "new_commits" } },
+    });
+  });
+
   it("runs writes of different submissions side by side", async () => {
     const { api, connectionId } = await startDeck(withWrites);
     const open = gate();

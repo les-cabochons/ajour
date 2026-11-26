@@ -81,7 +81,7 @@ To suggest a change on lines of the new code, press **Suggest change** in the co
 
 To comment from the keyboard, press <kbd>Tab</kbd> until a hunk's **Comment on line …** button shows, move it with <kbd>↑</kbd> and <kbd>↓</kbd>, and press <kbd>Enter</kbd>.
 
-On Azure DevOps, where your vote counts for the whole pull request, Ajour won't approve once new commits arrived after you read it: open it again to read them first.
+On Azure DevOps, where your vote counts for the whole pull request, Ajour won't approve once new commits arrived after you read it: open it again to read them first. If they arrive while your approval is sending, your comments and summary are posted and your vote isn't: Ajour says so, and you approve again once you've read the new commits.
 
 When the author pushes and you open the pull request again, a draft comment whose lines changed is marked **Outdated** and listed before the conversation. It isn't sent with the review; remove it when you're done with it. A pull request that closes keeps your draft, and stays under **Recently closed** until you post its comments with **Post as comments**, or **Discard** it.
 

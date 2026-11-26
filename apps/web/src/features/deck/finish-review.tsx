@@ -21,7 +21,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { showActionToast, showToast } from "@/components/ui/toast";
+import {
+  showActionToast,
+  showErrorToast,
+  showToast,
+} from "@/components/ui/toast";
 import { Textarea } from "@/components/ui/textarea";
 import {
   reviewVerdicts,
@@ -48,7 +52,11 @@ import { useShortcut } from "@/lib/shortcut-handlers";
  * an earlier try reached it, the dialog says so and the user chooses to
  * post again, as a new submission. On a layer of a stack, sending the
  * review offers **Next in stack**, the layer above (#788): the dialog stays
- * on what was sent, and R then Y's toast carries it.
+ * on what was sent, and R then Y's toast carries it. When new commits
+ * arrived before the vote, the code host may post the comments and the
+ * summary and withhold the vote (Azure DevOps, whose vote isn't bound to a
+ * head): what it posted leaves the draft as on success, so nothing posts
+ * twice, and the user reads that their vote wasn't sent.
  */
 
 type Verdict = CodeHostSubmitReviewRequest["verdict"];
@@ -75,6 +83,26 @@ export function mayAlreadyBeThere(
 /** What a sent review is called, in the toast and the sent dialog. */
 const sentTitle = (verdict: Verdict) =>
   verdict === "approve" ? "Approved" : "Review sent";
+
+/** The title of a review whose vote the code host withheld. */
+const VOTE_WITHHELD = "Your vote wasn't sent";
+
+/** What a review whose vote new commits held back left on the pull request, and what to do. */
+function voteWithheld(comments: number, summary: boolean) {
+  const posted =
+    comments && summary
+      ? `Your ${comments === 1 ? "comment" : "comments"} and summary are`
+      : comments
+        ? comments === 1
+          ? "Your comment is"
+          : "Your comments are"
+        : summary
+          ? "Your summary is"
+          : undefined;
+  return posted
+    ? `New commits arrived while your review was sending. ${posted} on the pull request; review the new commits, then vote again.`
+    : "New commits arrived while your review was sending. Review them, then vote again.";
+}
 
 /** The line that names the layer above, offered once a review is sent. */
 const nextInStack = (layer: LocalPullRequest) =>
@@ -124,8 +152,13 @@ export function FinishReview({
   const [failure, setFailure] = useState<string | undefined>();
   /** The last try couldn't be settled: submitting again posts it anew. */
   const [uncertain, setUncertain] = useState(false);
-  /** What the dialog sent, while it offers the next layer. */
-  const [sent, setSent] = useState<Verdict | undefined>();
+  /**
+   * What the dialog sent, while it offers the next layer, or says why the
+   * vote wasn't sent (`withheld`).
+   */
+  const [sent, setSent] = useState<
+    { verdict: Verdict; withheld?: string } | undefined
+  >();
   const summaryId = useId();
   const verdicts = reviewVerdicts(pullRequest.pluginId);
   const count = draft?.comments.length ?? 0;
@@ -178,13 +211,21 @@ export function FinishReview({
       }
       localStore.completeReviewSubmission(ref, sent);
       setSummary("");
+      if (result.voteWithheld) {
+        // Posted, all but the vote: the user reviews the new commits first.
+        const withheld = voteWithheld(sent.length, request.body !== undefined);
+        if (open) setSent({ verdict: chosen, withheld });
+        else showErrorToast({ title: VOTE_WITHHELD, description: withheld });
+        onSubmitted();
+        return;
+      }
       const done = sentTitle(chosen);
       if (!nextLayer) {
         setOpen(false);
         showToast(done);
       } else if (open) {
         // The dialog says what was sent, and offers the layer above.
-        setSent(chosen);
+        setSent({ verdict: chosen });
       } else
         showActionToast({
           title: done,
@@ -233,11 +274,14 @@ export function FinishReview({
             // takes Next in stack away, never back to the form.
             <>
               <DialogHeader>
-                <DialogTitle>{sentTitle(sent)}</DialogTitle>
+                <DialogTitle>
+                  {sent.withheld ? VOTE_WITHHELD : sentTitle(sent.verdict)}
+                </DialogTitle>
                 <DialogDescription>
-                  {nextLayer
-                    ? nextInStack(nextLayer)
-                    : "The layer above left the stack."}
+                  {sent.withheld ??
+                    (nextLayer
+                      ? nextInStack(nextLayer)
+                      : "The layer above left the stack.")}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -251,7 +295,7 @@ export function FinishReview({
                 >
                   Close
                 </Button>
-                {nextLayer ? (
+                {nextLayer && !sent.withheld ? (
                   <Button type="button" autoFocus onClick={openNext}>
                     Next in stack
                   </Button>
