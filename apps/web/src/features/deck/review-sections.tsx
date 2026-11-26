@@ -115,19 +115,25 @@ export const ReviewHunkView = memo(function ReviewHunkView({
         : undefined,
     [lines, hunk.id],
   );
+  // The selection wins over the keyboard's line and the hover; a cited
+  // line shows only while no note is hovered and no composer is open.
   const selected = useMemo(
     () =>
-      shown?.selection
-        ? highlightOfSelection(shown.selection)
-        : shown?.cited
-          ? {
-              side: shown.cited.side,
-              start: shown.cited.line,
-              end: shown.cited.line,
-            }
-          : undefined,
+      shown?.selection ? highlightOfSelection(shown.selection) : undefined,
     [shown],
   );
+  const cited = useMemo(
+    () =>
+      shown?.cited
+        ? {
+            side: shown.cited.side,
+            start: shown.cited.line,
+            end: shown.cited.line,
+          }
+        : undefined,
+    [shown],
+  );
+  const noted = annotations ? highlightOf(hunk, hovered) : undefined;
   const box = useRef<HTMLDivElement>(null);
   const drawn = !viewed && !withoutLines;
   return (
@@ -165,7 +171,7 @@ export const ReviewHunkView = memo(function ReviewHunkView({
           theme={theme}
           annotations={annotations}
           renderAnnotation={annotations ? renderAnnotation : undefined}
-          highlight={annotations ? highlightOf(hunk, hovered) : undefined}
+          highlight={noted ?? cited ?? noted}
           selected={selected}
           onSelectLines={onSelectLines}
           onAddComment={addComment}

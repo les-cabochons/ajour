@@ -129,6 +129,23 @@ Feature: Deck lists the pull requests on your plate
     And I add it to the review with Ctrl+Enter
     Then the draft comment "Cap the backoff." sits beside its line
 
+  Scenario: Explain selected lines and turn the answer into a comment
+    Given the local API built the requested pull request's guide
+    And the code host takes reviews
+    And asks about lines are answered with "It waits longer each time, as `src/client/retry.ts:13` shows."
+    When I open Deck
+    And I open the requested pull request summary
+    And I drag over the line numbers from line 12 to line 14
+    Then the toolbar for "Lines 12–14 selected" shows above line 12
+    When I press the "e" key
+    Then the explanation of "lines 12–14" follows the hunk with "It waits longer each time"
+    When I follow the citation "src/client/retry.ts:13"
+    Then line 13 is highlighted on screen
+    When I turn the explanation into a comment
+    Then the composer holds "It waits longer each time, as `src/client/retry.ts:13` shows."
+    When I add it to the review with Ctrl+Enter
+    Then a draft comment on lines 12 to 14 holds "It waits longer each time"
+
   Scenario: Read a pull request too large for a guide
     Given the local API answers a pull request with too many hunks for a guide
     When I open Deck
@@ -161,6 +178,30 @@ Feature: Deck lists the pull requests on your plate
     Then concern 1 is focused at the top of the changes
     When I scroll the changes down by 20000 pixels
     Then concern 1's title keeps the focus off screen
+
+  Scenario: Explain selected lines on a narrow screen
+    Given the local API built the requested pull request's guide
+    And asks about lines are answered with "It waits longer each time."
+    When I open Deck on a narrow screen
+    And I open the requested pull request summary
+    And I drag over the line numbers from line 12 to line 14
+    Then the toolbar for "Lines 12–14 selected" shows above line 12
+    When I press the "e" key
+    Then the explanation of "lines 12–14" shows "It waits longer each time."
+    And the explanation fits the narrow viewport after the hunk
+
+  Scenario: Keep an explanation while its rows of a pull request with many hunks scroll away
+    Given the local API built the guide of a pull request with 600 hunks
+    And asks about lines are answered with "Each step reads its own line."
+    When I open Deck
+    And I open the requested pull request summary
+    And I drag over the line numbers of "src/f000.ts" from line 1 to line 3
+    And I press the "e" key
+    Then the explanation of "lines 1–3" shows "Each step reads its own line."
+    When I scroll the changes down by 20000 pixels
+    Then no explanation is mounted
+    When I scroll the changes back to the top
+    Then the explanation of "lines 1–3" shows "Each step reads its own line."
 
   Scenario: Read a pull request too large for a guide on a narrow screen
     Given the local API answers a pull request with too many hunks for a guide
