@@ -50,6 +50,11 @@ import {
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
+import {
+  DECK_DRAFT_COMMENT_TOOL,
+  deckDraftCommentCallSchema,
+} from "@ajour/shared/deck";
+import { draftReviewOf } from "@/domain/deck/draft-review";
 import { StaleWindowError } from "@/lib/stale-window-error";
 import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
@@ -252,6 +257,39 @@ function finishWrite(
   };
 }
 
+/**
+ * A draft comment Deck's chat adds (#796): the draft review lives here, in
+ * the window's local state (#784), so the local API hands it over. It goes
+ * on the head the draft's other comments are on, never another.
+ */
+function addDeckDraftComment(call: BridgeToolCall): BridgeToolResult {
+  const input = deckDraftCommentCallSchema.parse(call.input);
+  const ref = {
+    pluginId: input.pluginId,
+    connectionId: input.connectionId,
+    repository: input.repository,
+    number: input.number,
+  };
+  const draft = draftReviewOf(localStore.snapshot().deckDraftReviews ?? [], ref);
+  if (draft && draft.headSha !== input.headSha) {
+    throw new AgentToolRefusal(
+      "The user's draft review is on another head of this pull request, so Ajour added nothing. Tell the user to refresh the page.",
+    );
+  }
+  const comment = localStore.addDraftComment(ref, {
+    headSha: input.headSha,
+    anchor: input.anchor,
+    body: input.body,
+    lineText: input.lineText,
+  });
+  if (!comment) throw new AgentToolRefusal("The draft comment is blank.");
+  return {
+    requestId: call.requestId,
+    ok: true,
+    output: { draftId: comment.id },
+  };
+}
+
 /** The bridge's `agent_tool.call` job, which it hands the call it runs. */
 type AgentToolUnit = Unit<AjourCatalog, "agent_tool.call">;
 
@@ -305,6 +343,9 @@ export async function runAgentToolCall(
       return asAgent(() =>
         finishWrite(call, runAgentUndo(call.input, call.client.id), unit),
       );
+    }
+    if (tool === DECK_DRAFT_COMMENT_TOOL) {
+      return asAgent(() => addDeckDraftComment(call));
     }
     if (tool === "post_work_item_comment") {
       return await postCommentForAgent(call, unit);

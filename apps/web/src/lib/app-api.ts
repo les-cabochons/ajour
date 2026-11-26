@@ -190,11 +190,13 @@ import {
   type CodeHostMergeRequest,
   type CodeHostUpdatePullRequestRequest,
   codeHostConversationResultSchema,
+  codeHostDeleteCommentResultSchema,
   codeHostResolveThreadResultSchema,
   codeHostSetFileViewedResultSchema,
   codeHostSubmitReviewResultSchema,
   type CodeHostPostCommentRequest,
   type CodeHostReplyRequest,
+  type CodeHostDeleteCommentRequest,
   type CodeHostResolveThreadRequest,
   type CodeHostSetFileViewedRequest,
   type CodeHostSubmitReviewRequest,
@@ -206,6 +208,7 @@ import {
 } from "@ajour/shared";
 import {
   deckAskResponseSchema,
+  deckChatResponseSchema,
   deckCacheSettingsUpdateSchema,
   deckCacheStorageSchema,
   deckCloneSchema,
@@ -216,6 +219,7 @@ import {
   deckPreloadResultSchema,
   deckSinceReviewSchema,
   type DeckAskRequest,
+  type DeckChatRequest,
   type DeckCloneSource,
   type DeckConsentRevokeRequest,
   type DeckOpenRequest,
@@ -265,6 +269,34 @@ export function askDeck(
       ...(signal ? { signal } : {}),
     },
     deckAskResponseSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Sends a message of Deck's chat (#796): its `deck.chat` turn, whose
+ * `agent-turn` events stream the reply and the action line of each write
+ * it makes. A repository the user hasn't allowed yet answers 409 with
+ * `reason: "needs_consent"` and the agent, as an ask does.
+ */
+export function chatDeck(
+  pluginId: string,
+  connectionId: string,
+  message: DeckChatRequest,
+  /** Stops the message before its turn starts, as while the clone is fetched. */
+  signal?: AbortSignal,
+) {
+  return appApiRequest(
+    "chatDeck",
+    deckPath(pluginId, connectionId, "chat"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message),
+      ...(signal ? { signal } : {}),
+    },
+    deckChatResponseSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );
@@ -597,6 +629,30 @@ export function replyToPullRequestThread(
       body: JSON.stringify(reply),
     },
     codeHostPostCommentResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Deletes a comment or reply the user posted, here one Deck's chat posted
+ * for them (#796), at once. A code host that can't delete one answers 404
+ * with the reason `not_supported`.
+ */
+export function deletePullRequestComment(
+  pluginId: string,
+  connectionId: string,
+  request: CodeHostDeleteCommentRequest,
+) {
+  return appApiRequest(
+    "deletePullRequestComment",
+    codeHostPath(pluginId, connectionId, "deleteComment"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    codeHostDeleteCommentResultSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );

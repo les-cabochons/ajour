@@ -8,6 +8,7 @@ import {
   vi,
 } from "vitest";
 import { dataToolOutputSchemas } from "@ajour/shared/agent-tools";
+import { deckDraftCommentResultSchema } from "@ajour/shared/deck";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 
@@ -131,7 +132,11 @@ async function setup() {
       client,
     });
     if (result.ok) {
-      dataToolOutputSchemas[tool as DataToolName].parse(result.output);
+      // Deck's draft comment answers the local API's own schema (#796).
+      (tool === "deck_add_draft_comment"
+        ? deckDraftCommentResultSchema
+        : dataToolOutputSchemas[tool as DataToolName]
+      ).parse(result.output);
     }
     return result;
   };
@@ -362,6 +367,61 @@ describe("agent read tools", () => {
       ok: false,
       error: "Ajour has no tool named delete_everything.",
     });
+  });
+});
+
+describe("a draft comment from Deck's chat (#796)", () => {
+  const draftCall = (headSha = "a41c9e2f0d") => ({
+    pluginId: "github",
+    connectionId: "gh-1",
+    repository: "acme/api",
+    number: 7,
+    headSha,
+    anchor: { path: "src/api.ts", side: "head", line: 2 },
+    body: "Rename this.",
+    lineText: "TWO",
+  });
+
+  it("adds it to the pull request's draft review and answers its id", async () => {
+    const { call, localStore } = await setup();
+
+    const result = await call("deck_add_draft_comment", draftCall());
+
+    const [review] = localStore.snapshot().deckDraftReviews ?? [];
+    expect(review).toMatchObject({
+      repository: "acme/api",
+      number: 7,
+      headSha: "a41c9e2f0d",
+      comments: [
+        {
+          path: "src/api.ts",
+          side: "head",
+          line: 2,
+          body: "Rename this.",
+          lineText: "TWO",
+        },
+      ],
+    });
+    expect(result).toEqual({
+      requestId: "r1",
+      ok: true,
+      output: { draftId: review!.comments[0]!.id },
+    });
+  });
+
+  it("refuses one on another head than the draft's", async () => {
+    const { call, localStore } = await setup();
+    await call("deck_add_draft_comment", draftCall());
+
+    expect(
+      await call("deck_add_draft_comment", draftCall("b52d0f3a11")),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("on another head"),
+    });
+    expect(localStore.snapshot().deckDraftReviews?.[0]?.comments).toHaveLength(
+      1,
+    );
   });
 });
 

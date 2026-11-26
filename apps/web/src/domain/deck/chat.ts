@@ -1,6 +1,13 @@
 import type { AgentTurnAction, AgentTurnEvent } from "@ajour/shared/agent-runs";
 import type { DeckAskAnchor, DeckCloneUse } from "@ajour/shared/deck";
-import { applyTurnEvent, askGoing, failAsk, startAsk, type AskState } from "./ask";
+import {
+  applyTurnEvent,
+  askGoing,
+  failAsk,
+  startAsk,
+  stopAsk,
+  type AskState,
+} from "./ask";
 
 /*
  * Deck's chat (#796), the fallback for questions no ask covers. The user's
@@ -47,8 +54,12 @@ export const emptyChat = (): ChatState => ({ entries: [], draft: "" });
 
 /** The reply still coming, if any: only one at a time. */
 function goingReply(state: ChatState) {
-  const last = state.entries.findLast((entry) => entry.kind === "reply");
-  return last?.kind === "reply" && askGoing(last.state) ? last : undefined;
+  for (let index = state.entries.length - 1; index >= 0; index -= 1) {
+    const entry = state.entries[index]!;
+    if (entry.kind === "reply")
+      return askGoing(entry.state) ? entry : undefined;
+  }
+  return undefined;
 }
 
 /** Whether a reply is still coming, so nothing else is sent and Stop shows. */
@@ -121,6 +132,14 @@ export function failReply(state: ChatState, message: string): ChatState {
   return withReply(state, (reply) => ({
     ...reply,
     state: failAsk(reply.state, message),
+  }));
+}
+
+/** The reply was stopped before its turn started, as while the clone was fetched. */
+export function stopReply(state: ChatState): ChatState {
+  return withReply(state, (reply) => ({
+    ...reply,
+    state: stopAsk(reply.state),
   }));
 }
 
@@ -203,7 +222,9 @@ export function chatHeader({
   const text = [`#${number}`, provider, reads]
     .filter((part) => part !== undefined)
     .join(" · ");
-  return clone !== undefined && clone !== "chosen" && clone.state === "unavailable"
+  return clone !== undefined &&
+    clone !== "chosen" &&
+    clone.state === "unavailable"
     ? { text, cloneReason: clone.reason }
     : { text };
 }

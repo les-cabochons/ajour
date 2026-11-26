@@ -1141,6 +1141,7 @@ channel to read the event each emits.
 | `connection.save`                    | command, request, plugin_operation      | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                     | IPC channel                                      |
 | `deck.ask`                           | command, request                        | route, client call                               |
+| `deck.chat`                          | command, request                        | route, client call                               |
 | `deck.clone_choose`                  | command, request, ipc                   | route, IPC channel, client call                  |
 | `deck.clone_forget`                  | command, request                        | route, client call                               |
 | `deck.clone_kept`                    | job                                     | local API                                        |

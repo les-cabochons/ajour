@@ -546,8 +546,10 @@ it("puts the answer under the selected lines' thread, after the hunk's lines", a
   await within(answer).findByText("Upper case.");
   expect(within(answer).getByText("From the code at a41c9e2")).toBeTruthy();
   expect(answer.textContent).not.toMatch(/Claude|Codex|OpenCode|agent/i);
-  // Continue in chat waits for the chat.
-  expect(within(answer).queryByRole("button", { name: /chat/i })).toBeNull();
+  // Continue in chat carries the lines into the chat (#796).
+  expect(
+    within(answer).getByRole("button", { name: "Continue in chat" }),
+  ).toBeTruthy();
 });
 
 it("turns an answer into a draft comment on its lines", async () => {

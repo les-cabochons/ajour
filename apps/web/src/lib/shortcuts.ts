@@ -78,6 +78,7 @@ export type ShortcutActionId =
   | "deck.next-concern"
   | "deck.previous-concern"
   | "deck.guide-tree"
+  | "deck.chat"
   | "deck.review-comment"
   | "deck.review-request-changes"
   | "deck.review-approve"
@@ -254,6 +255,14 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Open or close the guide tree",
     scope: "deck",
     keys: [{ key: "f" }],
+  },
+  // The chat (#796): A opens and closes it. No app key takes A; while lines
+  // are selected, their toolbar's A asks about them instead.
+  {
+    id: "deck.chat",
+    label: "Open or close the chat",
+    scope: "deck",
+    keys: [{ key: "a" }],
   },
   // Finish review (#784): R, then the verdict. R takes no app key, and the
   // second letter only counts after it, so N still starts an entry.

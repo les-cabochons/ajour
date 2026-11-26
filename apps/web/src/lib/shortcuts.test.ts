@@ -91,6 +91,7 @@ describe("shortcut registry", () => {
       "J",
       "K",
       "F",
+      "A",
       "R then C",
       "R then N",
       "R then A",
@@ -131,7 +132,9 @@ describe("shortcut registry", () => {
         .map((right) => `${left.id} and ${right.id}`),
     );
 
-    expect(collisions).toEqual([]);
+    // A opens the chat, and asks about selected lines while their toolbar
+    // shows: the keys of selected lines win then (#796).
+    expect(collisions).toEqual(["deck.chat and deck.lines-ask"]);
     expect(
       APP_SHORTCUTS.filter((shortcut) => shortcut.scope === "deck").map(
         (shortcut) => [shortcut.id, sequence(shortcut).join(" then ")],
@@ -140,6 +143,7 @@ describe("shortcut registry", () => {
       ["deck.next-concern", "J"],
       ["deck.previous-concern", "K"],
       ["deck.guide-tree", "F"],
+      ["deck.chat", "A"],
       ["deck.review-comment", "R then C"],
       ["deck.review-request-changes", "R then N"],
       ["deck.review-approve", "R then A"],
@@ -446,8 +450,8 @@ describe("resolveShortcut", () => {
     expect(resolved("e", ["deck.lines-explain"])).toBe("deck.lines-explain");
     // With no line selected, the keys of selected lines are no keys at all:
     // never a sequence waiting for its next key, so Escape still closes a
-    // panel and A types nothing away.
-    for (const key of ["Escape", "a", "e"]) {
+    // panel, and A is the review page's chat (#796).
+    for (const key of ["Escape", "e"]) {
       expect(
         resolveShortcut(
           APP_SHORTCUTS,
@@ -459,6 +463,10 @@ describe("resolveShortcut", () => {
       ).toEqual({ kind: "none" });
     }
     expect(resolved("a", ["deck.lines-ask"])).toBe("deck.lines-ask");
+    expect(resolved("a", ["deck.chat"])).toBe("deck.chat");
+    expect(resolved("a", ["deck.chat", "deck.lines-ask"])).toBe(
+      "deck.lines-ask",
+    );
     // R then C still finishes the review on Comment while lines are selected.
     const second = resolveShortcut(
       APP_SHORTCUTS,

@@ -11,6 +11,7 @@ const SIDE_PANEL_WIDTH_KEYS = [
   "agents",
   "backlog",
   "backlog-item",
+  "deck",
   "projects",
   "time",
 ] as const;
@@ -26,6 +27,12 @@ function isSidePanelWidthKey(key: string): key is SidePanelWidthKey {
 
 export const SIDE_PANEL_WIDTHS_STORAGE_KEY = "ajour.side-panel-widths";
 export const SIDE_PANEL_DEFAULT_WIDTH = 340;
+/** Pages whose panel starts wider: Deck's chat is 360px (#796). */
+const SIDE_PANEL_DEFAULT_WIDTHS: SidePanelWidths = { deck: 360 };
+
+/** The width a page's panel has until the user drags it. */
+export const defaultSidePanelWidth = (key: SidePanelWidthKey) =>
+  SIDE_PANEL_DEFAULT_WIDTHS[key] ?? SIDE_PANEL_DEFAULT_WIDTH;
 export const SIDE_PANEL_MIN_WIDTH = 300;
 export const SIDE_PANEL_MAX_WIDTH = 720;
 
@@ -123,7 +130,7 @@ export function useSidePanelWidth(key: SidePanelWidthKey) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    () => getWidths()[key] ?? SIDE_PANEL_DEFAULT_WIDTH,
-    () => SIDE_PANEL_DEFAULT_WIDTH,
+    () => getWidths()[key] ?? defaultSidePanelWidth(key),
+    () => defaultSidePanelWidth(key),
   );
 }

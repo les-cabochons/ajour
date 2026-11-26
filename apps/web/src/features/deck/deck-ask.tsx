@@ -43,6 +43,7 @@ import {
   type DeckAskTarget,
 } from "./deck-ask-sessions";
 import { useReviewLines } from "./review-lines-context";
+import { useContinueInChat } from "./deck-chat";
 
 /*
  * Deck's quiet asks (#791, #793): a faint `more ›` ends each concern's
@@ -226,9 +227,12 @@ export function DeckAskProvider({
 /** A concern's rationale, ended by its `more ›`, and the answer under it. */
 export function ConcernRationale({
   concernId,
+  title,
   rationale,
 }: {
   concernId: string;
+  /** The concern's title, which names its chip in the chat. */
+  title?: string;
   rationale: string;
 }) {
   const context = useContext(DeckAskContext);
@@ -274,6 +278,7 @@ export function ConcernRationale({
           context={context}
           onClosed={focusMore}
           label="More detail"
+          chipLabel={title ?? "This concern"}
           placeholder="Getting more detail…"
           defaultQuestion={DECK_CONCERN_DEFAULT_QUESTION}
         />
@@ -295,6 +300,7 @@ function AskAnswer({
   context,
   onClosed,
   label,
+  chipLabel,
   placeholder,
   defaultQuestion,
   actions,
@@ -307,6 +313,8 @@ function AskAnswer({
   onClosed: () => void;
   /** Names the block, "More detail" on a concern. */
   label: string;
+  /** Names the anchor's chip when Continue in chat carries it in (#796). */
+  chipLabel: string;
   /** What shows while nothing came yet. */
   placeholder: string;
   /** The anchor's default question, which sent as is asks with none. */
@@ -317,6 +325,7 @@ function AskAnswer({
   const { target, sessions, pickClone } = context;
   const { state, turnId, starting } = session;
   const lines = useReviewLines();
+  const continueInChat = useContinueInChat();
   const ask = (question?: string) =>
     void sessions.ask(target, session.anchor, question, onClosed);
   const close = () => {
@@ -426,6 +435,15 @@ function AskAnswer({
               </Button>
             ) : null}
             {state.kind === "answered" && actions ? actions(text) : null}
+            {state.kind === "answered" && continueInChat ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => continueInChat(session.anchor, chipLabel)}
+              >
+                Continue in chat
+              </Button>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={close}>
               Dismiss
             </Button>
@@ -591,6 +609,7 @@ function LinesAnswer({
       context={context}
       onClosed={() => {}}
       label={`Explanation of ${deckLinesLabel(anchor)}`}
+      chipLabel={`${anchor.path}, ${deckLinesLabel(anchor)}`}
       placeholder="Explaining…"
       defaultQuestion={DECK_LINES_DEFAULT_QUESTION}
       actions={

@@ -11,6 +11,7 @@ import {
   removeChip,
   replyStarted,
   sendMessage,
+  stopReply,
   type ChatState,
 } from "./chat";
 
@@ -150,6 +151,16 @@ describe("Deck's chat", () => {
     expect(state.entries[1]).toMatchObject({
       kind: "reply",
       state: { kind: "failed", message: "Pick an agent in Settings." },
+    });
+    expect(chatGoing(state)).toBe(false);
+  });
+
+  it("stops a reply before its turn started, so another message can go", () => {
+    const sending = sendMessage({ ...emptyChat(), draft: "Hi" }, "m1")!;
+    const state = stopReply(sending.state);
+    expect(state.entries[1]).toMatchObject({
+      kind: "reply",
+      state: { kind: "stopped" },
     });
     expect(chatGoing(state)).toBe(false);
   });

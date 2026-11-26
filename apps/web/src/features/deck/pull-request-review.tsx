@@ -7,7 +7,10 @@ import {
   useState,
 } from "react";
 import type { CodeHostReviewThread } from "@ajour/shared";
+import type { AgentTurnAction } from "@ajour/shared/agent-runs";
+import type { DeckAskAnchor } from "@ajour/shared/deck";
 import { SectionHeading } from "@/components/section-heading";
+import { Button } from "@/components/ui/button";
 import { showErrorToast } from "@/components/ui/toast";
 import {
   draftReviewOf,
@@ -20,7 +23,7 @@ import {
 } from "@/domain/deck/draft-review";
 import { authorActions } from "@/domain/deck/author-actions";
 import { reviewNotes, type ComposerTarget } from "@/domain/deck/review-notes";
-import { placeThreads } from "@/domain/deck/review-threads";
+import { findLine, placeThreads } from "@/domain/deck/review-threads";
 import { viewedHunks, viewedMarksOf } from "@/domain/deck/viewed-marks";
 import {
   changedHunks,
@@ -40,6 +43,11 @@ import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { useMediaQuery } from "@/lib/use-media-query";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { useShortcut } from "@/lib/shortcut-handlers";
+import { cn } from "@/lib/utils";
+import { DeckChatContext, DeckChatPanel, useChatConsent } from "./deck-chat";
+import { DeckChatSession, type DeckChatTarget } from "./deck-chat-session";
 import { DraftToggle, MergePullRequest } from "./author-actions";
 import {
   ClosedDraftReview,
@@ -106,7 +114,12 @@ export function PullRequestReview({
   const conversation = usePullRequestConversation(pullRequest);
   const checks = usePullRequestChecks(pullRequest);
   const versions = usePullRequestVersions(pullRequest);
-  const floating = useMediaQuery(DECK_GUTTER_QUERY);
+  const gutter = useMediaQuery(DECK_GUTTER_QUERY);
+  const narrow = useIsNarrowView();
+  // The chat (#796), kept while its panel is closed. While it's open,
+  // floating comments go back inline.
+  const [chatOpen, setChatOpen] = useState(false);
+  const floating = gutter && !(chatOpen && !narrow);
   const [hovered, setHovered] = useState<string | undefined>();
   // The changes set it once they show, so a summary line reaches its hunk.
   const reachHunk = useRef<ReachHunk | undefined>(undefined);
@@ -485,6 +498,80 @@ export function PullRequestReview({
   );
   const outdated = drafts?.elsewhere ?? [];
 
+  // What a chat write changed shows on the page: the conversation's new
+  // comment or state, the title and draft state the code host now holds.
+  const chatActionRef = useRef<(action: AgentTurnAction) => void>(() => {});
+  useLayoutEffect(() => {
+    chatActionRef.current = (action) => {
+      if (action.edited) {
+        localStore.changePullRequest(pullRequest._id, {
+          type: "edited",
+          ...action.edited,
+        });
+      }
+      if (action.kind !== "draft_comment") reloadConversation();
+    };
+  });
+  const chatConsent = useChatConsent({ pluginId, connectionId });
+  const [chat] = useState(
+    () =>
+      new DeckChatSession(chatConsent.requestConsent, (action) =>
+        chatActionRef.current(action),
+      ),
+  );
+  const { repositoryIdentity, headRef } = pullRequest.facts;
+  const author = authorActions(pullRequest.facts);
+  const chatTarget = useMemo(
+    (): DeckChatTarget | undefined =>
+      headSha
+        ? {
+            pluginId,
+            connectionId,
+            repository,
+            number,
+            head: headSha,
+            author,
+            ...(repositoryIdentity
+              ? {
+                  clone: {
+                    repositoryIdentity,
+                    ...(headRef ? { headRef } : {}),
+                  },
+                }
+              : {}),
+          }
+        : undefined,
+    [
+      headSha,
+      pluginId,
+      connectionId,
+      repository,
+      number,
+      author,
+      repositoryIdentity,
+      headRef,
+    ],
+  );
+  useShortcut("deck.chat", () => {
+    if (chatTarget) setChatOpen((isOpen) => !isOpen);
+  });
+  const chatContext = useMemo(
+    () => ({
+      continueInChat: (anchor: DeckAskAnchor, label: string) => {
+        chat.carry(anchor, label);
+        setChatOpen(true);
+      },
+    }),
+    [chat],
+  );
+  const showLine = useCallback(
+    (at: { path: string; side: "base" | "head"; line: number }) => {
+      const found = shown ? findLine(shown, at) : undefined;
+      if (found) onReach(found.hunkId);
+    },
+    [shown, onReach],
+  );
+
   const shownHead =
     diffState.status === "ready" ? diffState.value.headSha : undefined;
   const list =
@@ -569,101 +656,134 @@ export function PullRequestReview({
   };
 
   return (
-    <ReviewNotesContext.Provider value={actions}>
-      <ThreadActionsContext.Provider value={threadActions}>
-        <PullRequestHeader
-          pullRequest={pullRequest}
-          now={now}
-          review={
-            open ? (
-              <FinishReview
+    <DeckChatContext.Provider value={chatContext}>
+      <div
+        className={cn("deck-review-stack", chatOpen && !narrow && "has-chat")}
+      >
+        <div className="backlog-item-page deck-review-main">
+          <ReviewNotesContext.Provider value={actions}>
+            <ThreadActionsContext.Provider value={threadActions}>
+              <PullRequestHeader
                 pullRequest={pullRequest}
-                draft={draft}
-                headSha={headSha}
-                onSubmitted={retryConversation}
+                now={now}
+                chat={
+                  <Button
+                    variant="outline"
+                    aria-pressed={chatOpen}
+                    aria-keyshortcuts="A"
+                    disabled={!chatTarget}
+                    onClick={() => setChatOpen((isOpen) => !isOpen)}
+                  >
+                    Chat
+                  </Button>
+                }
+                review={
+                  open ? (
+                    <FinishReview
+                      pullRequest={pullRequest}
+                      draft={draft}
+                      headSha={headSha}
+                      onSubmitted={retryConversation}
+                    />
+                  ) : null
+                }
+                author={
+                  author ? (
+                    <>
+                      <DraftToggle pullRequest={pullRequest} />
+                      <MergePullRequest
+                        pullRequest={pullRequest}
+                        headSha={headSha}
+                        methods={
+                          conversation.state.status === "ready"
+                            ? conversation.state.value.mergeMethods
+                            : undefined
+                        }
+                        pushes={versionsView.pushes}
+                        onFailed={retryVersions}
+                        versionName={
+                          versions.state.status === "ready"
+                            ? versions.state.value.versionName
+                            : undefined
+                        }
+                      />
+                    </>
+                  ) : null
+                }
               />
-            ) : null
-          }
-          author={
-            authorActions(pullRequest.facts) ? (
-              <>
-                <DraftToggle pullRequest={pullRequest} />
-                <MergePullRequest
+              <PullRequestStatusLine
+                pullRequest={pullRequest}
+                checks={checks.state}
+              />
+              {!open && draft?.comments.length ? (
+                <ClosedDraftReview
                   pullRequest={pullRequest}
-                  headSha={headSha}
-                  methods={
-                    conversation.state.status === "ready"
-                      ? conversation.state.value.mergeMethods
-                      : undefined
-                  }
-                  pushes={versionsView.pushes}
-                  onFailed={retryVersions}
-                  versionName={
-                    versions.state.status === "ready"
-                      ? versions.state.value.versionName
-                      : undefined
-                  }
+                  draft={draft}
+                  onPosted={retryConversation}
                 />
-              </>
-            ) : null
-          }
-        />
-        <PullRequestStatusLine
-          pullRequest={pullRequest}
-          checks={checks.state}
-        />
-        {!open && draft?.comments.length ? (
-          <ClosedDraftReview
-            pullRequest={pullRequest}
-            draft={draft}
-            onPosted={retryConversation}
-          />
-        ) : null}
-        {shown ? (
-          <PullRequestSummary
-            pullRequest={shown}
-            repository={pullRequest.facts.repository}
-            onReach={onReach}
-          />
-        ) : null}
-        <DescriptionDrawer
-          state={conversation.state}
-          retry={conversation.retry}
-        />
-        <PullRequestChanges
-          pullRequest={pullRequest}
-          state={diff.state}
-          retry={diff.retry}
-          notes={{
-            notes,
-            floating,
-            hovered,
-            onAddComment: open ? onAddComment : undefined,
-          }}
-          reachHunkRef={reachHunk}
-          versions={versionsView}
-          viewing={viewing}
-        />
-        {outdated.length ? (
-          <section className="deck-draft-elsewhere" aria-label="Draft comments">
-            <SectionHeading trailing={outdated.length}>
-              Draft comments on lines that changed
-            </SectionHeading>
-            {outdated.map((comment) => (
-              <DraftCommentCard
-                key={comment.id}
-                comment={comment}
-                showLocation
+              ) : null}
+              {shown ? (
+                <PullRequestSummary
+                  pullRequest={shown}
+                  repository={pullRequest.facts.repository}
+                  onReach={onReach}
+                />
+              ) : null}
+              <DescriptionDrawer
+                state={conversation.state}
+                retry={conversation.retry}
               />
-            ))}
-          </section>
+              <PullRequestChanges
+                pullRequest={pullRequest}
+                state={diff.state}
+                retry={diff.retry}
+                notes={{
+                  notes,
+                  floating,
+                  hovered,
+                  onAddComment: open ? onAddComment : undefined,
+                }}
+                reachHunkRef={reachHunk}
+                versions={versionsView}
+                viewing={viewing}
+              />
+              {outdated.length ? (
+                <section
+                  className="deck-draft-elsewhere"
+                  aria-label="Draft comments"
+                >
+                  <SectionHeading trailing={outdated.length}>
+                    Draft comments on lines that changed
+                  </SectionHeading>
+                  {outdated.map((comment) => (
+                    <DraftCommentCard
+                      key={comment.id}
+                      comment={comment}
+                      showLocation
+                    />
+                  ))}
+                </section>
+              ) : null}
+              <PullRequestConversation
+                state={conversation.state}
+                retry={conversation.retry}
+                elsewhere={elsewhere}
+              />
+            </ThreadActionsContext.Provider>
+          </ReviewNotesContext.Provider>
+        </div>
+        {chatTarget ? (
+          <DeckChatPanel
+            open={chatOpen}
+            onOpenChange={setChatOpen}
+            session={chat}
+            target={chatTarget}
+            pluginName={pullRequest.pluginName}
+            onShow={showLine}
+          />
         ) : null}
-        <PullRequestConversation
-          state={conversation.state}
-          retry={conversation.retry}
-          elsewhere={elsewhere}
-        />
-      </ThreadActionsContext.Provider>
-    </ReviewNotesContext.Provider>
+      </div>
+      {chatConsent.dialog}
+    </DeckChatContext.Provider>
   );
 }

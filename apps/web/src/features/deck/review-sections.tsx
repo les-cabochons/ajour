@@ -255,6 +255,7 @@ export function ReviewSectionHeader({
         {section.concernId ? (
           <ConcernRationale
             concernId={section.concernId}
+            title={section.title}
             rationale={section.rationale ?? ""}
           />
         ) : section.rationale ? (
