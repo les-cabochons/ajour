@@ -176,7 +176,7 @@ export function ReviewSectionHeader({
           <span className="deck-hunk-viewed-box" aria-hidden>
             {fileViewed ? <Check /> : null}
           </span>
-          Viewed
+          File viewed
         </button>
       ) : null}
     </header>

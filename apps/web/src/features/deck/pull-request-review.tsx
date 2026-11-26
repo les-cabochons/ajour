@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CodeHostReviewThread } from "@ajour/shared";
 import { SectionHeading } from "@/components/section-heading";
 import { showErrorToast } from "@/components/ui/toast";
@@ -253,14 +260,16 @@ export function PullRequestReview({
     conversation.state.status === "ready"
       ? conversation.state.value
       : undefined;
-  useEffect(() => {
-    if (conversationValue) threadStates.conversationRead();
+  // Before the page draws it, so a write's answer is stamped with this read.
+  useLayoutEffect(() => {
+    threadStates.conversation = conversationValue;
   }, [conversationValue, threadStates]);
   const threadActions = useMemo(
     (): ThreadActions | undefined =>
       open
         ? {
             states: threadStates,
+            conversation: conversationValue,
             reply: async (thread: CodeHostReviewThread, body: string) => {
               const { submission, fields } = nameSubmission(
                 threadStates.of(thread.id).submission,
@@ -309,10 +318,7 @@ export function PullRequestReview({
                   connectionId,
                   { repository, number, threadId: thread.id, resolved },
                 );
-                threadStates.update(thread.id, {
-                  resolving: false,
-                  resolved: result.resolved,
-                });
+                threadStates.resolvedAs(thread.id, result.resolved);
               } catch (error) {
                 threadStates.update(thread.id, {
                   resolving: false,
@@ -333,6 +339,7 @@ export function PullRequestReview({
       number,
       pullRequest,
       reloadConversation,
+      conversationValue,
     ],
   );
   const onAddComment = useCallback<AddComment>(

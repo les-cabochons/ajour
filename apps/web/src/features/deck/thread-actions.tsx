@@ -16,6 +16,8 @@ import type { ThreadState, ThreadStates } from "./thread-state";
 
 export interface ThreadActions {
   states: ThreadStates;
+  /** The conversation read on screen: what was sent before it, it shows itself. */
+  conversation: object | undefined;
   /** Posts the thread's reply, keeping in `states` that it's posting, then why it failed. */
   reply: (thread: CodeHostReviewThread, body: string) => Promise<void>;
   setResolved: (

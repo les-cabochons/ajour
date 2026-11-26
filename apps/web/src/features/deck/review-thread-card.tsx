@@ -3,7 +3,7 @@ import type { CodeHostReviewThread } from "@ajour/shared";
 import { Markdown } from "@/components/markdown";
 import { personName } from "@/domain/deck/review-status";
 import { ThreadActionsContext, ThreadFooter } from "./thread-actions";
-import { ThreadStates, useThreadState } from "./thread-state";
+import { sinceRead, ThreadStates, useThreadState } from "./thread-state";
 
 /** No actions: what a thread holds without them. */
 const NO_ACTIONS = new ThreadStates();
@@ -55,7 +55,8 @@ export const ReviewThreadCard = memo(function ReviewThreadCard({
 }) {
   const actions = useContext(ThreadActionsContext);
   const state = useThreadState(actions?.states ?? NO_ACTIONS, thread.id);
-  const resolved = state.resolved ?? thread.resolved;
+  const since = sinceRead(state, actions?.conversation);
+  const resolved = since.resolved ?? thread.resolved;
   const marks = [
     resolved ? "Resolved" : undefined,
     thread.outdated ? "Outdated" : undefined,
@@ -87,7 +88,7 @@ export const ReviewThreadCard = memo(function ReviewThreadCard({
           <Markdown>{comment.body}</Markdown>
         </div>
       ))}
-      {state.sent.map((body, index) => (
+      {since.sent.map((body, index) => (
         <div key={`sent-${index}`} className="deck-comment">
           <p className="deck-comment-meta">
             <span className="deck-comment-author">You</span>

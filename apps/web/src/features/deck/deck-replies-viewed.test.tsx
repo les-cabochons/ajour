@@ -271,7 +271,10 @@ beforeEach(() => {
   cachePluginsOverview(codeHostOverview);
   itemId = sync();
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
-  vi.mocked(api.readPullRequestConversation).mockResolvedValue(conversation());
+  // Each read is a new answer, as the local API's are.
+  vi.mocked(api.readPullRequestConversation).mockImplementation(async () =>
+    conversation(),
+  );
   vi.mocked(api.readPullRequestChecks).mockResolvedValue({ checks: [] });
   vi.mocked(api.replyToPullRequestThread).mockResolvedValue({
     commentId: "reply-1",
@@ -440,6 +443,17 @@ it("sends a reply's Ctrl+Enter to the reply alone, not to the open composer", as
 });
 
 it("resolves and unresolves a thread at once, and says why when it fails", async () => {
+  // The code host keeps what it was told, and the next read says so.
+  let resolved = false;
+  vi.mocked(api.setPullRequestThreadResolved).mockImplementation(
+    async (_plugin, _connection, request) => {
+      resolved = request.resolved;
+      return { resolved };
+    },
+  );
+  vi.mocked(api.readPullRequestConversation).mockImplementation(async () =>
+    conversation({ threads: [thread("t1", { resolved })] }),
+  );
   await renderReviewPage();
   fireEvent.click(
     within(threadCard()).getByRole("button", { name: "Resolve" }),
@@ -576,7 +590,7 @@ it("marks a file viewed on GitHub once its hunks all are, at the head read, and 
 });
 
 it("shows viewed the files GitHub says the user viewed, and doesn't mark one again after it's unmarked", async () => {
-  vi.mocked(api.readPullRequestConversation).mockResolvedValue(
+  vi.mocked(api.readPullRequestConversation).mockImplementation(async () =>
     conversation({ viewedPaths: ["src/api.ts"] }),
   );
   await renderReviewPage();
@@ -596,10 +610,12 @@ it("shows viewed the files GitHub says the user viewed, and doesn't mark one aga
   });
   writeReply("Thanks.");
   fireEvent.click(within(threadCard()).getByRole("button", { name: "Reply" }));
+  await within(threadCard()).findByText("You");
+  // The read is in once the reply it doesn't hold stops showing.
   await waitFor(() =>
-    expect(api.readPullRequestConversation).toHaveBeenCalledTimes(2),
+    expect(within(threadCard()).queryByText("You")).toBeNull(),
   );
-  await act(async () => {});
+  expect(api.readPullRequestConversation).toHaveBeenCalledTimes(2);
   expect(viewedMark("Viewed file: src/api.ts")).toBe("false");
 });
 

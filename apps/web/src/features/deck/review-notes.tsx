@@ -191,6 +191,25 @@ function ReviewComposer({ target }: { target: ComposerTarget }) {
           }
         }}
       />
+      {target.side === "head" ? (
+        // The field's own tool, under it at its end, as code hosts place it.
+        <div className="deck-composer-tools">
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={posting}
+            onClick={() => {
+              composer.update(target, {
+                body: withSuggestion(body, target.lineText),
+              });
+              field.current?.focus({ preventScroll: true });
+            }}
+          >
+            Suggest change
+          </Button>
+        </div>
+      ) : null}
       {failure ? (
         <p role="alert" className="deck-composer-error">
           {uncertain ? failure : `Couldn't post the comment: ${failure}`}
@@ -231,23 +250,6 @@ function ReviewComposer({ target }: { target: ComposerTarget }) {
         >
           Cancel
         </Button>
-        {target.side === "head" ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="deck-suggest"
-            disabled={posting}
-            onClick={() => {
-              composer.update(target, {
-                body: withSuggestion(body, target.lineText),
-              });
-              field.current?.focus({ preventScroll: true });
-            }}
-          >
-            Suggest change
-          </Button>
-        ) : null}
       </div>
     </form>
   );

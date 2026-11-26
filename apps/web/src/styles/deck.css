@@ -1022,9 +1022,11 @@
     font-size: var(--text-xs);
   }
 
-  /* Suggest change, at the end of the composer's actions. */
-  .deck-suggest {
-    margin-left: auto;
+  /* Suggest change, under the composer's field at its end. */
+  .deck-composer-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -0.25rem;
   }
 
   /* A thread's Reply and Resolve, or its reply field, under its comments (#785). */

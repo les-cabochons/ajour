@@ -28,10 +28,16 @@ export interface ThreadState {
   submission?: DeckReviewSubmission;
   /** The field takes the focus as it mounts, once: right after it opens. */
   focus: boolean;
-  /** Replies the code host took since the conversation was read, shown until it's read again. */
+  /** Replies the code host took since the conversation `readWith` was read. */
   sent: readonly string[];
-  /** Resolved or opened again since the conversation was read. */
+  /** Resolved or opened again since the conversation `readWith` was read. */
   resolved?: boolean;
+  /**
+   * The conversation read showing when `sent` and `resolved` were set: once
+   * another read shows, it holds them as the code host has them, and they
+   * stop counting in the same render (`sinceRead`).
+   */
+  readWith?: object;
   /** A resolve or unresolve is waiting for the code host. */
   resolving: boolean;
   /** Why the last resolve or unresolve failed. */
@@ -48,9 +54,21 @@ const IDLE: ThreadState = {
   resolving: false,
 };
 
+/** The replies sent and the resolved state the page shows over `conversation`, the read on screen. */
+export function sinceRead(
+  state: ThreadState,
+  conversation: object | undefined,
+) {
+  return state.readWith !== undefined && state.readWith === conversation
+    ? { sent: state.sent, resolved: state.resolved }
+    : { sent: [] as readonly string[], resolved: undefined };
+}
+
 export class ThreadStates {
   readonly #states = new Map<string, ThreadState>();
   readonly #listeners = new Set<() => void>();
+  /** The conversation read on screen, which the page keeps current. */
+  conversation: object | undefined;
 
   subscribe = (listener: () => void) => {
     this.#listeners.add(listener);
@@ -134,25 +152,28 @@ export class ThreadStates {
    */
   replySent(threadId: string, submissionId: string, body: string) {
     const sender = this.sender(threadId, submissionId);
-    const sent = [...this.of(threadId).sent, body];
+    const shown = this.#shown(threadId);
     if (sender?.body === body) this.closeReply(threadId);
     else if (sender)
       this.update(threadId, { posting: false, submission: undefined });
-    this.update(threadId, { sent });
+    this.update(threadId, { ...shown, sent: [...shown.sent, body] });
   }
 
-  /**
-   * The conversation was read again: what it says replaces the replies
-   * shown as sent and the resolved state set here. Words being written stay.
-   */
-  conversationRead() {
-    let changed = false;
-    for (const [id, state] of this.#states) {
-      if (!state.sent.length && state.resolved === undefined) continue;
-      this.#states.set(id, { ...state, sent: [], resolved: undefined });
-      changed = true;
-    }
-    if (changed) this.#emit();
+  /** The code host resolved the thread, or opened it again: it shows so until the next read. */
+  resolvedAs(threadId: string, resolved: boolean) {
+    this.update(threadId, {
+      ...this.#shown(threadId),
+      resolving: false,
+      resolved,
+    });
+  }
+
+  /** What the thread shows over the read on screen, stamped with it. */
+  #shown(threadId: string) {
+    return {
+      ...sinceRead(this.of(threadId), this.conversation),
+      readWith: this.conversation,
+    };
   }
 
   #emit() {
