@@ -119,7 +119,9 @@ type TurnStopReason =
   | "shutdown"
   | "interrupt_timeout"
   | "stalled"
-  | "revoked";
+  | "revoked"
+  /** It gave back what its task asks for, so Ajour ended it: it counts as done. */
+  | "completed";
 
 /** How a turn ended, for the window and its event. */
 type TurnEnding =
@@ -355,6 +357,18 @@ export class AgentConversations {
       pullRequest: conversation.key,
       head: conversation.binding.head,
     };
+  }
+
+  /**
+   * Ends a running turn that gave back what its task asks for, such as a
+   * guide turn whose guide is saved (#794): the CLI is interrupted, as Stop
+   * does, and the turn ends done. False when it isn't running.
+   */
+  completeTurn(turnId: string): boolean {
+    const found = this.turns.get(turnId);
+    if (!found?.turn.started || found.turn.settled) return false;
+    this.stopTurn(found.conversation, found.turn, "completed");
+    return true;
   }
 
   /**
@@ -1006,20 +1020,32 @@ export class AgentConversations {
     if (turn.interrupting) return;
     turn.interrupting = true;
     const lines = cli.codec.interrupt();
-    if (lines.length === 0 || reason !== "user") {
+    // Only the user's Stop, and a turn that is done, keep a warm process.
+    if (lines.length === 0 || (reason !== "user" && reason !== "completed")) {
       this.terminate(cli);
       return;
     }
     cli.proc.write(lines);
     turn.interruptTimer = setTimeout(() => {
-      turn.stopReason = "interrupt_timeout";
+      // A completed turn stays completed: it is done whatever ends it.
+      if (turn.stopReason !== "completed")
+        turn.stopReason = "interrupt_timeout";
       this.terminate(cli);
     }, this.options.interruptGraceMs ?? INTERRUPT_GRACE_MS);
     turn.interruptTimer.unref();
   }
 
-  private endTurn(conversation: Conversation, turn: Turn, done: TurnEnding) {
+  private endTurn(
+    conversation: Conversation,
+    turn: Turn,
+    reported: TurnEnding,
+  ) {
     this.turns.delete(turn.id);
+    // Ended by Ajour once its task's result was in: done, however it stopped.
+    const done: TurnEnding =
+      turn.stopReason === "completed" && reported.outcome === "cancelled"
+        ? { outcome: "done" }
+        : reported;
     const failure =
       done.outcome === "done"
         ? this.options.doneFailure?.({ id: turn.id, task: turn.task })

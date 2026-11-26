@@ -163,7 +163,7 @@ import {
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
-import { createDeckAsks, DeckAskRefused } from "./deck-asks.ts";
+import { createDeckAsks, DeckTurnRefused, NOT_HELD } from "./deck-asks.ts";
 import { createDeckGuideRuns } from "./deck-guide-runs.ts";
 import {
   createDeckContentCache,
@@ -1583,6 +1583,28 @@ function defaultDevelopmentPluginDirectories() {
     .map((entry) => path.join(pluginRoot, entry.name));
 }
 
+/**
+ * Answers a Deck turn that couldn't start, an ask's or a regroup's: the
+ * refusal the page reads, or the runner's. False for any other error.
+ */
+function answerRefusedDeckTurn(
+  response: ServerResponse,
+  refuse: (
+    reason: DeckTurnRefused["eventReason"] | "already_running" | "blocked",
+  ) => void,
+  error: unknown,
+): boolean {
+  if (error instanceof DeckTurnRefused) {
+    refuse(error.eventReason);
+    writeJson(response, error.status, error.body);
+    return true;
+  }
+  if (!(error instanceof AgentRunError)) return false;
+  refuse(error.status === 409 ? "already_running" : "blocked");
+  writeJson(response, error.status, { error: error.message });
+  return true;
+}
+
 export function createAppApiServer(options: AppApiServerOptions = {}) {
   const host = options.host ?? process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.AJOUR_APP_API_PORT ?? 8787);
@@ -2145,6 +2167,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       deckAsks.allowedWith(binding.pullRequest, binding.cli),
     runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
     startTurn: (request) => agentRunner.startTurn(request),
+    completeTurn: (turnId) => void agentRunner.completeTurn(turnId),
     labelOf: (cli) =>
       agentCliAdapters.find((adapter) => adapter.id === cli)?.label ?? cli,
     // Read again for each regroup: Deck keeps neither (#789).
@@ -3097,7 +3120,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           try {
             await deckAsks.requireTurnConsent(payload.pullRequest);
           } catch (error) {
-            if (!(error instanceof DeckAskRefused)) throw error;
+            if (!(error instanceof DeckTurnRefused)) throw error;
             // A turn has no anchor, so only these two refuse it.
             unit.refuse(
               error.eventReason === "repository_not_allowed"
@@ -4891,14 +4914,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, asked.kind === "answer" ? 200 : 201, asked);
       } catch (error) {
-        if (error instanceof DeckAskRefused) {
-          unit.refuse(error.eventReason);
-          writeJson(response, error.status, error.body);
-          return;
+        if (
+          !answerRefusedDeckTurn(
+            response,
+            (reason) => unit.refuse(reason),
+            error,
+          )
+        ) {
+          throw error;
         }
-        if (!(error instanceof AgentRunError)) throw error;
-        unit.refuse(error.status === 409 ? "already_running" : "blocked");
-        writeJson(response, error.status, { error: error.message });
       }
     },
 
@@ -4916,14 +4940,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ agent: { turn_id: turn.id } });
         writeJson(response, 201, { turn });
       } catch (error) {
-        if (error instanceof DeckAskRefused) {
-          unit.refuse(error.eventReason);
-          writeJson(response, error.status, error.body);
-          return;
+        if (
+          !answerRefusedDeckTurn(
+            response,
+            (reason) => unit.refuse(reason),
+            error,
+          )
+        ) {
+          throw error;
         }
-        if (!(error instanceof AgentRunError)) throw error;
-        unit.refuse(error.status === 409 ? "already_running" : "blocked");
-        writeJson(response, error.status, { error: error.message });
       }
     },
 
@@ -4939,11 +4964,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
       if (!held) {
         unit.refuse("not_open");
-        writeJson(response, 409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        writeJson(response, 409, { error: NOT_HELD, reason: "not_open" });
         return;
       }
       if (held.guide) unit.set({ deck: { made_with: held.guide.madeWith } });
@@ -4963,11 +4984,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
       if (!shown) {
         unit.refuse("not_open");
-        writeJson(response, 409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        writeJson(response, 409, { error: NOT_HELD, reason: "not_open" });
         return;
       }
       writeJson(response, 200, shown);

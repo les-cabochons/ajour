@@ -645,6 +645,8 @@ export const catalog = defineCatalog({
             | "interrupt_timeout"
             | "stalled"
             | "revoked"
+            /** It gave back what its task asks for, such as a saved guide, and Ajour ended it (#794). */
+            | "completed"
           >(),
           exit_code: operational<number | null>(),
         },
@@ -3334,6 +3336,7 @@ export const catalog = defineCatalog({
         "not_open",
         /** The pull request has no guide to regroup. */
         "no_guide",
+        /** Never a regroup's, but its refusals share an ask's reasons. */
         "unknown_anchor",
         /** No agent is picked or installed. */
         "blocked",
@@ -3352,7 +3355,7 @@ export const catalog = defineCatalog({
       },
     },
     /** The guide Deck shows for a pull request at one head, read again after a regroup (#794). */
-    "deck.guide": {
+    "deck.guide_read": {
       kinds: ["command", "request"],
       reasons: [
         /** Ajour no longer holds the pull request at this head. */

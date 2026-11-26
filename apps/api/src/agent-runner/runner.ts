@@ -301,6 +301,14 @@ export class AgentRunner {
     return this.conversations.runningTurnOf(clientId);
   }
 
+  /**
+   * Ends a running turn that gave back what its task asks for (#794): it
+   * ends done. False when it isn't running.
+   */
+  completeTurn(turnId: string): boolean {
+    return this.conversations.completeTurn(turnId);
+  }
+
   /** Stops a turn that waits or runs. False when it isn't going. */
   cancelTurn(turnId: string): boolean {
     return this.conversations.cancelTurn(turnId);

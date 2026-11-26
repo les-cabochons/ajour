@@ -512,7 +512,7 @@ export const ROUTES = {
   deckGuide: {
     method: "POST",
     path: "/api/deck/:pluginId/connections/:connectionId/guide",
-    name: "deck.guide",
+    name: "deck.guide_read",
   },
   deckGuideRevert: {
     method: "POST",

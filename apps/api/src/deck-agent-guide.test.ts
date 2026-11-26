@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type {
-  DeckGuide,
   DeckPullRequestDiff,
   DeckSubmitGuideInput,
   DeckTicket,
@@ -270,21 +269,6 @@ describe("submit_guide's rules", () => {
 });
 
 describe("the agent's guide", () => {
-  const built: DeckGuide = {
-    madeWith: "code",
-    concerns: [],
-    summary: {
-      problem: { text: ticket.title, source: "ticket", ticket },
-      tickets: [ticket],
-      kinds: [],
-      breaking: [],
-      risks: [],
-      tests: [],
-      untested: [],
-      leftovers: [],
-    },
-  };
-
   it("merges the agent's kinds with the rules', and marks a breaking change's concern Breaking", () => {
     const input = valid();
     input.summary.problem = {
@@ -300,7 +284,7 @@ describe("the agent's guide", () => {
 
     const guide = agentGuideOf({
       input,
-      built,
+      tickets: [ticket],
       rules: {
         concerns: [
           { ...first!, kinds: [] },

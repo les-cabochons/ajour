@@ -13,6 +13,7 @@ import {
   type DeckRegroupRequest,
   type DeckSubmitGuideInput,
   type DeckSubmitGuideOutput,
+  type DeckTicket,
 } from "../../../packages/shared/deck.ts";
 import type { GuideJobBuilt } from "../../../packages/review-deck/guide-job.ts";
 import type { GroupedConcern } from "../../../packages/review-deck/summary.ts";
@@ -21,8 +22,9 @@ import {
   groupedConcernsOf,
   submittedGuideProblem,
 } from "./deck-agent-guide.ts";
-import { DeckAskRefused } from "./deck-asks.ts";
+import { DeckTurnRefused, NOT_HELD } from "./deck-asks.ts";
 import type { DeckHeldPullRequest } from "./deck-service.ts";
+import { ticketOf } from "./deck-summary.ts";
 import type { McpClientPullRequestBinding } from "./storage.ts";
 
 /*
@@ -78,6 +80,8 @@ export interface DeckGuideRunsOptions {
     | { id: string; task: CoreAgentTask; pullRequest: string; head: string }
     | undefined;
   startTurn(request: CoreTaskRunRequest): Promise<AgentTurn>;
+  /** Ends a running turn as done once its guide is saved. */
+  completeTurn(turnId: string): void;
   /** The agent's name, as the source label shows it: "Claude Code". */
   labelOf(cli: AgentCliId): string;
   /**
@@ -177,9 +181,17 @@ interface Submissions {
   saved: "saving" | "saved" | undefined;
 }
 
+const MOVED_ON =
+  "Ajour no longer holds this pull request at this head, because the user moved to another one. Stop.";
+
 export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
   /** The guide turns that called `submit_guide`, by turn ID. */
   const submissions = new Map<string, Submissions>();
+  /**
+   * The linked tickets each regroup's turn quoted, null when they couldn't
+   * be read, by turn ID: its submission is checked against the same ones.
+   */
+  const quoted = new Map<string, DeckTicket[] | null>();
 
   return {
     /** Starts a `deck.guide` turn that regroups the guide on screen. */
@@ -196,25 +208,23 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
       await options.requireConsent(pullRequest);
       const held = await options.deck.held(pullRequest, request.head);
       if (!held) {
-        throw new DeckAskRefused(409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
       }
       if (!held.guide) {
-        throw new DeckAskRefused(409, {
+        throw new DeckTurnRefused(409, {
           error: "This pull request has no guide to regroup.",
           reason: "no_guide",
         });
       }
       const context = await options.readContext(pullRequestSource);
-      return options.startTurn({
+      const turn = await options.startTurn({
         task: "deck.guide",
         pullRequest,
         head: request.head,
         message: guideTurnMessage(held, request.instruction, context),
       });
+      quoted.set(turn.id, context.tickets?.map(ticketOf) ?? null);
+      return turn;
     },
 
     /**
@@ -244,7 +254,12 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
         saved: undefined,
       };
       submissions.set(turn.id, tried);
-      if (tried.saved) {
+      if (tried.saved === "saving") {
+        throw new DeckGuideRefused(
+          "Ajour is saving the guide this turn sent already. Don't call submit_guide again.",
+        );
+      }
+      if (tried.saved === "saved") {
         throw new DeckGuideRefused(
           "Ajour already saved this turn's guide. Stop, and reply with one short line.",
         );
@@ -260,16 +275,12 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
         );
       }
       const held = await options.deck.held(binding.pullRequest, binding.head);
-      if (!held?.builtGuide) {
-        throw new DeckGuideRefused(
-          "Ajour no longer holds this pull request at this head, because the user moved to another one. Stop.",
-        );
-      }
-      const problem = submittedGuideProblem(
-        input,
-        held.diff,
-        held.builtGuide.summary.tickets,
-      );
+      if (!held?.builtGuide) throw new DeckGuideRefused(MOVED_ON);
+      // The tickets the turn quoted; a turn started elsewhere, the guide's.
+      const tickets = quoted.has(turn.id)
+        ? quoted.get(turn.id)!
+        : held.builtGuide.summary.tickets;
+      const problem = submittedGuideProblem(input, held.diff, tickets);
       if (problem) {
         tried.rejected += 1;
         throw new DeckGuideRefused(
@@ -287,7 +298,7 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
           rules &&
           agentGuideOf({
             input,
-            built: held.builtGuide,
+            tickets,
             rules,
             diff: held.diff,
             provider: { cli: binding.cli, label: options.labelOf(binding.cli) },
@@ -299,12 +310,10 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
             binding.head,
             guide,
           ));
-        if (!saved) {
-          throw new DeckGuideRefused(
-            "Ajour no longer holds this pull request at this head, because the user moved to another one. Stop.",
-          );
-        }
+        if (!saved) throw new DeckGuideRefused(MOVED_ON);
         tried.saved = "saved";
+        // The first valid guide ends the turn, once this answer is on its way.
+        setTimeout(() => options.completeTurn(turn.id), 0).unref();
         return { saved: true, concernCount: input.concerns.length };
       } catch (error) {
         if (tried.saved === "saving") tried.saved = undefined;
@@ -315,17 +324,22 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
       }
     },
 
-    /** Why a guide turn the agent ended as done failed: it saved no guide. */
+    /**
+     * Why a guide turn the agent ended as done failed: it saved no guide.
+     * One still saving its guide isn't failed: the page reads the guide.
+     */
     doneFailure(turn: { id: string; task: CoreAgentTask }) {
       if (turn.task !== "deck.guide") return undefined;
-      return submissions.get(turn.id)?.saved === "saved"
+      return submissions.get(turn.id)?.saved
         ? undefined
         : "The agent didn't return a guide Ajour could use.";
     },
 
     /** Reads every turn event, to forget a guide turn once it ended. */
     observe(event: AgentTurnEvent) {
-      if (event.type === "ended") submissions.delete(event.turnId);
+      if (event.type !== "ended") return;
+      submissions.delete(event.turnId);
+      quoted.delete(event.turnId);
     },
   };
 }

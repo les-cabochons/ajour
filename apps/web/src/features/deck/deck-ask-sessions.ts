@@ -77,6 +77,60 @@ export function defaultQuestionOf(anchor: DeckAskAnchor) {
 
 const headOf = (key: string) => key.slice(0, key.indexOf(" "));
 
+/** What a request that may need the repository's consent came to. */
+export type ConsentedOutcome<T> =
+  | { kind: "done"; value: T }
+  /** Not now in the consent dialog. */
+  | { kind: "declined" }
+  /** Why it failed, when the error said. */
+  | { kind: "failed"; message: string | undefined }
+  /** A later request replaced it: nothing of it shows. */
+  | { kind: "stale" };
+
+/**
+ * Runs `run`, an ask's or a regroup's request. When the local API refuses
+ * it for the repository's consent, asks the user once, through the page's
+ * consent dialog, and runs it again once allowed. `onAsking` says while the
+ * dialog is open; once `current` says false, nothing more is asked or run.
+ */
+export async function withConsent<T>(
+  run: () => Promise<T>,
+  {
+    requestConsent,
+    current,
+    onAsking,
+  }: {
+    requestConsent: (request: DeckNeedsConsent) => Promise<ConsentAnswer>;
+    current: () => boolean;
+    onAsking?: (asking: boolean) => void;
+  },
+): Promise<ConsentedOutcome<T>> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const value = await run();
+      return current() ? { kind: "done", value } : { kind: "stale" };
+    } catch (error) {
+      if (!current()) return { kind: "stale" };
+      const consent =
+        attempt === 0 && error instanceof AppApiError
+          ? deckNeedsConsentSchema.safeParse(error.payload)
+          : undefined;
+      if (!consent?.success) {
+        return {
+          kind: "failed",
+          message: error instanceof Error ? error.message : undefined,
+        };
+      }
+      onAsking?.(true);
+      const answer = await requestConsent(consent.data);
+      if (!current()) return { kind: "stale" };
+      onAsking?.(false);
+      if (answer === false) return { kind: "declined" };
+      if (answer !== true) return { kind: "failed", message: answer.error };
+    }
+  }
+}
+
 export class DeckAskSessions {
   readonly #requestConsent: (
     request: DeckNeedsConsent,
@@ -178,62 +232,50 @@ export class DeckAskSessions {
       state: startAsk(question),
     }));
     const current = () => this.#generations.get(key) === mine;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const asked = await askDeck(target.pluginId, target.connectionId, {
+    const outcome = await withConsent(
+      () =>
+        askDeck(target.pluginId, target.connectionId, {
           repository: target.repository,
           number: target.number,
           head: target.head,
           anchor,
           ...(question === undefined ? {} : { question }),
-        });
-        if (!current()) return;
-        if (asked.kind === "answer") {
-          this.#update(key, (session) => ({
-            state: answerAsk(session.state, asked.text, asked.head),
-          }));
-          return;
-        }
-        this.#conversations.set(
-          asked.turn.conversationId,
-          this.#sessions.get(key)?.askedAt ?? Date.now(),
-        );
-        this.#update(key, () => ({ turnId: asked.turn.id }));
-        this.#watch(key, asked.turn.id, target.head);
-        return;
-      } catch (error) {
-        if (!current()) return;
-        const consent =
-          error instanceof AppApiError
-            ? deckNeedsConsentSchema.safeParse(error.payload)
-            : undefined;
-        if (consent?.success && attempt === 0) {
-          this.#update(key, () => ({ awaitingConsent: true }));
-          const answer = await this.#requestConsent(consent.data);
-          if (!current()) return;
-          this.#update(key, () => ({ awaitingConsent: false }));
-          if (answer === true) continue;
-          if (answer === false) {
-            this.close(key);
-            declined();
-            return;
-          }
-          this.#update(key, (session) => ({
-            state: failAsk(session.state, answer.error),
-          }));
-          return;
-        }
-        this.#update(key, (session) => ({
-          state: failAsk(
-            session.state,
-            error instanceof Error
-              ? error.message
-              : "Ajour couldn't get more detail.",
-          ),
-        }));
-        return;
-      }
+        }),
+      {
+        requestConsent: this.#requestConsent,
+        current,
+        onAsking: (asking) =>
+          this.#update(key, () => ({ awaitingConsent: asking })),
+      },
+    );
+    if (outcome.kind === "stale") return;
+    if (outcome.kind === "declined") {
+      this.close(key);
+      declined();
+      return;
     }
+    if (outcome.kind === "failed") {
+      this.#update(key, (session) => ({
+        state: failAsk(
+          session.state,
+          outcome.message ?? "Ajour couldn't get more detail.",
+        ),
+      }));
+      return;
+    }
+    const asked = outcome.value;
+    if (asked.kind === "answer") {
+      this.#update(key, (session) => ({
+        state: answerAsk(session.state, asked.text, asked.head),
+      }));
+      return;
+    }
+    this.#conversations.set(
+      asked.turn.conversationId,
+      this.#sessions.get(key)?.askedAt ?? Date.now(),
+    );
+    this.#update(key, () => ({ turnId: asked.turn.id }));
+    this.#watch(key, asked.turn.id, target.head);
   }
 
   /** The page shows: its asks follow their turns again. */

@@ -221,7 +221,7 @@ function ReviewChanges({
 }: {
   pullRequest: DeckOpenedPullRequest;
   /** Shows another guide of this diff: the agent's, or the built one again (#794). */
-  onGuide: (guide: DeckGuide | null) => void;
+  onGuide: (guide: DeckGuide | null, head: string) => void;
   notes: ReviewNotesView;
   reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
@@ -564,7 +564,7 @@ export function PullRequestChanges({
 }: {
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
-  onGuide: (guide: DeckGuide | null) => void;
+  onGuide: (guide: DeckGuide | null, head: string) => void;
   notes: ReviewNotesView;
   /** Set while the changes show, to the way a summary line reaches its hunk. */
   reachHunkRef: RefObject<ReachHunk | undefined>;

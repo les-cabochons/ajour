@@ -461,7 +461,7 @@ export const deckNeedsConsentSchema = z.object({
 export type DeckNeedsConsent = z.infer<typeof deckNeedsConsentSchema>;
 
 /** Why Deck refused an ask or a regroup, as the page reads it. */
-export type DeckAskRefusal =
+export type DeckTurnRefusal =
   | (DeckNeedsConsent & { error: string })
   | { error: string; reason: "not_open" | "unknown_anchor" | "no_guide" };
 

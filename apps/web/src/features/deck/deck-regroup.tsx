@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RiMoreLine as More } from "@remixicon/react";
 import {
   DECK_REGROUP_INSTRUCTION_MAX,
-  deckNeedsConsentSchema,
   type DeckGuide,
 } from "@ajour/shared/deck";
 import { Button } from "@/components/ui/button";
@@ -25,7 +24,6 @@ import {
 } from "@/domain/deck/regroup";
 import { watchAgentTurn } from "@/lib/agent-turns";
 import {
-  AppApiError,
   cancelAgentTurn,
   readDeckGuide,
   regroupDeckGuide,
@@ -33,6 +31,7 @@ import {
 } from "@/lib/app-api";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useDeckAsk } from "./deck-ask";
+import { withConsent } from "./deck-ask-sessions";
 
 /*
  * Regroup… and the guide's source label (#794). The label is plain text:
@@ -45,14 +44,25 @@ import { useDeckAsk } from "./deck-ask";
  */
 
 /** What the guide header holds for a regroup, and the field under it. */
-export function useRegroup(onGuide: (guide: DeckGuide | null) => void) {
+export function useRegroup(
+  onGuide: (guide: DeckGuide | null, head: string) => void,
+) {
   const context = useDeckAsk();
   const [state, setState] = useState<RegroupState>(REGROUP_CLOSED);
   const turnId = useRef<string | undefined>(undefined);
   const stopWatching = useRef<(() => void) | undefined>(undefined);
-  /** Counts the regroups, so a late answer of an earlier one is dropped. */
+  /**
+   * Counts the regroups, so a late answer of an earlier one is dropped, and
+   * every answer once the header is gone, as a new head remounts it.
+   */
   const generation = useRef(0);
-  useEffect(() => () => stopWatching.current?.(), []);
+  useEffect(
+    () => () => {
+      generation.current += 1;
+      stopWatching.current?.();
+    },
+    [],
+  );
 
   const target = context?.target;
   const guideRequest = useMemo(
@@ -73,65 +83,60 @@ export function useRegroup(onGuide: (guide: DeckGuide | null) => void) {
       const mine = ++generation.current;
       const current = () => generation.current === mine;
       stopWatching.current?.();
+      stopWatching.current = undefined;
       turnId.current = undefined;
       setState(startRegroup(instruction));
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          const { turn } = await regroupDeckGuide(
-            target.pluginId,
-            target.connectionId,
-            { ...guideRequest, ...(instruction ? { instruction } : {}) },
-          );
-          if (!current()) return;
-          turnId.current = turn.id;
-          stopWatching.current = watchAgentTurn(turn.id, (event) => {
-            if (!current()) return;
-            setState((now) => applyRegroupEvent(now, event));
-            if (event.type !== "ended") return;
-            stopWatching.current?.();
-            stopWatching.current = undefined;
-            turnId.current = undefined;
-            // The guide may be saved even when the turn didn't end done.
-            void readDeckGuide(
-              target.pluginId,
-              target.connectionId,
-              guideRequest,
-            ).then(
-              ({ guide }) => {
-                if (current()) onGuide(guide);
-              },
-              () => undefined,
-            );
-          });
-          return;
-        } catch (error) {
-          if (!current()) return;
-          const consent =
-            error instanceof AppApiError
-              ? deckNeedsConsentSchema.safeParse(error.payload)
-              : undefined;
-          if (consent?.success && attempt === 0) {
-            const answer = await context.sessions.requestConsent(consent.data);
-            if (!current()) return;
-            if (answer === true) continue;
-            if (answer === false) {
-              setState(REGROUP_CLOSED);
-              return;
-            }
-            setState((now) => failRegroup(now, answer.error));
-            return;
-          }
-          setState((now) =>
-            failRegroup(
-              now,
-              error instanceof Error
-                ? error.message
-                : "Ajour couldn't regroup the guide.",
-            ),
-          );
-          return;
-        }
+      const outcome = await withConsent(
+        () =>
+          regroupDeckGuide(target.pluginId, target.connectionId, {
+            ...guideRequest,
+            ...(instruction ? { instruction } : {}),
+          }),
+        {
+          requestConsent: (request) => context.sessions.requestConsent(request),
+          current,
+        },
+      );
+      if (outcome.kind === "stale") return;
+      if (outcome.kind === "declined") {
+        setState(REGROUP_CLOSED);
+        return;
       }
+      if (outcome.kind === "failed") {
+        setState((now) =>
+          failRegroup(
+            now,
+            outcome.message ?? "Ajour couldn't regroup the guide.",
+          ),
+        );
+        return;
+      }
+      const { turn } = outcome.value;
+      turnId.current = turn.id;
+      // Events already here replay at once, the end included.
+      let ended = false;
+      const stop = watchAgentTurn(turn.id, (event) => {
+        if (!current()) return;
+        setState((now) => applyRegroupEvent(now, event));
+        if (event.type !== "ended") return;
+        ended = true;
+        stopWatching.current?.();
+        stopWatching.current = undefined;
+        turnId.current = undefined;
+        // The guide may be saved even when the turn didn't end done.
+        void readDeckGuide(
+          target.pluginId,
+          target.connectionId,
+          guideRequest,
+        ).then(
+          ({ guide }) => {
+            if (current()) onGuide(guide, guideRequest.head);
+          },
+          () => undefined,
+        );
+      });
+      if (ended) stop();
+      else stopWatching.current = stop;
     },
     [context, target, guideRequest, onGuide],
   );
@@ -145,7 +150,7 @@ export function useRegroup(onGuide: (guide: DeckGuide | null) => void) {
         target.connectionId,
         guideRequest,
       );
-      if (generation.current === mine) onGuide(guide);
+      if (generation.current === mine) onGuide(guide, guideRequest.head);
     } catch (error) {
       if (generation.current !== mine) return;
       setState(

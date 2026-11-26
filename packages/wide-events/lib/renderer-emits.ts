@@ -75,7 +75,7 @@ export const APP_API_CLIENT = {
   readDeckSinceReview: "deck.since_review",
   askDeck: "deck.ask",
   regroupDeckGuide: "deck.regroup",
-  readDeckGuide: "deck.guide",
+  readDeckGuide: "deck.guide_read",
   revertDeckGuide: "deck.guide_revert",
   grantDeckConsent: "deck.consent",
   getDeckConsents: "deck.consents",

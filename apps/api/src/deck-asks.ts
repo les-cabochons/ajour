@@ -15,7 +15,7 @@ import {
   type DeckAskAnchor,
   type DeckAskRequest,
   type DeckAskResponse,
-  type DeckAskRefusal,
+  type DeckTurnRefusal,
   type DeckConcern,
   type DeckGuide,
   type DeckPullRequestSource,
@@ -35,15 +35,19 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * in memory until the disk cache (#781).
  */
 
+/** Why a turn about a pull request Deck no longer holds at its head is refused. */
+export const NOT_HELD =
+  "Open the pull request again: Ajour no longer holds it at this commit.";
+
 /** Answers kept. Older ones are asked again. */
 const ANSWERS_KEPT = 200;
 
 /** Why an ask, or a core turn, can't run: its status and the body the page reads. */
-export class DeckAskRefused extends Error {
+export class DeckTurnRefused extends Error {
   readonly status: 404 | 409;
-  readonly body: DeckAskRefusal;
+  readonly body: DeckTurnRefusal;
 
-  constructor(status: DeckAskRefused["status"], body: DeckAskRefusal) {
+  constructor(status: DeckTurnRefused["status"], body: DeckTurnRefusal) {
     super(body.error);
     this.status = status;
     this.body = body;
@@ -171,7 +175,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
     if (!cli.installed) {
       throw new AgentRunError(`${cli.label} is not installed.`, 400);
     }
-    throw new DeckAskRefused(409, {
+    throw new DeckTurnRefused(409, {
       error: `Ajour asks once for ${repositoryName(source.repository)} before it sends its code to ${cli.label}.`,
       reason: "needs_consent",
       repository: source.repository,
@@ -201,7 +205,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
     async requireTurnConsent(pullRequest: string) {
       const source = parseDeckPullRequestKey(pullRequest);
       if (!source) {
-        throw new DeckAskRefused(404, {
+        throw new DeckTurnRefused(404, {
           error: "Deck doesn't know that pull request.",
           reason: "not_open",
         });
@@ -235,11 +239,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
       }
       const held = await options.deck.held(pullRequest, request.head);
       if (!held) {
-        throw new DeckAskRefused(409, {
-          error:
-            "Open the pull request again: Ajour no longer holds it at this commit.",
-          reason: "not_open",
-        });
+        throw new DeckTurnRefused(409, { error: NOT_HELD, reason: "not_open" });
       }
       const { anchor } = request;
       let message: string;
@@ -247,7 +247,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
         const concerns = held.guide?.concerns ?? [];
         const concern = concerns.find(({ id }) => id === anchor.id);
         if (!concern) {
-          throw new DeckAskRefused(404, {
+          throw new DeckTurnRefused(404, {
             error: "The guide has no such concern.",
             reason: "unknown_anchor",
           });
@@ -256,7 +256,7 @@ export function createDeckAsks(options: DeckAsksOptions) {
       } else {
         const line = summaryLineOf(held.guide, anchor.id);
         if (!line) {
-          throw new DeckAskRefused(404, {
+          throw new DeckTurnRefused(404, {
             error: "The summary has no such line.",
             reason: "unknown_anchor",
           });

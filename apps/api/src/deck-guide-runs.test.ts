@@ -34,7 +34,8 @@ const REPOSITORY = "acme/billing-api";
 const API = "src/api.ts#0";
 const TEST = "src/api.test.ts#0";
 
-const pluginSource = (tickets: unknown[]) => `
+/** Counts the ticket reads across the module's loads: the runtime loads it per call. */
+const pluginSource = (tickets: unknown[], ticketsFailFirst: boolean) => `
 export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
@@ -59,6 +60,10 @@ export async function getFileContent(connection, request) {
   return { kind: "missing" };
 }
 export async function getLinkedTickets() {
+  globalThis.__ajourTicketReads = (globalThis.__ajourTicketReads ?? 0) + 1;
+  if (${ticketsFailFirst} && globalThis.__ajourTicketReads === 1) {
+    throw new Error("The tracker is down.");
+  }
   return { tickets: ${JSON.stringify(tickets)} };
 }
 export async function getPullRequestConversation() {
@@ -93,9 +98,14 @@ const guideRuntime: DeckGuideRuntime = {
 const stops: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const stop of stops.splice(0).reverse()) await stop();
+  delete (globalThis as { __ajourTicketReads?: number }).__ajourTicketReads;
 });
 
-async function createCodeHostPlugin(parent: string, tickets: unknown[]) {
+async function createCodeHostPlugin(
+  parent: string,
+  tickets: unknown[],
+  ticketsFailFirst: boolean,
+) {
   const directory = path.join(parent, "github");
   await mkdir(directory, { recursive: true });
   await writeFile(
@@ -124,7 +134,7 @@ async function createCodeHostPlugin(parent: string, tickets: unknown[]) {
   );
   await writeFile(
     path.join(directory, "plugin.mjs"),
-    pluginSource(tickets),
+    pluginSource(tickets, ticketsFailFirst),
     "utf8",
   );
   return directory;
@@ -173,7 +183,12 @@ const regrouped = (
  */
 async function startGuideApi(
   conversation: FakeConversation,
-  { tickets = [] as unknown[], consent = true } = {},
+  {
+    tickets = [] as unknown[],
+    consent = true,
+    /** The guide's build can't read the tickets; the regroup's read can. */
+    ticketsFailFirst = false,
+  } = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-deck-guide-"));
   stops.push(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
@@ -188,7 +203,9 @@ async function startGuideApi(
     pluginRuntime: new InProcessPluginRuntime(),
     vault: new MemorySecretVault(),
     allowDevelopmentPlugins: true,
-    developmentPluginDirectories: [await createCodeHostPlugin(root, tickets)],
+    developmentPluginDirectories: [
+      await createCodeHostPlugin(root, tickets, ticketsFailFirst),
+    ],
     deckGuideRuntime: guideRuntime,
     agentCliPath: bin,
     agentCliAdapters: [
@@ -309,7 +326,7 @@ const replyText = (reply: { reply: any }) =>
 
 describe("a regroup", () => {
   it(
-    "gives a rejected submission back with its problem, saves the first valid one as the agent's guide, and goes back to the built one",
+    "gives a rejected submission back with its problem, saves the first valid one as the agent's guide and ends the turn, and goes back to the built one",
     { timeout: 30_000 },
     async () => {
       const api = await startGuideApi(() => [
@@ -321,7 +338,8 @@ describe("a regroup", () => {
         ),
         submit(regrouped()),
         submit(regrouped()),
-        { stream: ["Regrouped."] },
+        // The first valid guide ends the turn: Ajour interrupts the CLI.
+        { waitForInterrupt: true },
         { result: true },
         { readTurn: true },
       ]);
@@ -442,6 +460,50 @@ describe("a regroup", () => {
           url: ticket.url,
           state: "Open",
         },
+      });
+    },
+  );
+
+  it(
+    "checks the problem against the tickets the turn quoted, read again for the regroup",
+    { timeout: 30_000 },
+    async () => {
+      const ticket = {
+        number: 12,
+        title: "Handlers are too quiet",
+        body: "",
+        url: "https://github.com/acme/billing-api/issues/12",
+        state: "Open",
+      };
+      const api = await startGuideApi(
+        () => [
+          { readTurn: true },
+          submit(
+            regrouped((input) => {
+              input.summary.problem = {
+                text: "The second line goes unheard.",
+                source: "ticket",
+                ticket: { number: 12 },
+              };
+            }),
+          ),
+          { waitForInterrupt: true },
+          { result: true },
+          { readTurn: true },
+        ],
+        { tickets: [ticket], ticketsFailFirst: true },
+      );
+      // The build couldn't read the tickets.
+      expect((await api.guide()).summary.tickets).toBeNull();
+
+      const started = await api.regroup();
+
+      expect(await api.endingOf(started.body.turn.id)).toMatchObject({
+        outcome: "done",
+      });
+      expect((await api.guide()).summary).toMatchObject({
+        problem: { source: "ticket", ticket: { number: 12 } },
+        tickets: [{ number: 12, title: "Handlers are too quiet" }],
       });
     },
   );

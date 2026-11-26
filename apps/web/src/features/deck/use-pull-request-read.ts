@@ -127,7 +127,8 @@ function usePullRequestRead<T>(
 /**
  * The pull request's diff from the merge base to the head, and its guide,
  * as the local API builds them. `replaceGuide` shows another guide of the
- * same diff, such as the agent's after a regroup (#794), keeping the rest.
+ * diff at `head`, such as the agent's after a regroup (#794), keeping the
+ * rest; a guide of another head than the one shown is dropped.
  */
 export function usePullRequestDiff(pullRequest: LocalPullRequest | undefined) {
   const read = usePullRequestRead<DeckOpenedPullRequest>(
@@ -138,9 +139,11 @@ export function usePullRequestDiff(pullRequest: LocalPullRequest | undefined) {
   );
   const { update } = read;
   const replaceGuide = useCallback(
-    (guide: DeckGuide | null) =>
+    (guide: DeckGuide | null, head: string) =>
       update((opened) =>
-        opened.guide === guide ? opened : { ...opened, guide },
+        opened.headSha !== head || opened.guide === guide
+          ? opened
+          : { ...opened, guide },
       ),
     [update],
   );

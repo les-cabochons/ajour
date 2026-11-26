@@ -166,18 +166,18 @@ const kindsIn = (kinds: Iterable<DeckChangeKind>) => {
 /**
  * The agent's guide from a submission that keeps the rules: its concerns
  * with the rules' lines run again on them (`rules`, from the guide worker),
- * the built guide's linked tickets, and the agent's summary fields.
+ * the linked tickets, and the agent's summary fields.
  */
 export function agentGuideOf({
   input,
-  built,
+  tickets,
   rules,
   diff,
   provider,
 }: {
   input: DeckSubmitGuideInput;
-  /** The guide built from the code, for its linked tickets. */
-  built: DeckGuide;
+  /** The linked tickets the submission was checked against, null when unread. */
+  tickets: readonly DeckTicket[] | null;
   rules: GuideJobBuilt;
   diff: DeckPullRequestDiff;
   provider: DeckGuideProvider;
@@ -223,7 +223,7 @@ export function agentGuideOf({
   const { problem } = input.summary;
   const ticket =
     problem.source === "ticket"
-      ? (built.summary.tickets ?? []).find((linked) =>
+      ? (tickets ?? []).find((linked) =>
           problem.ticket
             ? linked.number === problem.ticket.number &&
               (linked.repository ?? undefined) === problem.ticket.repository
@@ -238,7 +238,7 @@ export function agentGuideOf({
       problem: ticket
         ? { text: problem.text.trim(), source: "ticket", ticket }
         : { text: problem.text.trim(), source: "inferred" },
-      tickets: built.summary.tickets,
+      tickets: tickets ? [...tickets] : null,
       kinds: kindsIn(concerns.flatMap((concern) => concern.kinds)),
       breaking: input.summary.breaking.map(line("breaking:")),
       risks: [
