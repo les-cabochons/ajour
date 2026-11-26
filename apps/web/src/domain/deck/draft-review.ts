@@ -105,7 +105,8 @@ export interface DeckDraftReview extends DeckReviewRef {
   updatedAt: number;
 }
 
-const sameRef = (review: DeckReviewRef, ref: DeckReviewRef) =>
+/** Whether two refs name the same pull request: the repository by any case. */
+export const sameReviewRef = (review: DeckReviewRef, ref: DeckReviewRef) =>
   review.pluginId === ref.pluginId &&
   review.connectionId === ref.connectionId &&
   review.repository.toLowerCase() === ref.repository.toLowerCase() &&
@@ -116,7 +117,7 @@ export function draftReviewOf(
   reviews: readonly DeckDraftReview[],
   ref: DeckReviewRef,
 ) {
-  return reviews.find((review) => sameRef(review, ref));
+  return reviews.find((review) => sameReviewRef(review, ref));
 }
 
 /** The reviews with the pull request's draft replaced, or dropped once it has no comments and no submission. */
@@ -125,7 +126,7 @@ function withDraft(
   ref: DeckReviewRef,
   next: DeckDraftReview | undefined,
 ): DeckDraftReview[] {
-  const others = reviews.filter((review) => !sameRef(review, ref));
+  const others = reviews.filter((review) => !sameReviewRef(review, ref));
   return next && (next.comments.length || next.submission)
     ? [...others, next]
     : others;

@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { RiCheckLine as Check } from "@remixicon/react";
-import type { DeckHunk } from "@ajour/shared/deck";
+import type { DeckFile, DeckHunk } from "@ajour/shared/deck";
 import {
   DiffHunk,
   type DiffHunkAnnotation,
@@ -28,6 +28,7 @@ import {
   type ReviewSection,
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
+import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import { useHunkLines } from "./review-line-selection";
 import { highlightOfSelection, LinesToolbar } from "./review-lines";
 import { useReviewLines, type AddComment } from "./review-lines-context";
@@ -37,8 +38,9 @@ import { renderNoteCard } from "./review-notes";
 /*
  * The sections of Deck's review page (#782): the guide's concerns, numbered
  * in reading order with a title and a one-line rationale, or the files A–Z.
- * Each hunk has a Viewed mark, local to the page for now, which folds it
- * and fills its concern's tick in the guide tree. A hunk's review threads
+ * Each hunk has a Viewed mark, kept on this computer (#785), which folds it
+ * and fills its concern's tick in the guide tree; in Files A–Z each file
+ * has one too, which marks all its hunks. A hunk's review threads
  * (#783), draft comments and the composer (#784) sit after their lines, or
  * only mark them when the gutter beside the sections holds the cards. A
  * "+" beside a line opens the composer on it. Lines selected in a hunk
@@ -47,6 +49,9 @@ import { renderNoteCard } from "./review-notes";
  */
 
 export type { AddComment };
+
+/** Marks every hunk of a file viewed, or none. */
+export type ToggleFileViewed = (file: DeckFile) => void;
 
 /** Marks the section element J and K move between. */
 export const SECTION_ATTRIBUTE = "data-review-section";
@@ -194,11 +199,16 @@ export function ReviewSectionHeader({
   section,
   seen,
   headingId,
+  fileViewed,
+  onToggleFileViewed,
 }: {
   section: ReviewSection;
   /** Its hunks marked viewed. */
   seen: number;
   headingId: string;
+  /** A file's section: all its hunks are viewed, the shown ones and any the filter hides. */
+  fileViewed?: boolean;
+  onToggleFileViewed?: ToggleFileViewed;
 }) {
   const { file } = section;
   const note = file ? fileNote(file) : undefined;
@@ -211,6 +221,20 @@ export function ReviewSectionHeader({
       {note ? <span className="deck-file-note">{note}</span> : null}
       {section.of ? (
         <Chip className="deck-concern-changed">{`${total} of ${section.of} changed`}</Chip>
+      ) : null}
+      {onToggleFileViewed ? (
+        <button
+          type="button"
+          className="deck-hunk-viewed deck-file-viewed"
+          aria-pressed={!!fileViewed}
+          aria-label={`Viewed file: ${file.path}`}
+          onClick={() => onToggleFileViewed(file)}
+        >
+          <span className="deck-hunk-viewed-box" aria-hidden>
+            {fileViewed ? <Check /> : null}
+          </span>
+          File viewed
+        </button>
       ) : null}
     </header>
   ) : (
@@ -317,6 +341,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   viewed,
   theme,
   onToggleViewed,
+  onToggleFileViewed,
   notes,
   floating,
   hovered,
@@ -328,6 +353,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   viewed: ReadonlySet<string>;
   theme: "light" | "dark";
   onToggleViewed: (hunkId: string) => void;
+  onToggleFileViewed: ToggleFileViewed;
   /** The section's threads, draft comments and composer on its lines, or none. */
   notes: readonly ReviewNote[] | undefined;
   /** Notes float in the gutter, so a line only marks where its note is. */
@@ -359,6 +385,8 @@ export const ReviewSectionView = memo(function ReviewSectionView({
         section={section}
         seen={viewedCount(section, viewed)}
         headingId={headingId}
+        fileViewed={section.file ? fileIsViewed(section.file, viewed) : false}
+        onToggleFileViewed={onToggleFileViewed}
       />
       {section.hunks.map((entry) => (
         <ReviewHunkView

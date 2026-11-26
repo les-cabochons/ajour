@@ -569,9 +569,11 @@ export type CodeHostPostCommentResult = z.infer<
   typeof codeHostPostCommentResultSchema
 >;
 
+/** A reply at the end of a review thread, named like a comment (#785). */
 export const codeHostReplyRequestSchema = codeHostPullRequestRefSchema.extend({
   threadId: idSchema,
   body: bodySchema.min(1),
+  ...submissionFields,
 });
 export type CodeHostReplyRequest = z.infer<typeof codeHostReplyRequestSchema>;
 
@@ -592,6 +594,12 @@ export const codeHostSetFileViewedRequestSchema =
   codeHostPullRequestRefSchema.extend({
     path: pathSchema,
     viewed: z.boolean(),
+    /**
+     * The head the user viewed the file at. Marking it viewed is refused
+     * once the pull request moved on, so the code host never shows as
+     * viewed code the user didn't read.
+     */
+    headSha: shaSchema,
   });
 export type CodeHostSetFileViewedRequest = z.infer<
   typeof codeHostSetFileViewedRequestSchema
@@ -680,7 +688,7 @@ export const codeHostOperations = {
   },
   replyToThread: {
     request: codeHostReplyRequestSchema,
-    result: codeHostCommentResultSchema,
+    result: codeHostPostCommentResultSchema,
   },
   setThreadResolved: {
     request: codeHostResolveThreadRequestSchema,

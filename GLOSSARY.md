@@ -204,6 +204,14 @@ _Avoid_: Repo mapping, review rule
 The user's unsent comments on one pull request, kept by Ajour until the user submits them together as a review.
 _Avoid_: Pending review, unsent comments
 
+**Viewed mark**:
+The user's note that they read a hunk, kept on their computer. It names the hunk by its file and its added and removed lines, so it stays on a hunk a push only moved and is cleared from one the push changed. A file whose hunks all carry one is viewed, which the code host is told where it keeps per-file viewed state.
+_Avoid_: Seen, read mark, reviewed (for a hunk)
+
+**Suggested change**:
+A comment on lines of the head that holds the lines as the reviewer would have them, in a `suggestion` block the code host offers to apply.
+_Avoid_: Patch, fix-up, proposal
+
 ### Time entries
 
 **Time entry**:

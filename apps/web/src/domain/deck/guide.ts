@@ -9,8 +9,8 @@ import type {
  * The order Deck's review page reads a pull request in (#782): the guide,
  * its concerns numbered in reading order as the local API built them, or
  * Files A–Z. J and K move between the sections either order gives, and each
- * section counts the hunks marked viewed. Viewed marks are local to the
- * page for now; per-hunk marks that last come with #785.
+ * section counts the hunks marked viewed. Viewed marks last, kept by
+ * `viewed-marks.ts` (#785).
  */
 
 export type ReviewOrder = "guide" | "files";
@@ -152,17 +152,6 @@ export function sectionToReach(
         ? reading
         : reading - 1;
   return target >= 0 && target < tops.length ? target : undefined;
-}
-
-/** The marks with `hunkId`'s turned on or off. */
-export function toggleViewed(
-  viewed: ReadonlySet<string>,
-  hunkId: string,
-): Set<string> {
-  const next = new Set(viewed);
-  if (next.has(hunkId)) next.delete(hunkId);
-  else next.add(hunkId);
-  return next;
 }
 
 /** How many of the section's hunks are marked viewed. */

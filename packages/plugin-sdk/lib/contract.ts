@@ -1121,8 +1121,10 @@ export type CodeHostOperations = {
       threadId: string;
       body: string;
       repository: string;
+      submissionId?: string | undefined;
+      firstTriedAt?: number | undefined;
     };
-    result: { commentId: string };
+    result: { uncertain: true } | { commentId: string };
   };
   readonly setThreadResolved: {
     request: {
@@ -1138,6 +1140,7 @@ export type CodeHostOperations = {
       number: number;
       path: string;
       repository: string;
+      headSha: string;
       viewed: boolean;
     };
     result: { viewed: boolean };

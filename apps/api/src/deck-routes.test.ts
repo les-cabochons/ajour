@@ -1012,6 +1012,7 @@ async function write(kind, request) {
 }
 export async function submitReview(connection, request) { return write("review", request); }
 export async function postComment(connection, request) { return write("comment", request); }
+export async function replyToThread(connection, request) { return write("reply", request); }
 `;
   const requests = {
     submitReview: (submissionId: string, firstTriedAt?: number) => ({
@@ -1027,6 +1028,15 @@ export async function postComment(connection, request) { return write("comment",
       repository: "acme/api",
       number: 7,
       body: "Why 410 only?",
+      submissionId,
+      ...(firstTriedAt === undefined ? {} : { firstTriedAt }),
+    }),
+    // A reply is named like a comment (#785).
+    replyToThread: (submissionId: string, firstTriedAt?: number) => ({
+      repository: "acme/api",
+      number: 7,
+      threadId: "thread-1",
+      body: "Agreed.",
       submissionId,
       ...(firstTriedAt === undefined ? {} : { firstTriedAt }),
     }),
@@ -1057,7 +1067,7 @@ export async function postComment(connection, request) { return write("comment",
     delete (globalThis as { deckWriteGate?: unknown }).deckWriteGate;
   });
 
-  it.each(["submitReview", "postComment"] as const)(
+  it.each(["submitReview", "postComment", "replyToThread"] as const)(
     "%s: two windows retrying the same saved draft post it once",
     async (operation) => {
       const { api, connectionId } = await startDeck(withWrites);
