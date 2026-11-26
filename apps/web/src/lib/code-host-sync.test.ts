@@ -299,6 +299,58 @@ describe("code host sync persistence", () => {
       }),
     ]);
   });
+  it("keeps a draft review, and its closed pull request in the list, until the draft is posted or discarded, across a reload", async () => {
+    const { localStore } = await import("./local-store");
+    const ref = {
+      pluginId: "github",
+      connectionId: "work",
+      repository: facts.repository,
+      number: facts.number,
+    };
+    localStore.syncPullRequests(source, result);
+    const comment = localStore.addDraftComment(ref, {
+      headSha: "head",
+      anchor: { path: "src/api.ts", side: "head", line: 2 },
+      body: "Rename this.",
+      lineText: "B",
+    });
+    expect(comment).toBeDefined();
+
+    // Merged past the days a closed pull request is kept: its draft keeps it
+    // in the list, where the draft can be posted or discarded.
+    const closedAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    const merged = { ...facts, state: "merged" as const, closedAt };
+    localStore.syncPullRequests(source, { ...result, pullRequests: [merged] });
+    expect(localStore.snapshot().pullRequests).toEqual([
+      expect.objectContaining({ facts: merged }),
+    ]);
+    // A sync that no longer lists it keeps it too.
+    localStore.syncPullRequests(source, { ...result, pullRequests: [] });
+    expect(localStore.snapshot().pullRequests).toHaveLength(1);
+
+    vi.resetModules();
+    const reloaded = (await import("./local-store")).localStore;
+    expect(reloaded.snapshot().deckDraftReviews).toEqual([
+      expect.objectContaining({ ...ref, comments: [comment] }),
+    ]);
+
+    expect(reloaded.snapshot().pullRequests).toHaveLength(1);
+
+    // Once the draft is discarded, the next sync lets the pull request go.
+    reloaded.discardDraftReview(ref);
+    reloaded.syncPullRequests(source, { ...result, pullRequests: [] });
+    expect(reloaded.snapshot().pullRequests).toEqual([]);
+    reloaded.addDraftComment(ref, {
+      headSha: "head",
+      anchor: { path: "src/api.ts", side: "head", line: 2 },
+      body: "Rename this.",
+      lineText: "B",
+    });
+
+    // A deleted connection takes its drafts with it.
+    reloaded.removeConnectionPullRequests("github", "work");
+    expect(reloaded.snapshot().deckDraftReviews).toEqual([]);
+  });
 
   it("preloads the pull requests on the user's plate in Deck once the sync applied, at the head it saw", async () => {
     const api = await import("./app-api");

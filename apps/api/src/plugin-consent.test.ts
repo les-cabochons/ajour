@@ -597,6 +597,136 @@ describe("consent on plugin installs and updates", () => {
     expect(allowed.connections).toHaveLength(1);
   });
 
+  it("installs an update that adds Review pull requests off, and its writes stay refused until the connection allows them", async () => {
+    // Deck's draft review (#784): a code host plugin that read pull requests
+    // learns to submit reviews and comment, behind a new access choice.
+    const READS = ["syncPullRequests", "getPullRequestConversation"];
+    const WRITES = ["submitReview", "postComment"];
+    const codeHost = (version: string, reviews: boolean) =>
+      manifest(version, (value) => {
+        value.capabilities = { codeHost: {} };
+        value.network.endpoints = [
+          { method: "GET", path: "/rest/myself" },
+          { method: "GET", path: "/rest/pulls/*", access: "pullRequests" },
+          ...(reviews
+            ? [
+                {
+                  method: "POST",
+                  path: "/rest/pulls/*/reviews",
+                  access: "reviewPullRequests",
+                },
+              ]
+            : []),
+        ];
+        value.connectionAccess = [
+          {
+            id: "pullRequests",
+            label: "Pull requests",
+            operations: reviews ? READS : [...READS, ...WRITES],
+          },
+          ...(reviews
+            ? [
+                {
+                  id: "reviewPullRequests",
+                  label: "Review pull requests",
+                  tokenScope: "Code (Read & write)",
+                  operations: WRITES,
+                },
+              ]
+            : []),
+        ];
+      });
+    const source = [
+      SAVING_PLUGIN,
+      "export async function submitReview(connection, request) {",
+      "  (globalThis.__reviews ??= []).push(request);",
+      "  return { reviewId: 'review-1' };",
+      "}",
+    ].join("\n");
+    const root = await tempDir();
+    const server = startServer(root, { inProcess: true });
+    await install(server, root, codeHost("1.0.0", false), {
+      enableAfterInstall: false,
+      source,
+    });
+    await activate(server, true);
+    const post = (route: string, body: unknown) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: route,
+        body: JSON.stringify(body),
+      });
+    const values = {
+      label: "Contoso",
+      tenantLabel: "Contoso",
+      baseUrl: "https://tracker.example.com",
+      apiToken: "token-value",
+    };
+    const saved = await post(`/api/plugins/${ID}/connections`, {
+      values,
+      access: ["pullRequests"],
+    });
+    expect(saved.status).toBe(200);
+    const id = (saved.body as { connection: { id: string } }).connection.id;
+
+    await install(server, root, codeHost("1.1.0", true), { source });
+
+    const held = await group(server);
+    expect(held).toMatchObject({
+      enabled: false,
+      pendingAccess: {
+        version: "1.1.0",
+        difference: {
+          endpoints: [
+            { host: "base", method: "POST", path: "/rest/pulls/*/reviews" },
+          ],
+          accessOperations: [
+            { choice: "reviewPullRequests", operation: "postComment" },
+            { choice: "reviewPullRequests", operation: "submitReview" },
+          ],
+        },
+      },
+    });
+
+    const review = {
+      repository: "acme/api",
+      number: 482,
+      headSha: "head",
+      verdict: "approve",
+      comments: [],
+    };
+    const submit = () =>
+      post(`/api/code-hosts/${ID}/connections/${id}/submitReview`, review);
+    // Held for consent, the plugin runs nothing.
+    expect((await submit()).status).toBe(409);
+
+    await activate(server, true);
+    // Allowed, the connection still has the new choice off.
+    expect((await group(server)).connections[0].access).toEqual([
+      "pullRequests",
+    ]);
+    expect(await submit()).toMatchObject({
+      status: 403,
+      body: { reason: "access_off", access: "reviewPullRequests" },
+    });
+    expect((globalThis as { __reviews?: unknown[] }).__reviews).toBeUndefined();
+
+    const allowed = await post(`/api/plugins/${ID}/connections`, {
+      id,
+      values: { ...values, apiToken: "" },
+      access: ["pullRequests", "reviewPullRequests"],
+    });
+    expect(allowed.status).toBe(200);
+    expect(await submit()).toMatchObject({
+      status: 200,
+      body: { reviewId: "review-1" },
+    });
+    expect((globalThis as { __reviews?: unknown[] }).__reviews).toEqual([
+      review,
+    ]);
+    delete (globalThis as { __reviews?: unknown[] }).__reviews;
+  });
+
   it("keeps an update active when it adds no access, even if it removes some", async () => {
     const root = await tempDir();
     const server = startServer(root);

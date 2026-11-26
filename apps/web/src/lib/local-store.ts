@@ -62,6 +62,23 @@ import {
   describeWeekSubmit,
 } from "@/lib/store-command-fields";
 import {
+  addDraftComment,
+  completeDraftComments,
+  completeReviewSubmission,
+  discardDraftReview,
+  draftReviewOf,
+  editDraftComment,
+  normalizeDraftReviews,
+  prepareCommentPost,
+  prepareReviewSubmission,
+  refreshDraftReview,
+  removeDraftComment,
+  type DeckDraftComment,
+  type DeckDraftReview,
+  type DeckReviewRef,
+} from "@/domain/deck/draft-review";
+import type { DeckPullRequestDiff } from "@ajour/shared/deck";
+import {
   changePullRequest,
   normalizePullRequests,
   reattachPullRequests,
@@ -488,6 +505,7 @@ function createDefaultState(): LocalAppState {
     commitPromptedWeeks: [],
     workItems: [],
     pullRequests: [],
+    deckDraftReviews: [],
     calendarDecisions: [],
     calendarEventRules: [],
     workflowStates: [],
@@ -621,6 +639,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       ),
       workItems,
       pullRequests: normalizePullRequests(persistedState.pullRequests),
+      deckDraftReviews: normalizeDraftReviews(persistedState.deckDraftReviews),
       calendarDecisions: pruneCalendarDecisions(
         arrayOrDefault(
           persistedState.calendarDecisions,
@@ -1423,6 +1442,19 @@ function updateState(
   return next;
 }
 
+/** Replaces the draft reviews; a transition that returns them unchanged writes nothing. */
+function updateDraftReviews(
+  change: (reviews: readonly DeckDraftReview[]) => readonly DeckDraftReview[],
+) {
+  return updateState((state) => {
+    const before = state.deckDraftReviews ?? [];
+    const after = change(before);
+    return after === before
+      ? state
+      : { ...state, deckDraftReviews: [...after] };
+  });
+}
+
 function updateStateWithResult<T>(
   operation: (state: LocalAppState) => {
     state: LocalAppState;
@@ -1738,6 +1770,9 @@ const store = {
           createId: () => createId("pull_request"),
           changesEndSnoozeEarly:
             state.userPreferences.changesEndSnoozeEarly === true,
+          // A draft review keeps its pull request, to post or discard.
+          keep: (ref) =>
+            draftReviewOf(state.deckDraftReviews ?? [], ref) !== undefined,
         },
       ),
     }));
@@ -1749,6 +1784,131 @@ const store = {
         item._id === id ? changePullRequest(item, command, Date.now()) : item,
       ),
     }));
+  },
+  /** Adds a comment to the pull request's draft review. Returns it, or undefined for a blank one. */
+  addDraftComment(
+    ref: DeckReviewRef,
+    input: Parameters<typeof addDraftComment>[2],
+  ) {
+    return updateStateWithResult(
+      (
+        state,
+      ): {
+        state: LocalAppState;
+        result: DeckDraftComment | undefined;
+      } => {
+        const added = addDraftComment(
+          state.deckDraftReviews ?? [],
+          ref,
+          input,
+          {
+            now: Date.now(),
+            createId: () => createId("draft_comment"),
+          },
+        );
+        return added.comment
+          ? {
+              state: { ...state, deckDraftReviews: added.reviews },
+              result: added.comment,
+            }
+          : { state, result: undefined };
+      },
+    );
+  },
+  editDraftComment(ref: DeckReviewRef, commentId: string, body: string) {
+    return updateDraftReviews((reviews) =>
+      editDraftComment(reviews, ref, commentId, body, Date.now()),
+    );
+  },
+  removeDraftComment(ref: DeckReviewRef, commentId: string) {
+    return updateDraftReviews((reviews) =>
+      removeDraftComment(reviews, ref, commentId),
+    );
+  },
+  /**
+   * After the review page read the pull request at a new head: marks the
+   * draft's comments on changed lines outdated. Returns how many it marked.
+   */
+  refreshDraftReview(ref: DeckReviewRef, diff: DeckPullRequestDiff) {
+    return updateStateWithResult((state) => {
+      const before = state.deckDraftReviews ?? [];
+      const { reviews, outdated } = refreshDraftReview(before, ref, diff);
+      return {
+        state:
+          reviews === before
+            ? state
+            : { ...state, deckDraftReviews: [...reviews] },
+        result: outdated,
+      };
+    });
+  },
+  /** Takes the comments the code host accepted out of the draft review. */
+  completeDraftComments(ref: DeckReviewRef, commentIds: readonly string[]) {
+    return updateDraftReviews((reviews) =>
+      completeDraftComments(reviews, ref, commentIds),
+    );
+  },
+  discardDraftReview(ref: DeckReviewRef) {
+    return updateDraftReviews((reviews) => discardDraftReview(reviews, ref));
+  },
+  /**
+   * Finish review's request, with the submission id it keeps in the draft
+   * before anything is sent: a retry, after a restart too, sends the same.
+   */
+  prepareReviewSubmission(
+    ref: DeckReviewRef,
+    input: Parameters<typeof prepareReviewSubmission>[2],
+  ) {
+    return updateStateWithResult((state) => {
+      const prepared = prepareReviewSubmission(
+        state.deckDraftReviews ?? [],
+        ref,
+        input,
+        {
+          now: Date.now(),
+          createId: () => createId("review_submission"),
+        },
+      );
+      return {
+        state: { ...state, deckDraftReviews: prepared.reviews },
+        result: { request: prepared.request, sent: prepared.sent },
+      };
+    });
+  },
+  /**
+   * A closed pull request's comment as a post of its own, named and kept
+   * with the comment before it's sent: a retry, after a restart too, sends
+   * the same name. Undefined when the comment is gone.
+   */
+  prepareCommentPost(
+    ref: DeckReviewRef,
+    commentId: string,
+    options: { again?: boolean } = {},
+  ) {
+    return updateStateWithResult((state) => {
+      const prepared = prepareCommentPost(
+        state.deckDraftReviews ?? [],
+        ref,
+        commentId,
+        options,
+        {
+          now: Date.now(),
+          createId: () => createId("comment_submission"),
+        },
+      );
+      return prepared.request
+        ? {
+            state: { ...state, deckDraftReviews: prepared.reviews },
+            result: prepared.request,
+          }
+        : { state, result: undefined };
+    });
+  },
+  /** The code host took the review: its comments and its submission leave the draft. */
+  completeReviewSubmission(ref: DeckReviewRef, sent: readonly string[]) {
+    return updateDraftReviews((reviews) =>
+      completeReviewSubmission(reviews, ref, sent),
+    );
   },
   /**
    * Adds calendar suggestions as time entries in one action. Returns the new
@@ -2103,14 +2263,20 @@ const store = {
   },
   removeConnectionPullRequests(pluginId: string, connectionId: string) {
     return updateState((state) => {
+      const inConnection = (item: { pluginId: string; connectionId: string }) =>
+        item.pluginId === pluginId && item.connectionId === connectionId;
       const pullRequests = (state.pullRequests ?? []).filter(
-        (item) =>
-          item.pluginId !== pluginId || item.connectionId !== connectionId,
+        (item) => !inConnection(item),
+      );
+      // A deleted connection's draft reviews can't be sent any more.
+      const deckDraftReviews = (state.deckDraftReviews ?? []).filter(
+        (review) => !inConnection(review),
       );
       // Nothing to remove writes nothing.
-      return pullRequests.length === (state.pullRequests ?? []).length
+      return pullRequests.length === (state.pullRequests ?? []).length &&
+        deckDraftReviews.length === (state.deckDraftReviews ?? []).length
         ? state
-        : { ...state, pullRequests };
+        : { ...state, pullRequests, deckDraftReviews };
     });
   },
   createTeam(
@@ -3824,6 +3990,30 @@ export const STORE_COMMANDS = {
     pick: (_id, command) => PULL_REQUEST_COMMANDS[command.type],
     fallback: "pull_request.change",
     fields: { pull_request: { id: ([id]) => id } },
+  },
+  addDraftComment: "deck.draft_comment_add",
+  editDraftComment: "deck.draft_comment_edit",
+  removeDraftComment: "deck.draft_comment_remove",
+  refreshDraftReview: {
+    name: "deck.draft_review_refresh",
+    trigger: "system",
+    resultFields: { deck: { outdated_count: (outdated) => outdated } },
+  },
+  completeDraftComments: {
+    name: "deck.draft_review_complete",
+    fields: { deck: { comment_count: ([, ids]) => ids.length } },
+  },
+  discardDraftReview: "deck.draft_review_discard",
+  prepareReviewSubmission: {
+    name: "deck.review_submission_prepare",
+    resultFields: {
+      deck: { comment_count: (prepared) => prepared.sent.length },
+    },
+  },
+  prepareCommentPost: "deck.comment_submission_prepare",
+  completeReviewSubmission: {
+    name: "deck.review_submission_complete",
+    fields: { deck: { comment_count: ([, sent]) => sent.length } },
   },
   acceptCalendarSuggestions: "suggestion.add",
   dismissCalendarSuggestions: {

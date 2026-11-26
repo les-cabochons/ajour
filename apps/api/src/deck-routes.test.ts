@@ -931,6 +931,142 @@ export async function getChecks(connection, request) {
   });
 });
 
+describe("writes that name their submission (#784)", () => {
+  /*
+   * A code host whose lookup and post race, as GitHub's do: a try finds what
+   * an earlier one posted only on a retry, and posts after a pause. Two
+   * windows retrying the same saved draft would both find nothing and both
+   * post, unless the local API runs them one at a time.
+   */
+  const withWrites = `${pluginSource}
+async function write(kind, request) {
+  const host = (globalThis.deckWrites ??= { posted: [], seen: [] });
+  host.seen.push({ kind, submissionId: request.submissionId, firstTriedAt: request.firstTriedAt });
+  const found =
+    request.firstTriedAt !== undefined &&
+    host.posted.find((post) => post.kind === kind && post.submissionId === request.submissionId);
+  const id = found ? found.id : String(host.posted.length + 1);
+  if (!found) {
+    await globalThis.deckWriteGate;
+    host.posted.push({ kind, submissionId: request.submissionId, id });
+  }
+  return kind === "review" ? { reviewId: id } : { commentId: id };
+}
+export async function submitReview(connection, request) { return write("review", request); }
+export async function postComment(connection, request) { return write("comment", request); }
+`;
+  const requests = {
+    submitReview: (submissionId: string, firstTriedAt?: number) => ({
+      repository: "acme/api",
+      number: 7,
+      headSha: "head",
+      verdict: "approve",
+      comments: [],
+      submissionId,
+      ...(firstTriedAt === undefined ? {} : { firstTriedAt }),
+    }),
+    postComment: (submissionId: string, firstTriedAt?: number) => ({
+      repository: "acme/api",
+      number: 7,
+      body: "Why 410 only?",
+      submissionId,
+      ...(firstTriedAt === undefined ? {} : { firstTriedAt }),
+    }),
+  };
+  const host = () =>
+    (
+      globalThis as {
+        deckWrites?: {
+          posted: unknown[];
+          seen: { submissionId: string; firstTriedAt?: number }[];
+        };
+      }
+    ).deckWrites ?? { posted: [], seen: [] };
+  /** Holds every post until `open`. */
+  function gate() {
+    let open!: () => void;
+    (globalThis as { deckWriteGate?: Promise<void> }).deckWriteGate =
+      new Promise<void>((resolve) => (open = resolve));
+    return open;
+  }
+  /** Until the plugin saw `count` tries, or a moment passed without them. */
+  async function seen(count: number) {
+    for (let wait = 0; wait < 30 && host().seen.length < count; wait += 1)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  afterEach(() => {
+    delete (globalThis as { deckWrites?: unknown }).deckWrites;
+    delete (globalThis as { deckWriteGate?: unknown }).deckWriteGate;
+  });
+
+  it.each(["submitReview", "postComment"] as const)(
+    "%s: two windows retrying the same saved draft post it once",
+    async (operation) => {
+      const { api, connectionId } = await startDeck(withWrites);
+      const open = gate();
+      const send = () =>
+        apiRequest(
+          api.baseUrl,
+          `/api/code-hosts/github/connections/${connectionId}/${operation}`,
+          requests[operation]("review_submission_1", 1_000),
+        );
+
+      const answers = Promise.all([send(), send()]);
+      await seen(2);
+      open();
+
+      const id = operation === "submitReview" ? "reviewId" : "commentId";
+      expect(await answers).toEqual([
+        { status: 200, body: { [id]: "1" } },
+        { status: 200, body: { [id]: "1" } },
+      ]);
+      expect(host().posted).toHaveLength(1);
+    },
+  );
+
+  it("tells a try that waited behind another of its submission when that one was tried", async () => {
+    const { api, connectionId } = await startDeck(withWrites);
+    const open = gate();
+    const send = () =>
+      apiRequest(
+        api.baseUrl,
+        `/api/code-hosts/github/connections/${connectionId}/submitReview`,
+        // Two first tries of one name: neither has a time of its own.
+        requests.submitReview("review_submission_1"),
+      );
+
+    const before = Date.now();
+    const answers = Promise.all([send(), send()]);
+    await seen(2);
+    open();
+    await answers;
+
+    expect(host().posted).toHaveLength(1);
+    const [first, second] = host().seen;
+    expect(first!.firstTriedAt).toBeUndefined();
+    expect(second!.firstTriedAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it("runs writes of different submissions side by side", async () => {
+    const { api, connectionId } = await startDeck(withWrites);
+    const open = gate();
+    const send = (submissionId: string) =>
+      apiRequest(
+        api.baseUrl,
+        `/api/code-hosts/github/connections/${connectionId}/submitReview`,
+        requests.submitReview(submissionId, 1_000),
+      );
+
+    const answers = Promise.all([send("first"), send("second")]);
+    await seen(2);
+    // Both reached the plugin before either posted.
+    expect(host().seen).toHaveLength(2);
+    open();
+    await answers;
+    expect(host().posted).toHaveLength(2);
+  });
+});
+
 describe("the guide of a pull request opened in Deck", () => {
   it("is built by Review Deck's pipeline from the same diff, its concerns in reading order", async () => {
     const { api, open } = await startDeck();

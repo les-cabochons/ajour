@@ -462,6 +462,37 @@ export const codeHostLineAnchorSchema = z.object({
 });
 export type CodeHostLineAnchor = z.infer<typeof codeHostLineAnchorSchema>;
 
+/**
+ * A write's name across tries and restarts (#784). The local API runs the
+ * writes that share one a connection at a time.
+ */
+const submissionFields = {
+  /**
+   * Names this post across tries and restarts. On a retry the plugin first
+   * finds what an earlier try left and sends only what the code host
+   * doesn't hold yet, so Retry after a lost answer posts nothing twice.
+   */
+  submissionId: z
+    .string()
+    .regex(/^[\w-]{1,100}$/)
+    .optional(),
+  /**
+   * Set on a retry only: when the first try with this `submissionId` was
+   * sent, in milliseconds since the epoch, by this computer's clock. A
+   * hint only, as the clocks may disagree: the plugin looks for what that
+   * try posted whatever its time, and treats an unmarked post of the
+   * user's from around then on as maybe it.
+   */
+  firstTriedAt: z.number().int().nonnegative().optional(),
+};
+
+/**
+ * A retry the code host can't settle: something the user posted since the
+ * first try may be it, but nothing there names this submission. The user
+ * decides whether to post again, as a new submission.
+ */
+const uncertainSchema = z.object({ uncertain: z.literal(true) });
+
 export const codeHostSubmitReviewRequestSchema =
   codeHostPullRequestRefSchema.extend({
     headSha: shaSchema,
@@ -470,26 +501,40 @@ export const codeHostSubmitReviewRequestSchema =
     comments: z
       .array(codeHostLineAnchorSchema.extend({ body: bodySchema.min(1) }))
       .max(500),
+    ...submissionFields,
   });
 export type CodeHostSubmitReviewRequest = z.infer<
   typeof codeHostSubmitReviewRequestSchema
 >;
 
-export const codeHostSubmitReviewResultSchema = z.object({
-  reviewId: idSchema,
-});
+export const codeHostSubmitReviewResultSchema = z.union([
+  z.object({ reviewId: idSchema }),
+  uncertainSchema,
+]);
+export type CodeHostSubmitReviewResult = z.infer<
+  typeof codeHostSubmitReviewResultSchema
+>;
 
 /** A single comment: on the conversation, or on lines when `anchor` is set. */
 export const codeHostPostCommentRequestSchema =
   codeHostPullRequestRefSchema.extend({
     body: bodySchema.min(1),
     anchor: codeHostLineAnchorSchema.extend({ headSha: shaSchema }).optional(),
+    ...submissionFields,
   });
 export type CodeHostPostCommentRequest = z.infer<
   typeof codeHostPostCommentRequestSchema
 >;
 
 export const codeHostCommentResultSchema = z.object({ commentId: idSchema });
+
+export const codeHostPostCommentResultSchema = z.union([
+  codeHostCommentResultSchema,
+  uncertainSchema,
+]);
+export type CodeHostPostCommentResult = z.infer<
+  typeof codeHostPostCommentResultSchema
+>;
 
 export const codeHostReplyRequestSchema = codeHostPullRequestRefSchema.extend({
   threadId: idSchema,
@@ -594,7 +639,7 @@ export const codeHostOperations = {
   },
   postComment: {
     request: codeHostPostCommentRequestSchema,
-    result: codeHostCommentResultSchema,
+    result: codeHostPostCommentResultSchema,
   },
   replyToThread: {
     request: codeHostReplyRequestSchema,

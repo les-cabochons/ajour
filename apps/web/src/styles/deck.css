@@ -986,6 +986,76 @@
     font-size: var(--text-xs);
   }
 
+  /* A comment of the draft review: dashed, since nothing was sent yet. */
+  .deck-draft {
+    border-style: dashed;
+  }
+
+  .deck-note-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0 0.375rem 0.375rem;
+  }
+
+  /* The composer on a line: its field, then Add to review, Comment now and Cancel. */
+  .deck-composer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .deck-composer .deck-note-actions {
+    padding: 0;
+  }
+
+  .deck-composer-error {
+    margin: 0;
+    color: var(--destructive);
+    font-size: var(--text-xs);
+  }
+
+  /* Finish review's verdicts, one per row. */
+  .deck-verdicts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .deck-verdict {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 1.75rem;
+    font-size: var(--text-sm);
+  }
+
+  /* A closed pull request's kept draft, under the status line. */
+  .deck-closed-draft {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .deck-closed-draft .deck-note-actions {
+    padding: 0;
+  }
+
+  /* The draft comments a push made outdated, before the conversation. */
+  .deck-draft-elsewhere {
+    display: flex;
+    min-width: 0;
+    max-width: 48rem;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+  }
+
   /* The conversation at the end of the page. */
   .deck-conversation {
     min-width: 0;
@@ -1014,6 +1084,54 @@
 
   .deck-timeline-body {
     margin-top: 0.25rem;
+  }
+
+  /*
+   * The hunk's keyboard way to comment (#784): hidden until it has focus,
+   * then a pill at the hunk's top right naming the line it's on, which the
+   * hunk highlights. One per hunk, nothing per line.
+   */
+  .diff-hunk {
+    position: relative;
+  }
+
+  .diff-line-key {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    z-index: 5;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .diff-line-key:focus {
+    display: inline-flex;
+    width: auto;
+    height: auto;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    clip-path: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--background);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  .diff-line-key svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .diff-line-key-hint {
+    color: var(--muted-foreground);
   }
 
   /* Before it draws, a hunk holds the height of its rows, so the page doesn't move as hunks mount. */

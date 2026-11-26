@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -23,10 +24,7 @@ import {
   type ReviewOrder,
   type ReviewSection,
 } from "@/domain/deck/guide";
-import type {
-  PlacedThread,
-  ThreadPlacement,
-} from "@/domain/deck/review-threads";
+import type { ReviewNote } from "@/domain/deck/review-notes";
 import { sinceReviewSections, versionNames } from "@/domain/deck/versions";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { useShortcut } from "@/lib/shortcut-handlers";
@@ -39,7 +37,12 @@ import {
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
-import { ReviewSectionView, SECTION_ATTRIBUTE } from "./review-sections";
+import { ReviewNotesContext } from "./review-notes";
+import {
+  ReviewSectionView,
+  SECTION_ATTRIBUTE,
+  type AddComment,
+} from "./review-sections";
 import { ThreadGutter } from "./thread-gutter";
 import type {
   PullRequestReadState,
@@ -60,8 +63,8 @@ function MountedReviewSections({
   floating,
   hovered,
   hoveredSection,
-  onHover,
   onAnchor,
+  onAddComment,
   changed,
 }: {
   sections: readonly ReviewSection[];
@@ -71,14 +74,14 @@ function MountedReviewSections({
   navigator: Ref<SectionNavigator>;
   /** The sections' column, which the gutter beside it follows. */
   listRef: RefObject<HTMLDivElement | null>;
-  /** Each section's review threads, by its key. */
-  bySection: ReadonlyMap<string, readonly PlacedThread[]>;
+  /** Each section's threads, draft comments and composer, by its key. */
+  bySection: ReadonlyMap<string, readonly ReviewNote[]>;
   floating: boolean;
   hovered: string | undefined;
-  /** The key of the section holding the hovered thread. */
+  /** The key of the section holding the hovered note. */
   hoveredSection: string | undefined;
-  onHover: (threadId: string | undefined) => void;
   onAnchor: (element: HTMLElement | null) => void;
+  onAddComment: AddComment | undefined;
   /** The hunks changed since the review, with the version each last changed in. */
   changed: ReadonlyMap<string, number> | undefined;
 }) {
@@ -106,11 +109,11 @@ function MountedReviewSections({
           viewed={viewed}
           theme={theme}
           onToggleViewed={onToggleViewed}
-          placed={bySection.get(section.key)}
+          notes={bySection.get(section.key)}
           floating={floating}
           hovered={hoveredSection === section.key ? hovered : undefined}
-          onHover={onHover}
           onAnchor={onAnchor}
+          onAddComment={onAddComment}
           changed={changed}
         />
       ))}
@@ -118,13 +121,48 @@ function MountedReviewSections({
   );
 }
 
-/** Where the review page shows the review threads, as `PullRequestReview` works it out. */
-export interface ReviewThreadsView {
-  placement: ThreadPlacement | undefined;
-  /** From 1,100px, the threads float in a gutter beside the sections. */
+/** What the review page shows at its lines, as `PullRequestReview` works it out. */
+export interface ReviewNotesView {
+  /** The threads, draft comments and composer on lines of the diff, in its order. */
+  notes: readonly ReviewNote[];
+  /** From 1,100px, the notes float in a gutter beside the sections. */
   floating: boolean;
+  /** The key of the note hovered. */
   hovered: string | undefined;
-  onHover: (threadId: string | undefined) => void;
+  /** Opens the composer; undefined when the pull request takes no comments. */
+  onAddComment: AddComment | undefined;
+}
+
+/**
+ * The notes of each section, keeping the list a section had while its
+ * notes are the same, so a note changing draws only its own section again.
+ */
+function notesBySection(
+  notes: readonly ReviewNote[],
+  sectionOfHunk: ReadonlyMap<string, string>,
+  before: ReadonlyMap<string, readonly ReviewNote[]>,
+) {
+  const grouped = new Map<string, ReviewNote[]>();
+  for (const note of notes) {
+    const key = sectionOfHunk.get(note.hunkId);
+    if (key === undefined) continue;
+    const list = grouped.get(key) ?? [];
+    list.push(note);
+    grouped.set(key, list);
+  }
+  const kept = new Map<string, readonly ReviewNote[]>();
+  for (const [key, list] of grouped) {
+    const previous = before.get(key);
+    kept.set(
+      key,
+      previous &&
+        previous.length === list.length &&
+        previous.every((note, index) => note === list[index])
+        ? previous
+        : list,
+    );
+  }
+  return kept;
 }
 
 /** The versions bar's reads and the since-review marks, as `PullRequestReview` works them out. */
@@ -149,19 +187,21 @@ export interface ReviewVersionsView {
 
 /**
  * The guide, or the files A–Z, of an opened pull request, with the guide
- * tree beside it, and each review thread beside its line in the gutter or
- * after it. J and K move between its sections and F opens the tree's
- * titles, while the page is mounted (`deck` shortcuts).
+ * tree beside it, and each review thread, draft comment and the composer
+ * beside its line in the gutter or after it. J and K move between its
+ * sections and F opens the tree's titles, while the page is mounted
+ * (`deck` shortcuts).
  */
 function ReviewChanges({
   pullRequest,
-  threads: { placement, floating, hovered, onHover },
+  notes: { notes: allNotes, floating, hovered, onAddComment },
   versions,
 }: {
   pullRequest: DeckOpenedPullRequest;
-  threads: ReviewThreadsView;
+  notes: ReviewNotesView;
   versions: ReviewVersionsView;
 }) {
+  const onHover = useContext(ReviewNotesContext)?.onHover;
   const theme = useResolvedTheme();
   const [chosen, setChosen] = useState<ReviewOrder>("guide");
   const order: ReviewOrder = pullRequest.guide ? chosen : "files";
@@ -237,60 +277,58 @@ function ReviewChanges({
   // A huge pull request's hunks mount and unmount as the page scrolls, and
   // the gutter holds the cards of the mounted ones only: thousands of hidden
   // cards would cost every style and layout pass.
-  const [mountedThreadHunks, setMountedThreadHunks] = useState<
-    ReadonlySet<string>
-  >(() => new Set());
-  const onThreadRowsChange = useCallback(
-    (hunkIds: ReadonlySet<string>) => setMountedThreadHunks(hunkIds),
+  const [mountedNoteHunks, setMountedNoteHunks] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const onNoteRowsChange = useCallback(
+    (hunkIds: ReadonlySet<string>) => setMountedNoteHunks(hunkIds),
     [],
   );
-  const { bySection, sectionOfHunk } = useMemo(() => {
-    const sectionOfHunk = new Map<string, string>();
+  // The hunk of the gutter's card holding the focus, such as the composer
+  // being typed in: its row stays mounted however far it scrolls away, as
+  // the row holding the focus does.
+  const [focusedCardHunk, setFocusedCardHunk] = useState<string>();
+  const sectionOfHunk = useMemo(() => {
+    const map = new Map<string, string>();
     for (const section of sections)
-      for (const entry of section.hunks)
-        sectionOfHunk.set(entry.hunk.id, section.key);
-    const bySection = new Map<string, PlacedThread[]>();
-    for (const entry of placement?.placed ?? []) {
-      const key = sectionOfHunk.get(entry.hunkId);
-      if (key === undefined) continue;
-      const list = bySection.get(key) ?? [];
-      list.push(entry);
-      bySection.set(key, list);
-    }
-    return { bySection, sectionOfHunk };
-  }, [sections, placement]);
-  // Only the hovered thread's section draws again as the hover moves.
-  const hoveredHunk = placement?.placed.find(
-    (entry) => entry.thread.id === hovered,
-  )?.hunkId;
+      for (const entry of section.hunks) map.set(entry.hunk.id, section.key);
+    return map;
+  }, [sections]);
+  // Under the filter, only the notes on the hunks it shows.
+  const notes = useMemo(
+    () => allNotes.filter((entry) => sectionOfHunk.has(entry.hunkId)),
+    [allNotes, sectionOfHunk],
+  );
+  const grouped = useRef<ReadonlyMap<string, readonly ReviewNote[]>>(new Map());
+  const bySection = useMemo(
+    () => notesBySection(notes, sectionOfHunk, grouped.current),
+    [notes, sectionOfHunk],
+  );
+  useEffect(() => {
+    grouped.current = bySection;
+  }, [bySection]);
+  // Only the hovered note's section draws again as the hover moves.
+  const hoveredHunk = notes.find((entry) => entry.key === hovered)?.hunkId;
   const hoveredSection = hoveredHunk
     ? sectionOfHunk.get(hoveredHunk)
     : undefined;
-  // Under the filter, only the threads on the hunks it shows.
-  const placed = useMemo(
-    () =>
-      (placement?.placed ?? []).filter((entry) =>
-        sectionOfHunk.has(entry.hunkId),
-      ),
-    [placement, sectionOfHunk],
-  );
-  const gutter = floating && placed.length > 0;
-  const gutterPlaced = useMemo(
+  const gutter = floating && notes.length > 0;
+  const gutterNotes = useMemo(
     () =>
       huge
-        ? placed.filter((entry) => mountedThreadHunks.has(entry.hunkId))
-        : placed,
-    [huge, placed, mountedThreadHunks],
+        ? notes.filter((entry) => mountedNoteHunks.has(entry.hunkId))
+        : notes,
+    [huge, notes, mountedNoteHunks],
   );
   // A hovered card whose hunk scrolled away is no longer under the pointer.
   useEffect(() => {
     if (
       hovered !== undefined &&
       gutter &&
-      !gutterPlaced.some((entry) => entry.thread.id === hovered)
+      !gutterNotes.some((entry) => entry.key === hovered)
     )
-      onHover(undefined);
-  }, [gutter, gutterPlaced, hovered, onHover]);
+      onHover?.(undefined);
+  }, [gutter, gutterNotes, hovered, onHover]);
   // Folding a hunk or changing the order moves the lines, even where the
   // column keeps its height. The gutter places its cards itself as it mounts.
   const laidOut = useRef({ sections, viewed });
@@ -349,7 +387,21 @@ function ReviewChanges({
       </div>
       {sections.length ? (
         <div ref={review} className="deck-review">
-          <div className="deck-review-grid" data-gutter={gutter || undefined}>
+          <div
+            className="deck-review-grid"
+            data-gutter={gutter || undefined}
+            onFocus={(event) => {
+              const key = (event.target as Element).closest<HTMLElement>(
+                "[data-card]",
+              )?.dataset.card;
+              const hunkId = notes.find((entry) => entry.key === key)?.hunkId;
+              setFocusedCardHunk(hunkId);
+            }}
+            onBlur={(event) => {
+              const next = event.relatedTarget as Element | null;
+              if (!next?.closest("[data-card]")) setFocusedCardHunk(undefined);
+            }}
+          >
             {huge ? (
               <VirtualReviewSections
                 sections={sections}
@@ -358,12 +410,13 @@ function ReviewChanges({
                 onToggleViewed={onToggleViewed}
                 navigator={navigator}
                 listRef={list}
-                placed={placed}
+                notes={notes}
                 floating={gutter}
                 hovered={hovered}
-                onHover={onHover}
                 onAnchor={onAnchor}
-                onThreadRowsChange={onThreadRowsChange}
+                onAddComment={onAddComment}
+                onNoteRowsChange={onNoteRowsChange}
+                focusedHunk={focusedCardHunk}
                 changed={changed}
               />
             ) : (
@@ -378,17 +431,16 @@ function ReviewChanges({
                 floating={gutter}
                 hovered={hovered}
                 hoveredSection={hoveredSection}
-                onHover={onHover}
                 onAnchor={onAnchor}
+                onAddComment={onAddComment}
                 changed={changed}
               />
             )}
             {gutter ? (
               <ThreadGutter
-                placed={gutterPlaced}
+                notes={gutterNotes}
                 columnRef={list}
                 hovered={hovered}
-                onHover={onHover}
                 scheduleRef={scheduleRef}
               />
             ) : null}
@@ -435,20 +487,20 @@ function ReviewChanges({
 
 /**
  * The pull request's changes: its guide, or its files A–Z, once the local
- * API built them, with each review thread beside its line when `floating`,
- * or after it.
+ * API built them, with each note beside its line when `floating`, or
+ * after it.
  */
 export function PullRequestChanges({
   pullRequest,
   state,
   retry,
-  threads,
+  notes,
   versions,
 }: {
   pullRequest: LocalPullRequest;
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
-  threads: ReviewThreadsView;
+  notes: ReviewNotesView;
   versions: ReviewVersionsView;
 }) {
   const { repositoryIdentity, headRef } = pullRequest.facts;
@@ -503,7 +555,7 @@ export function PullRequestChanges({
           <ReviewChanges
             key={`${state.value.baseSha}..${state.value.headSha}`}
             pullRequest={state.value}
-            threads={threads}
+            notes={notes}
             versions={versions}
           />
         </DeckAskProvider>

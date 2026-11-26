@@ -20,6 +20,7 @@ import type {
 import type { PriorityLevel } from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
+import type { DeckDraftReview } from "@/domain/deck/draft-review";
 
 export interface LocalProject {
   _id: string;
@@ -1059,6 +1060,12 @@ export interface LocalAppState {
   commitPromptedWeeks: string[];
   workItems: LocalWorkItem[];
   pullRequests?: LocalPullRequest[];
+  /**
+   * Deck's draft reviews, one per pull request with comments in it. Kept
+   * apart from the pull requests, so a sync that closes or drops one keeps
+   * its draft. See `domain/deck/draft-review.ts`.
+   */
+  deckDraftReviews?: DeckDraftReview[];
   /** Decisions about calendar event occurrences. See ADR 0005. */
   calendarDecisions?: LocalCalendarDecision[];
   /** Remembered and hidden meetings. */

@@ -644,10 +644,15 @@ Cmd+K opens one palette with navigation, global actions, the focused item's acti
 
 Page-scoped keys, decided in [#774](https://github.com/les-cabochons/ajour/issues/774) and added with [#782](https://github.com/les-cabochons/ajour/issues/782). They work only on a pull request's review page, at `/deck/$itemId`, and use letters no app key takes there. Elsewhere nothing handles them, so E, F and S keep their app meanings: E settles a focused item, F favors a focused task or project, and S starts or stops an entry. S stays the timer key on the review page too.
 
-| Key   | Action                                |
-| ----- | ------------------------------------- |
-| J / K | Next or previous concern              |
-| F     | Open or close the guide tree's titles |
+| Key                             | Action                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| J / K                           | Next or previous concern                                                 |
+| F                               | Open or close the guide tree's titles                                    |
+| R then C, N or A                | Open Finish review on Comment, Request changes or Approve (#784)         |
+| R then Y                        | Approve at once, with no dialog                                          |
+| Ctrl+Enter (Cmd+Enter on macOS) | Add the composer's comment to the review, or save a draft comment's edit |
+
+R takes no app key, and the letter after it only counts after R, so N still starts an entry. Ctrl+Enter works while a composer is open, in its field too.
 
 The "?" overlay lists them under "Deck review page", and the command palette offers them while the page shows.
 
@@ -1118,7 +1123,7 @@ Decided in [Deck: review pull requests in Ajour](https://github.com/les-cabochon
 
 ### List
 
-- Three groups: **Active**, **Settled** and **Recently closed**. Active holds the open pull requests that need the user, longest waiting first by the event that made each active, then the snoozed ones. Settled holds the open settled ones. Recently closed holds the merged and closed ones of the last seven days, newest first; after that they leave the local list.
+- Three groups: **Active**, **Settled** and **Recently closed**. Active holds the open pull requests that need the user, longest waiting first by the event that made each active, then the snoozed ones. Settled holds the open settled ones. Recently closed holds the merged and closed ones of the last seven days, newest first; after that they leave the local list, unless a draft review keeps one (see Draft review and Finish review).
 - A group with nothing in it says so: "No pull requests need your attention.", "No settled pull requests." or "No pull requests closed in the last seven days."
 - Without an enabled code host, the page says "Activate a code host plugin in Settings to use Deck." Without a connection, it says to add one in Plugins settings, and Sync is disabled.
 - **Sync** syncs every connection now. Each connection also syncs on its interval while its automatic sync is on. A failed sync shows its reason above the groups.
@@ -1153,6 +1158,24 @@ Decided in [Threads, status line and the description drawer](https://github.com/
 - A thread shows each comment's author, time and text, then "Resolved" or "Outdated" when it is. Hovering or focusing a thread highlights its line, its border and its connector take the accent.
 - A thread whose line isn't in the diff, an outdated one, one on a whole file, or one on lines no hunk shows, joins the conversation instead, named by its file and lines.
 - The page ends with **Conversation**: the opening, comments, reviews (approved, requested changes, reviewed), commits and other events in time order, each with who and when, and the threads the diff can't show. While it loads, it says "Loading the conversation…"; a failure shows its reason with **Retry**; a code host that doesn't share it says so.
+
+### Draft review and Finish review
+
+Decided in [Draft review and Finish review](https://github.com/les-cabochons/ajour/issues/784), from ADR 0002.
+
+- Pointing at a line of an open pull request shows a **+** beside its number, named "Comment on this line"; dragging from it picks several lines of one side. Clicking it opens the composer on those lines, where a thread would float or sit, with their lines highlighted. Its field is focused, and Escape closes it.
+- From the keyboard, each hunk has one button, reached with Tab and hidden until it has focus: then a pill at the hunk's top right, "Comment on line 12" ("Comment on removed line 12" for a base line), with the hunk highlighting that line. Up and Down move it to the next or previous line of the hunk, Home and End to its first or last, and Enter or Space opens the composer on that line. It comments on one line; picking several from the keyboard comes with selecting lines ([#793](https://github.com/les-cabochons/ajour/issues/793)).
+- The composer offers **Add to review**, the primary action, with Ctrl+Enter (Cmd+Enter on macOS), **Comment now** and **Cancel**. Add to review keeps the comment in the draft review, with nothing sent. Comment now posts it at once; while it posts it says "Posting…", and a failure keeps the words and says "Couldn't post the comment:" and the reason, with **Retry**, which sends the same name while the words and lines stay the same, so the comment posts once; one the plugin can't settle offers **Post again** instead (see below). Once the post lands the composer closes, unless words were typed into it meanwhile: those stay, as a new comment. An answer reaches only the composer that posted, so one opened since, on other lines or again on the same ones, keeps its words. On a huge pull request, the composer keeps its words, and its Retry or Post again, while its hunk scrolls away and back, and a composer holding the focus stays mounted however far its line scrolls, in the gutter too.
+- A comment of the draft review shows beside or after its line like a thread, with a dashed border, "Draft", its words, **Edit** and **Remove**. Edit opens the composer in its place, with **Save**. Removing the last comment ends the draft.
+- The draft review is kept in local state, per pull request, apart from the synced list, so it survives restarts and syncs. Deleting the connection deletes its drafts.
+- The header's **Finish review**, then **Finish review · N** once the draft has N comments, opens the submit dialog: "Finish review", a line counting what goes with it ("1 comment goes with it.", or "No comments."), an optional summary, and the verdict: Comment, Request changes ("Wait for author" on Azure DevOps, where it is the vote) and Approve. **Submit review** sends it; Request changes and Comment need a summary or a comment. R then C, N or A opens it on that verdict; R then Y approves at once, with no dialog, sending the draft's comments.
+- The review goes to the code host at once, with no Undo window and nothing queued (ADR 0002). Once it is sent, its comments leave the draft and a toast says "Approved", or "Review sent". A failure, R then Y's included, keeps the draft and shows the dialog with the reason, "Your draft review is kept.", and **Retry**. A connection without Review pull requests says so and points to Settings › Plugins.
+- A review posts once. Before it is sent, the draft keeps a name for it, also for an approval with no comments; **Retry**, after a restart too, sends the same name, and the plugin finds what an earlier try left on the code host, such as a review GitHub took before its answer was lost, or the comments Azure DevOps took before the vote failed, and sends only the rest. Changing the verdict, the summary or the comments makes it a new review. Retry is always the user's: nothing retries on its own. Two windows retrying the same draft at once post it once: the local API runs the tries of one name one at a time.
+- When the plugin can't tell whether an earlier try reached the code host, such as when a review of the user's since then names no submission because someone edited the hidden name out on GitHub, nothing is posted and the dialog says "This review may already be on GitHub: something you posted since may be it. Check the pull request, then post again if it's not there. Your draft review is kept.", with **Post again**, which sends it as a new review. A comment says the same with "This comment may already be on …".
+- On Azure DevOps, where a vote counts for the whole pull request, approving after new commits arrived fails with "The pull request has new commits since you read it. Open it again to approve its latest changes." and posts nothing. Comments, and Wait for author, still go on the lines the user read.
+- After the page reads a new head, a draft comment whose line no longer reads as it did, any of its lines for a comment on several, is marked **Outdated**. Outdated comments leave their lines for "Draft comments on lines that changed", before the conversation, named by file and line, with Remove. They are never sent: the dialog adds "1 outdated comment stays in your draft.", and they stay after the review is sent.
+- A merged or closed pull request with a draft review stays in the local list, under Recently closed, past its seven days, until the draft is posted or discarded. Its page says, under the status line, "This pull request was merged. Your draft review is kept: post its comments, or discard it.", with **Post as comments · N**, which posts each current comment on its line, one at a time, taking each out once posted, and **Discard**, which asks first ("Discard the draft review?"). It offers no Finish review and no **+**. Each comment's post is named, and the name kept with it, before it's sent, so **Retry**, after a restart too, posts none twice; a comment the plugin can't settle offers **Post again**.
+- Commenting and reviewing need the connection's **Review pull requests** access choice, which starts off.
 
 ### Changes
 
