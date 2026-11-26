@@ -310,8 +310,9 @@ function ChatLine({
   }
   if (entry.kind === "action") {
     const { action, deletion } = entry;
-    // A plugin's address links only on the pull request's own code host.
     const link = deckLinkOnHost(action.url, pullRequestUrl);
+    // The pull request's own address, only when it is a web address.
+    const home = deckLinkOnHost(pullRequestUrl, pullRequestUrl);
     return (
       <li className="deck-chat-action">
         <span className={deletion === "deleted" ? "line-through" : undefined}>
@@ -337,13 +338,13 @@ function ChatLine({
           >
             Show
           </button>
-        ) : (
+        ) : home ? (
           // Every line has a link: a write the code host gave no address
-          // for shows on the pull request.
-          <a href={pullRequestUrl} target="_blank" rel="noreferrer">
+          // for, or one off its origin, shows on the pull request.
+          <a href={home} target="_blank" rel="noreferrer">
             Open
           </a>
-        )}
+        ) : null}
         {action.posted && deletion !== "deleted" ? (
           <button
             type="button"

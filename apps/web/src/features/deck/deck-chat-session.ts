@@ -271,10 +271,9 @@ export class DeckChatSession {
       this.#set(next);
       // Once per write: a replayed event changes nothing.
       if (event.type === "action") this.#onAction(event.action);
-      if (!chatGoing(next)) {
-        this.#unwatch?.();
-        this.#unwatch = undefined;
-      }
+      // An ended reply's turn is still followed until the next message: a
+      // draft comment the window added as the turn ended has its line
+      // after the end (#796), and it needs its Delete.
     });
     // Its events so far replay first: a turn already over is followed no more.
     if (!chatGoing(this.#state)) this.detach();

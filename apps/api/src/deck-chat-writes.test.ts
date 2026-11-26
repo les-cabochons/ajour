@@ -302,6 +302,34 @@ describe("an action line", () => {
     expect(action!.edited).toEqual({ title, draft: false });
   });
 
+  it("never cuts a character in half", async () => {
+    const chat = setup();
+    const title = "🔥".repeat(300);
+    const writes = createDeckChatWrites({
+      runningTurnOf: () => chat.state.running,
+      allowed: async () => true,
+      allowedNow: () => true,
+      deck: { held: async () => undefined },
+      codeHost: async (_source, _operation, _request, beforeStart) => {
+        beforeStart();
+        return { title, draft: false } as never;
+      },
+      addDraftComment: async () => ({ draftId: "d" }),
+      publish: (event) =>
+        chat.published.push(agentTurnEventSchema.parse(event)),
+    });
+    writes.chatStarted("turn-1", { author: true });
+
+    await writes.run("edit_title", "client-1", binding, { title });
+
+    const [action] = chat.actions();
+    // No lone half of a surrogate pair is left.
+    expect(action!.text).not.toMatch(/[\uD800-\uDFFF](?![\uDC00-\uDFFF])/u);
+    expect(
+      Array.from(action!.text.replace(/^Renamed the pull request “|…”$/g, "")),
+    ).toEqual(Array(199).fill("🔥"));
+  });
+
   it.each([
     ["javascript:alert(1)"],
     ["https://github.com.evil.example/pr/1"],

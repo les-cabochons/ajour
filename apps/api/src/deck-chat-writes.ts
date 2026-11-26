@@ -118,14 +118,20 @@ const PATH_START_SHOWN = 40;
 /** How much of a title an action line quotes. */
 const TITLE_SHOWN = 200;
 
-const shorten = (text: string, max: number) =>
-  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+/** Cut by characters, never inside one: an emoji keeps both halves. */
+const shorten = (text: string, max: number) => {
+  const characters = Array.from(text);
+  return characters.length > max
+    ? `${characters.slice(0, max - 1).join("")}…`
+    : text;
+};
 
 /** A path short enough for its line, file name kept: `src/deeply/…/nested/api.ts`. */
 function shownPath(path: string) {
-  if (path.length <= PATH_SHOWN) return path;
+  const characters = Array.from(path);
+  if (characters.length <= PATH_SHOWN) return path;
   const end = PATH_SHOWN - PATH_START_SHOWN - 1;
-  return `${path.slice(0, PATH_START_SHOWN)}…${path.slice(-end)}`;
+  return `${characters.slice(0, PATH_START_SHOWN).join("")}…${characters.slice(-end).join("")}`;
 }
 
 /** How an action line names lines of a file: `src/api.ts:12` or `src/api.ts:10–12`. */

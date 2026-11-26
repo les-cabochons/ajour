@@ -475,6 +475,30 @@ it("removes a draft comment it added from the draft review with Delete", async (
   expect(localStore.snapshot().deckDraftReviews ?? []).toEqual([]);
 });
 
+it("shows the line of a draft comment the window added as its turn ended, with Delete", async () => {
+  vi.mocked(api.chatDeck).mockResolvedValueOnce({ turn: turn("t8") });
+  await renderReview();
+  press("a");
+  sendMessage("Add a draft comment.");
+  await waitFor(() => expect(api.chatDeck).toHaveBeenCalled());
+
+  text("t8", 0, "Done.");
+  ended("t8");
+  // The local API heard the window's answer after the turn ended.
+  acted("t8", {
+    id: "a8",
+    kind: "draft_comment",
+    text: "Added a draft comment on src/api.ts:1",
+    at: { path: "src/api.ts", side: "head", line: 1 },
+    posted: { kind: "draft_comment", draftId: "draft-late" },
+  });
+
+  const line = screen
+    .getByText("Added a draft comment on src/api.ts:1")
+    .closest("li")!;
+  expect(within(line).getByRole("button", { name: "Delete" })).toBeTruthy();
+});
+
 it("shows the title a chat edit gave the pull request", async () => {
   localStore.removeConnectionPullRequests("github", "work");
   sync(true);
