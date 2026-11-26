@@ -76,6 +76,7 @@ import {
   type DeckDraftComment,
   type DeckDraftReview,
   type DeckReviewRef,
+  type DeckSentComment,
 } from "@/domain/deck/draft-review";
 import {
   adoptViewedFiles,
@@ -1996,7 +1997,10 @@ const store = {
     });
   },
   /** The code host took the review: its comments and its submission leave the draft. */
-  completeReviewSubmission(ref: DeckReviewRef, sent: readonly string[]) {
+  completeReviewSubmission(
+    ref: DeckReviewRef,
+    sent: readonly DeckSentComment[],
+  ) {
     return updateDraftReviews((reviews) =>
       completeReviewSubmission(reviews, ref, sent),
     );

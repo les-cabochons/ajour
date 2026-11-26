@@ -20,9 +20,10 @@ export type PullRequestReadState<T> =
   | { status: "ready"; value: T }
   /**
    * The code host's plugin doesn't offer it, or the connection was removed.
-   * Retrying won't help.
+   * Retrying won't help. `update`: the plugin is older than Deck needs, and
+   * the page links Settings › Plugins.
    */
-  | { status: "unavailable"; message: string }
+  | { status: "unavailable"; message: string; update?: true }
   | { status: "error"; message: string };
 
 /** A failed read: unavailable when retrying won't help, an error otherwise. */
@@ -33,11 +34,11 @@ function failedRead(
   const message = error instanceof Error ? error.message : fallback;
   const reason =
     error instanceof AppApiError ? error.payload?.reason : undefined;
+  if (reason === "not_supported") {
+    return { status: "unavailable", message, update: true };
+  }
   return {
-    status:
-      reason === "not_supported" || reason === "connection_removed"
-        ? "unavailable"
-        : "error",
+    status: reason === "connection_removed" ? "unavailable" : "error",
     message,
   };
 }

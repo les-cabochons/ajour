@@ -55,9 +55,43 @@ export async function getFileContent(connection, request) {
     content: request.sha === ${JSON.stringify(HEAD)} ? "one\\nTWO\\nthree\\n" : "one\\ntwo\\nthree\\n",
   };
 }
+export async function getPullRequestConversation() {
+  return {
+    description: "",
+    timeline: [],
+    threads: [{
+      id: "t1",
+      path: "src/api.ts",
+      side: "head",
+      line: 2,
+      resolved: false,
+      outdated: false,
+      comments: [{
+        id: "c0",
+        author: { login: "rivka", isBot: false },
+        body: "Why upper case?",
+        createdAt: 1795600000000,
+      }],
+    }],
+    viewedPaths: [],
+    mergeMethods: ["merge"],
+  };
+}
 export async function postComment(connection, request) {
+  // A retry finds what an earlier try with its submission posted (#784).
+  const earlier = request.firstTriedAt === undefined
+    ? undefined
+    : writes().find((write) => write.request.submissionId === request.submissionId);
+  if (earlier) return earlier.result;
   writes().push({ operation: "postComment", request });
-  return { commentId: "c-" + writes().length, url: "https://github.com/acme/billing-api/pull/482#c" + writes().length };
+  const result = { commentId: "c-" + writes().length, url: "https://github.com/acme/billing-api/pull/482#c" + writes().length };
+  writes().at(-1).result = result;
+  if (globalThis.chatLoseAnswer) {
+    // The code host took it; its answer never came back.
+    globalThis.chatLoseAnswer = false;
+    throw Object.assign(new Error("Bad gateway"), { status: 502 });
+  }
+  return result;
 }
 export async function replyToThread(connection, request) {
   writes().push({ operation: "replyToThread", request });
@@ -102,6 +136,7 @@ const stops: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const stop of stops.splice(0).reverse()) await stop();
   delete (globalThis as { chatWrites?: unknown }).chatWrites;
+  delete (globalThis as { chatLoseAnswer?: unknown }).chatLoseAnswer;
 });
 
 const hostWrites = () =>
@@ -353,7 +388,7 @@ describe("Deck's chat writes", () => {
         call("post_comment", { body: "Looks good overall." }),
         call("reply_to_thread", { threadId: "t1", body: "Fixed." }),
         call("resolve_thread", { threadId: "t1", resolved: true }),
-        call("submit_review", { verdict: "approve", body: "Ship it." }),
+        call("submit_review", { body: "Ship it." }),
         call("edit_title", { title: "Shout the second line" }),
         call("set_draft", { draft: true }),
         call("add_draft_comment", {
@@ -395,6 +430,11 @@ describe("Deck's chat writes", () => {
         "set_draft",
       ]);
       expect(tools.some((name: string) => /merge/i.test(name))).toBe(false);
+      // The chat's review has no verdict to give (council round 1).
+      const review = list!.reply.result.tools.find(
+        (tool: { name: string }) => tool.name === "submit_review",
+      );
+      expect(Object.keys(review.inputSchema.properties)).toEqual(["body"]);
 
       expect(
         hostWrites().map(({ operation, request }) => ({
@@ -437,7 +477,7 @@ describe("Deck's chat writes", () => {
           repository: REPOSITORY,
           number: 482,
           headSha: HEAD,
-          verdict: "approve",
+          verdict: "comment",
           body: "Ship it.",
           comments: [],
           submissionId: expect.stringMatching(/^chat_/),
@@ -499,7 +539,7 @@ describe("Deck's chat writes", () => {
         { kind: "resolve", text: "Resolved a thread" },
         {
           kind: "review",
-          text: "Approved the pull request",
+          text: "Submitted a review",
           url: "https://github.com/acme/billing-api/pull/482#r1",
         },
         {
@@ -650,6 +690,86 @@ describe("Deck's chat writes", () => {
         "doesn't show src/api.ts:40",
       );
       expect(hostWrites()).toEqual([]);
+    },
+  );
+});
+
+describe("Deck's chat writes, council round 1", () => {
+  it(
+    "writes only to the pull request's own threads, and never votes",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startChatApi(() => [
+        { readTurn: true },
+        call("reply_to_thread", { threadId: "PRRT_other", body: "Fixed." }),
+        call("resolve_thread", { threadId: "PRRT_other", resolved: true }),
+        call("submit_review", { verdict: "approve", body: "Ship it." }),
+        call("submit_review", { verdict: "request_changes", body: "No." }),
+        { stream: ["Done."] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await api.consent();
+
+      const chatted = await api.chat({ author: true });
+      await api.ended(chatted.body.turn.id);
+
+      const replies = await api.mcpReplies();
+      expect(replies.map((reply) => reply.reply.result.isError)).toEqual([
+        true,
+        true,
+        true,
+        true,
+      ]);
+      const texts = replies.map(
+        (reply) => reply.reply.result.content[0].text as string,
+      );
+      expect(texts[0]).toContain("isn't one of this pull request's threads");
+      expect(texts[1]).toContain("isn't one of this pull request's threads");
+      expect(texts[2]).toContain("Finish review");
+      expect(texts[3]).toContain("Finish review");
+      expect(hostWrites()).toEqual([]);
+      expect(api.actions(chatted.body.turn.id)).toEqual([]);
+    },
+  );
+
+  it(
+    "posts once when the code host took a comment whose answer was lost and the agent repeats it, with one action line",
+    { timeout: 20_000 },
+    async () => {
+      const comment = {
+        body: "Why upper case?",
+        lines: { path: "src/api.ts", side: "head", line: 2 },
+      };
+      const api = await startChatApi(() => [
+        { readTurn: true },
+        call("post_comment", comment),
+        call("post_comment", comment),
+        { stream: ["Posted."] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await api.consent();
+      (globalThis as { chatLoseAnswer?: boolean }).chatLoseAnswer = true;
+
+      const chatted = await api.chat();
+      await api.ended(chatted.body.turn.id);
+
+      const [lost, found] = await api.mcpReplies();
+      expect(lost!.reply.result.isError).toBe(true);
+      expect(lost!.reply.result.content[0].text).toContain(
+        "it may already be there; don't post it again",
+      );
+      expect(found!.reply.result.isError).toBeFalsy();
+      expect(hostWrites()).toHaveLength(1);
+      expect(
+        api.actions(chatted.body.turn.id).map(({ kind, posted }) => ({
+          kind,
+          posted,
+        })),
+      ).toEqual([
+        { kind: "comment", posted: { kind: "comment", commentId: "c-1" } },
+      ]);
     },
   );
 });

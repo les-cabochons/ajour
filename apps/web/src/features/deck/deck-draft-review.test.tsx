@@ -820,6 +820,47 @@ it("sends the draft review with Finish review and its verdict, then clears it", 
   expect(screen.getByRole("button", { name: "Finish review" })).toBeTruthy();
 });
 
+it("keeps a draft comment edited while the review was sending, with its new words", async () => {
+  let answer!: (result: { reviewId: string }) => void;
+  vi.mocked(api.submitPullRequestReview).mockImplementationOnce(
+    () => new Promise((resolve) => (answer = resolve)),
+  );
+  await renderReviewPage();
+  fireEvent.click(
+    within(compose("Rename this.")).getByRole("button", {
+      name: "Add to review",
+    }),
+  );
+  press("r");
+  press("y");
+  await waitFor(() => expect(api.submitPullRequestReview).toHaveBeenCalled());
+
+  const card = within(changes()).getByRole("article", {
+    name: "Draft comment on src/api.ts, line 2",
+  });
+  fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
+  const editing = screen.getByRole("form", { name: "Edit the draft comment" });
+  fireEvent.change(within(editing).getByRole("textbox", { name: "Comment" }), {
+    target: { value: "Rename it to run." },
+  });
+  fireEvent.click(within(editing).getByRole("button", { name: "Save" }));
+  await act(async () => answer({ reviewId: "review-1" }));
+
+  await waitFor(() =>
+    expect(
+      localStore.snapshot().deckDraftReviews?.[0]?.submission,
+    ).toBeUndefined(),
+  );
+  expect(draftComments()).toEqual([
+    expect.objectContaining({ body: "Rename it to run." }),
+  ]);
+  expect(
+    within(changes()).getByRole("article", {
+      name: "Draft comment on src/api.ts, line 2",
+    }).textContent,
+  ).toContain("Rename it to run.");
+});
+
 it.each([
   ["c", "Comment"],
   ["n", "Request changes"],

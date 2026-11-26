@@ -282,7 +282,7 @@ describe("finishing the review", () => {
           { path: "src/api.ts", side: "head", line: 3, body: "Fine." },
         ],
       },
-      sent: [kept.comment!.id],
+      sent: [{ id: kept.comment!.id, body: "Fine." }],
       kept: [changed.comment!.id],
     });
   });
@@ -374,6 +374,22 @@ describe("stored drafts", () => {
       normalizeDraftReviews([{ ...reviews[0], comments: "broken" }, 4]),
     ).toEqual([]);
   });
+
+  it("drops only a stored comment it can't read, and keeps the others", () => {
+    const { reviews } = withComment(withComment([], 2).reviews, 3, "Fine.");
+    const [stored] = JSON.parse(JSON.stringify(reviews)) as [
+      { comments: Record<string, unknown>[] },
+    ];
+    stored.comments[0] = { ...stored.comments[0], line: -1 };
+
+    const [draft] = normalizeDraftReviews([stored]);
+
+    expect(draft?.comments.map((comment) => comment.body)).toEqual(["Fine."]);
+    // A draft left with nothing to send goes.
+    expect(
+      normalizeDraftReviews([{ ...stored, comments: [stored.comments[0]] }]),
+    ).toEqual([]);
+  });
 });
 
 describe("a comment on several lines", () => {
@@ -440,7 +456,7 @@ describe("a review's submission", () => {
     const id = first.request!.submissionId;
     expect(id).toMatch(/^[\w-]+$/);
     expect(draftReviewOf(first.reviews, REF)?.submission?.id).toBe(id);
-    expect(first.sent).toEqual([comment!.id]);
+    expect(first.sent).toEqual([{ id: comment!.id, body: "Rename this." }]);
     // Stored, it reads back: a retry after a restart sends the same name.
     const stored = normalizeDraftReviews(
       JSON.parse(JSON.stringify(first.reviews)),
@@ -511,6 +527,29 @@ describe("a review's submission", () => {
     );
     expect(after?.comments.map((comment) => comment.id)).toEqual([
       changed.comment!.id,
+    ]);
+    expect(after?.submission).toBeUndefined();
+  });
+
+  it("keeps a comment edited while the review was sending as a draft, with its new words", () => {
+    const { reviews, comment } = withComment([], 2);
+    const other = withComment(reviews, 3, "Fine.");
+    const first = press(other.reviews);
+    const edited = editDraftComment(
+      first.reviews,
+      REF,
+      comment!.id,
+      "Rename it to run.",
+      2_000,
+    );
+
+    const after = draftReviewOf(
+      completeReviewSubmission(edited, REF, first.sent),
+      REF,
+    );
+
+    expect(after?.comments).toEqual([
+      expect.objectContaining({ id: comment!.id, body: "Rename it to run." }),
     ]);
     expect(after?.submission).toBeUndefined();
   });

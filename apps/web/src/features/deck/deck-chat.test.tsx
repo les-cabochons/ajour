@@ -441,7 +441,7 @@ it("says so on the line when the code host can't delete a comment", async () => 
   fireEvent.click(within(line).getByRole("button", { name: "Delete" }));
 
   expect((await within(line).findByRole("alert")).textContent).toBe(
-    "GitHub doesn't let Ajour delete it yet. Delete it on GitHub.",
+    "Update the GitHub plugin in Settings › Plugins to delete it from Deck, or delete it on GitHub.",
   );
 });
 

@@ -362,6 +362,15 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
       if (!source) throw new DeckGuideRefused(MOVED_ON);
       const context = await options.readContext(source);
       if (!going()) throw new DeckGuideRefused(STOPPED);
+      // Asked again before the agent gets them: the user may have taken
+      // the repository back, or given it to another agent, meanwhile.
+      if (!(await options.allowed(binding))) {
+        throw new DeckGuideRefused(REVOKED);
+      }
+      if (!(await options.allowed(binding, "context"))) {
+        throw new DeckGuideRefused(NEEDS_CONTEXT);
+      }
+      if (!going()) throw new DeckGuideRefused(STOPPED);
       quoted.set(turnId, context.tickets?.map(ticketOf) ?? null);
       throw new DeckGuideRefused(
         [

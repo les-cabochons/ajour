@@ -893,7 +893,7 @@ describe("opening a pull request in Deck", () => {
     });
   });
 
-  it("says the code host doesn't show changes yet when its plugin doesn't read them", async () => {
+  it("says to update the plugin when it doesn't read a pull request's changes", async () => {
     const { api, open } = await startDeck(
       pluginSource.replace(/export async function getFileContent[\s\S]*$/, ""),
     );
@@ -901,7 +901,8 @@ describe("opening a pull request in Deck", () => {
     await expect(open()).resolves.toEqual({
       status: 404,
       body: {
-        error: "GitHub doesn't show a pull request's changes yet.",
+        error:
+          "Update the GitHub plugin in Settings › Plugins to review pull requests in Deck.",
         reason: "not_supported",
       },
     });
@@ -970,13 +971,14 @@ export async function getChecks(connection, request) {
     ).toMatchObject({ outcome: "ok", pull_request: { check_count: 2 } });
   });
 
-  it("says the plugin doesn't offer them when it has no getChecks", async () => {
+  it("says to update the plugin when it has no getChecks", async () => {
     const { api, connectionId } = await startDeck();
 
     await expect(readChecks(api.baseUrl, connectionId)).resolves.toEqual({
       status: 404,
       body: {
-        error: "GitHub doesn't offer this yet.",
+        error:
+          "Update the GitHub plugin in Settings › Plugins to see a pull request's checks in Deck.",
         reason: "not_supported",
       },
     });
@@ -1255,13 +1257,14 @@ export async function deleteComment(connection, request) {
     ).toMatchObject({ outcome: "ok" });
   });
 
-  it("says the plugin doesn't offer it when it has no deleteComment", async () => {
+  it("says to update the plugin when it has no deleteComment", async () => {
     const { api, connectionId } = await startDeck();
 
     await expect(remove(api.baseUrl, connectionId)).resolves.toEqual({
       status: 404,
       body: {
-        error: "GitHub doesn't offer this yet.",
+        error:
+          "Update the GitHub plugin in Settings › Plugins to delete comments from Deck.",
         reason: "not_supported",
       },
     });

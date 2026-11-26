@@ -153,10 +153,15 @@ export interface AgentRunnerOptions {
   /** Where each conversation turn's events go: the window's event stream. */
   publishTurnEvent?: (event: AgentTurnEvent) => void;
   /**
-   * Whether the user allows a pull request's repository with an agent,
-   * asked before each turn is sent to it. Without it, no turn is sent.
+   * Whether the user allows a pull request's repository with an agent, for
+   * what a turn of `task` sends, asked before each turn is sent to it.
+   * Without it, no turn is sent.
    */
-  admitsTurn?: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
+  admitsTurn?: (
+    pullRequest: string,
+    cli: AgentCliId,
+    task: CoreAgentTask,
+  ) => Promise<boolean>;
   /**
    * Why a turn its CLI ended as done failed all the same, such as a guide
    * turn that saved no guide (#794). Undefined lets it end done.

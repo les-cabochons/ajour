@@ -83,10 +83,16 @@ export interface AgentConversationsOptions {
   publish: (event: AgentTurnEvent) => void;
   /**
    * Whether the user still allows the pull request's repository with this
-   * agent. Asked before each turn is sent, so nothing reaches an agent the
-   * user took the repository back from (#791).
+   * agent, for what a turn of `task` sends. Asked before each turn is
+   * sent, so nothing reaches an agent the user took the repository back
+   * from (#791), and a regroup's description and tickets reach only the
+   * agent the turn goes to, whichever was picked when it was asked for.
    */
-  admits: (pullRequest: string, cli: AgentCliId) => Promise<boolean>;
+  admits: (
+    pullRequest: string,
+    cli: AgentCliId,
+    task: CoreAgentTask,
+  ) => Promise<boolean>;
   /**
    * Why a turn the CLI ended as done failed all the same, or undefined:
    * a guide turn that saved no guide (#794).
@@ -607,14 +613,22 @@ export class AgentConversations {
    * closes, so no turn queued behind it is sent either.
    */
   private async admitted(conversation: Conversation, turn: Turn) {
-    if (await this.options.admits(conversation.key, conversation.adapter.id)) {
+    if (
+      await this.options.admits(
+        conversation.key,
+        conversation.adapter.id,
+        turn.task,
+      )
+    ) {
       return true;
     }
     turn.finish({
       outcome: "failed",
       // The page shows it, and nothing there names the agent.
       message:
-        "Ajour may no longer send this repository's code. Ask again to allow it.",
+        turn.task === "deck.guide"
+          ? "Ajour may no longer send this pull request's description and linked tickets to the agent. Regroup again to allow it."
+          : "Ajour may no longer send this repository's code. Ask again to allow it.",
       reason: "repository_not_allowed",
     });
     return false;

@@ -665,16 +665,27 @@ it("opens the newest head on Refresh when the versions know a push the last sync
 
 it("says when the code host doesn't list its versions, and still shows the diff", async () => {
   vi.mocked(api.readPullRequestVersions).mockRejectedValue(
-    new AppApiError("GitHub doesn't offer this yet.", 404, undefined, {
-      error: "GitHub doesn't offer this yet.",
-      reason: "not_supported",
-    }),
+    new AppApiError(
+      "Update the GitHub plugin in Settings › Plugins to see a pull request's versions in Deck.",
+      404,
+      undefined,
+      {
+        error:
+          "Update the GitHub plugin in Settings › Plugins to see a pull request's versions in Deck.",
+        reason: "not_supported",
+      },
+    ),
   );
   const changes = await renderReviewPage();
   const bar = versionsBar(changes);
 
   expect(
-    await within(bar).findByText("GitHub doesn't offer this yet."),
+    await within(bar).findByText(
+      "Update the GitHub plugin in Settings › Plugins to see a pull request's versions in Deck.",
+    ),
+  ).toBeTruthy();
+  expect(
+    within(bar).getByRole("link", { name: "Open Settings › Plugins" }),
   ).toBeTruthy();
   expect(hunkNames(changes)).toHaveLength(3);
   expect(api.readDeckSinceReview).not.toHaveBeenCalled();
