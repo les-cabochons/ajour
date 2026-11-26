@@ -1663,11 +1663,6 @@
     padding: 0;
   }
 
-  .deck-chat-sheet[data-side="right"] {
-    width: 100%;
-    max-width: none;
-  }
-
   .deck-chat {
     display: flex;
     flex: 1 1 auto;

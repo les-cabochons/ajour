@@ -18,4 +18,4 @@ Deck's chat (#796) is the fallback for what the asks don't cover, and the user c
 
 - The consent the user gave for asks covers the chat: a message sends what an ask sends, the user's words, the code the agent reads and the threads, and nothing more. A chat regroup reads only what the agent reads, so it doesn't need the regroup's wider consent (#794).
 - What the chat posts is the user's on the code host: the privacy policy and Deck's page say so, and that a deleted comment's earlier notifications stay with the people who got them.
-- A plugin that implements `deleteComment` lets the chat's Delete work on that code host; the official plugins add it in a follow-up.
+- A plugin that implements `deleteComment` lets the chat's Delete work on that code host; the official plugins add it in #960.

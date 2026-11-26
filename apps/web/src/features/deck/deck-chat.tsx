@@ -172,7 +172,8 @@ export function DeckChatPanel(props: DeckChatPanelProps) {
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="right"
-          className="deck-chat-sheet"
+          // Full width and full height, over the Sheet's 3/4 default.
+          className="deck-chat-sheet data-[side=right]:w-full data-[side=right]:sm:max-w-none"
           showCloseButton={false}
         >
           <ChatBody {...props} titled={false} />

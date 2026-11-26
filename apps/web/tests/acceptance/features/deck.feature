@@ -181,6 +181,32 @@ Feature: Deck lists the pull requests on your plate
     When I add it to the review with Ctrl+Enter
     Then a draft comment on lines 12 to 14 holds "It waits longer each time"
 
+  Scenario: Open the chat beside the review and continue an explanation in it
+    Given the local API built the requested pull request's guide
+    And asks about lines are answered with "It waits longer each time."
+    And the chat answers with Claude Code
+    When I open Deck
+    And I open the requested pull request summary
+    And I press the "a" key
+    Then the chat is docked on the right, 360px wide, beside the review
+    And the chat's header reads "#1 · Claude Code · PR"
+    When I close the chat
+    And I drag over the line numbers from line 12 to line 14
+    And I press the "e" key
+    Then the explanation of "lines 12–14" shows "It waits longer each time."
+    When I continue the explanation in the chat
+    Then the chat's composer carries the chip "src/client/retry.ts, lines 12–14"
+    When I send "Why that backoff?" in the chat
+    Then the chat sends "Why that backoff?" about lines 12 to 14
+
+  Scenario: Open the chat as a full-height sheet on a narrow screen
+    Given the local API built the requested pull request's guide
+    And the chat answers with Claude Code
+    When I open Deck on a narrow screen
+    And I open the requested pull request summary
+    And I open the chat
+    Then the chat covers the narrow viewport
+
   Scenario: Read a pull request too large for a guide
     Given the local API answers a pull request with too many hunks for a guide
     When I open Deck
