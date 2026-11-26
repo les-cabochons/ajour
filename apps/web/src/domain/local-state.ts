@@ -21,6 +21,7 @@ import type { PriorityLevel } from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import type { DeckDraftReview } from "@/domain/deck/draft-review";
+import type { DeckViewedMarks } from "@/domain/deck/viewed-marks";
 
 export interface LocalProject {
   _id: string;
@@ -1066,6 +1067,12 @@ export interface LocalAppState {
    * its draft. See `domain/deck/draft-review.ts`.
    */
   deckDraftReviews?: DeckDraftReview[];
+  /**
+   * Deck's viewed marks, one entry per pull request with hunks marked
+   * viewed, dropped once the pull request leaves the list. See
+   * `domain/deck/viewed-marks.ts`.
+   */
+  deckViewedMarks?: DeckViewedMarks[];
   /** Decisions about calendar event occurrences. See ADR 0005. */
   calendarDecisions?: LocalCalendarDecision[];
   /** Remembered and hidden meetings. */

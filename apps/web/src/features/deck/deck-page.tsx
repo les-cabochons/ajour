@@ -83,7 +83,7 @@ export function DeckPage({ itemId }: { itemId?: string }) {
             </MessagePanel>
           </>
         ) : (
-          // Another pull request starts with its drawer closed, nothing viewed, no ask and no composer open.
+          // Another pull request starts with its drawer closed, its own viewed marks, no ask and no composer open.
           <PullRequestReview key={item._id} pullRequest={item} now={now} />
         )}
       </div>

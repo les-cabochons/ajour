@@ -186,8 +186,13 @@ import {
   codeHostChecksResultSchema,
   codeHostPostCommentResultSchema,
   codeHostConversationResultSchema,
+  codeHostResolveThreadResultSchema,
+  codeHostSetFileViewedResultSchema,
   codeHostSubmitReviewResultSchema,
   type CodeHostPostCommentRequest,
+  type CodeHostReplyRequest,
+  type CodeHostResolveThreadRequest,
+  type CodeHostSetFileViewedRequest,
   type CodeHostSubmitReviewRequest,
   codeHostSyncResultSchema,
   codeHostVersionsResultSchema,
@@ -485,6 +490,73 @@ export function postPullRequestComment(
       body: JSON.stringify(comment),
     },
     codeHostPostCommentResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Replies at the end of a review thread, at once (ADR 0002). Named like a
+ * comment, so a retry posts it once.
+ */
+export function replyToPullRequestThread(
+  pluginId: string,
+  connectionId: string,
+  reply: CodeHostReplyRequest,
+) {
+  return appApiRequest(
+    "replyToPullRequestThread",
+    codeHostPath(pluginId, connectionId, "replyToThread"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reply),
+    },
+    codeHostPostCommentResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/** Resolves a review thread, or opens it again, at once (ADR 0002). */
+export function setPullRequestThreadResolved(
+  pluginId: string,
+  connectionId: string,
+  request: CodeHostResolveThreadRequest,
+) {
+  return appApiRequest(
+    "setPullRequestThreadResolved",
+    codeHostPath(pluginId, connectionId, "setThreadResolved"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    codeHostResolveThreadResultSchema,
+    (unit) =>
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
+  );
+}
+
+/**
+ * Marks a file viewed on the code host, or not, at the head the user
+ * viewed it at. A code host without per-file viewed state answers 404 with
+ * the reason `not_supported`.
+ */
+export function setPullRequestFileViewed(
+  pluginId: string,
+  connectionId: string,
+  request: CodeHostSetFileViewedRequest,
+) {
+  return appApiRequest(
+    "setPullRequestFileViewed",
+    codeHostPath(pluginId, connectionId, "setFileViewed"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    codeHostSetFileViewedResultSchema,
     (unit) =>
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } }),
   );

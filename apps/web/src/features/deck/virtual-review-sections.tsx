@@ -33,12 +33,14 @@ import {
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
+import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import {
   HUNK_ATTRIBUTE,
   ReviewHunkView,
   ReviewSectionHeader,
   useNoteMarks,
   type AddComment,
+  type ToggleFileViewed,
 } from "./review-sections";
 
 /*
@@ -97,6 +99,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   viewed,
   theme,
   onToggleViewed,
+  onToggleFileViewed,
   navigator,
   listRef: list,
   notes,
@@ -112,6 +115,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   viewed: ReadonlySet<string>;
   theme: "light" | "dark";
   onToggleViewed: (hunkId: string) => void;
+  onToggleFileViewed: ToggleFileViewed;
   navigator: Ref<SectionNavigator>;
   /** The rows' box, which the gutter beside it follows. */
   listRef: RefObject<HTMLDivElement | null>;
@@ -431,6 +435,10 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
                 section={section}
                 seen={viewedCount(section, viewed)}
                 headingId={`${baseId}-${row.section}`}
+                fileViewed={
+                  section.file ? fileIsViewed(section.file, viewed) : false
+                }
+                onToggleFileViewed={onToggleFileViewed}
               />
             ) : (
               <ReviewHunkView

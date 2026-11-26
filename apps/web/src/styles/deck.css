@@ -562,6 +562,17 @@
   }
 
   /*
+   * A file's own Viewed mark, at the end of its Files A–Z header: no taller
+   * than the path's line, so the header keeps its height and J, K and the
+   * ticks still land the path where they did.
+   */
+  .deck-file-viewed {
+    height: 1rem;
+    align-self: center;
+    padding-block: 0;
+  }
+
+  /*
    * The quiet guide tree. Closed, a 24px strip of ticks: each a 4px bar as
    * long as its hunks, filled as they are viewed. Open, the titles.
    */
@@ -1206,6 +1217,44 @@
   .deck-composer-error {
     margin: 0;
     color: var(--destructive);
+    font-size: var(--text-xs);
+  }
+
+  /* Suggest change, under the composer's field at its end. */
+  .deck-composer-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -0.25rem;
+  }
+
+  /* A thread's Reply and Resolve, or its reply field, under its comments (#785). */
+  .deck-thread > .deck-note-actions {
+    padding-top: 0.25rem;
+  }
+
+  .deck-thread > .deck-composer-error {
+    padding: 0.25rem 0.625rem 0;
+  }
+
+  .deck-reply {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-top: 1px solid var(--border-row);
+  }
+
+  .deck-reply .deck-note-actions {
+    padding: 0;
+  }
+
+  /* A suggested change in a comment: its block says what it is. */
+  .deck-comment pre:has(> code.language-suggestion)::before {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--text-secondary);
+    content: "Suggested change";
+    font-family: var(--font-sans);
     font-size: var(--text-xs);
   }
 

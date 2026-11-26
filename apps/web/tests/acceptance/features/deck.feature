@@ -137,6 +137,22 @@ Feature: Deck lists the pull requests on your plate
     And I add it to the review with Ctrl+Enter
     Then the draft comment "Cap the backoff." sits beside its line
 
+  Scenario: Reply to a thread, resolve it, suggest a change and mark a file viewed
+    Given the local API built the requested pull request's guide
+    And the code host has a thread on line 13 and takes replies, resolves and viewed files
+    When I open Deck
+    And I open the requested pull request summary
+    And I reply "Capped at 30 s in the next push." to the thread
+    Then the reply "Capped at 30 s in the next push." shows in the thread
+    When I resolve the thread
+    Then the thread reads Resolved, with Unresolve
+    When I suggest a change on the line that reads "  const delay = backoff(attempt);"
+    Then the comment holds a suggestion block of "  const delay = backoff(attempt);"
+    When I press the "Escape" key
+    And I switch to Files A–Z
+    And I mark the file "src/client/retry.ts" viewed
+    Then the code host marks "src/client/retry.ts" viewed at the head read
+
   Scenario: Explain selected lines and turn the answer into a comment
     Given the local API built the requested pull request's guide
     And the code host takes reviews

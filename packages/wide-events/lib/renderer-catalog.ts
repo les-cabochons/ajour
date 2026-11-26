@@ -753,6 +753,23 @@ export const rendererEvents = {
     deck: { comment_count: operational<number>() },
   }),
   "deck.draft_review_discard": command({}),
+
+  // Deck's viewed marks (#785). Never a path or a hunk.
+  "deck.viewed_marks_set": command({
+    deck: {
+      hunk_count: operational<number>(),
+      viewed: operational<boolean>(),
+      file_count: operational<number>(),
+    },
+  }),
+  /** The review page read a new head: the marks of the hunks it changed were cleared. */
+  "deck.viewed_marks_refresh": command({
+    deck: { cleared_count: operational<number>() },
+  }),
+  /** The code host said the user viewed these files, so their hunks were marked. */
+  "deck.viewed_files_adopt": command({
+    deck: { file_count: operational<number>() },
+  }),
   /** A closed pull request's comment named its post, a retry with the last try's name. */
   "deck.comment_submission_prepare": command({}),
   /** Finish review named its request, a retry with the last try's name. */
