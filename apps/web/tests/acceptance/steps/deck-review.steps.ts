@@ -33,6 +33,13 @@ When(
   "I comment {string} on the line that reads {string}",
   async ({ page }, comment: string, line: string) => {
     const code = changes(page).getByText(line, { exact: true });
+    // A hunk draws its lines once it is on screen, and the summary above
+    // the changes leaves some below it: bring each to the screen in turn.
+    const hunks = changes(page).getByRole("group", { name: /, lines \d+/ });
+    for (const hunk of await hunks.all()) {
+      if (await code.count()) break;
+      await hunk.scrollIntoViewIfNeeded();
+    }
     await code.hover();
     // The one "+" follows the pointer, beside the line's number.
     await changes(page)
@@ -48,6 +55,13 @@ When(
 When(
   "I comment {string} on line {int} from the keyboard",
   async ({ page }, comment: string, line: number) => {
+    // The hunk's keyboard button comes once it draws, on screen, and the
+    // summary above the changes can leave it below.
+    const hunk = changes(page).getByRole("group", {
+      name: /^src\/client\/retry\.ts,/,
+    });
+    await hunk.scrollIntoViewIfNeeded();
+    await expect(hunk).toHaveAttribute("data-drawn", "true");
     // Tab from the hunk's Viewed mark reaches its keyboard button, hidden
     // until it has focus.
     await changes(page)

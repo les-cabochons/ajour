@@ -3040,6 +3040,16 @@ export const catalog = defineCatalog({
         pull_request: { check_count: operational<number>() },
       },
     },
+    /** The tickets a pull request is linked to, for Deck's summary. */
+    "pull_request.load_tickets": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: { ticket_count: operational<number>() },
+      },
+    },
     "pull_request.load_versions": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,

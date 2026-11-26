@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SectionHeading } from "@/components/section-heading";
 import {
   draftReviewOf,
@@ -38,6 +38,7 @@ import {
 } from "./pull-request-conversation";
 import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestStatusLine } from "./pull-request-status-line";
+import { PullRequestSummary, type ReachHunk } from "./pull-request-summary";
 import { ReviewComposerState } from "./review-composer-state";
 import {
   DraftCommentCard,
@@ -55,13 +56,13 @@ import {
 
 /**
  * A pull request's review page: its header with **Finish review** and the
- * row's actions, the title, the status line, the description drawer, the
- * changes in the guide's order or A–Z with each review thread and draft
- * comment beside or after its line, the draft comments a push made
- * outdated, then the conversation. The diff and its guide, the
- * conversation, the checks and the versions are read at once when the page
- * opens, and again on Refresh after a push came in. A "+" beside a line
- * opens the composer there (#784).
+ * row's actions, the title, the status line, the summary once the guide is
+ * built, the description drawer, the changes under their versions bar in
+ * the guide's order or A–Z with each review thread and draft comment beside
+ * or after its line, the draft comments a push made outdated, then the
+ * conversation. The diff and its guide, the conversation, the checks and
+ * the versions are read at once when the page opens, and again on Refresh
+ * after a push came in. A "+" beside a line opens the composer there (#784).
  */
 export function PullRequestReview({
   pullRequest,
@@ -76,6 +77,11 @@ export function PullRequestReview({
   const versions = usePullRequestVersions(pullRequest);
   const floating = useMediaQuery(DECK_GUTTER_QUERY);
   const [hovered, setHovered] = useState<string | undefined>();
+  // The changes set it once they show, so a summary line reaches its hunk.
+  const reachHunk = useRef<ReachHunk | undefined>(undefined);
+  const onReach = useCallback((hunkId: string) => {
+    reachHunk.current?.(hunkId);
+  }, []);
   const [composer, setComposer] = useState<ComposerTarget | undefined>();
   // The open composer's words, kept while its hunk scrolls away.
   const [composerState] = useState(() => new ReviewComposerState());
@@ -379,6 +385,13 @@ export function PullRequestReview({
           onPosted={retryConversation}
         />
       ) : null}
+      {shown ? (
+        <PullRequestSummary
+          pullRequest={shown}
+          repository={pullRequest.facts.repository}
+          onReach={onReach}
+        />
+      ) : null}
       <DescriptionDrawer
         state={conversation.state}
         retry={conversation.retry}
@@ -393,6 +406,7 @@ export function PullRequestReview({
           hovered,
           onAddComment: open ? onAddComment : undefined,
         }}
+        reachHunkRef={reachHunk}
         versions={versionsView}
       />
       {outdated.length ? (

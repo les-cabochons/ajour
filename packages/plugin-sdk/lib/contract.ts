@@ -1008,6 +1008,19 @@ export type CodeHostOperations = {
       }[];
     };
   };
+  readonly getLinkedTickets: {
+    request: { number: number; repository: string };
+    result: {
+      tickets: {
+        number: number;
+        title: string;
+        state: string;
+        url: string;
+        body: string;
+        repository?: string | undefined;
+      }[];
+    };
+  };
   readonly getPullRequestVersions: {
     request: { number: number; repository: string };
     result: {
