@@ -280,6 +280,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // Viewed marks last (#785): each test starts with none.
+  localStore.removeConnectionPullRequests("github", "work");
   vi.mocked(api.openDeckPullRequest).mockReset();
   vi.mocked(api.readPullRequestConversation).mockReset();
   vi.mocked(api.readPullRequestChecks).mockReset();

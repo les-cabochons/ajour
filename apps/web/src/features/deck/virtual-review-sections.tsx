@@ -25,17 +25,22 @@ import {
 import { hunkRowCount } from "@/domain/deck/review-diff";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import {
+  CITATION_ROWS,
   SECTION_MARGIN,
+  hunkBoxOf,
   readingOffset,
+  revealDistance,
   scrollerOf,
   type SectionNavigator,
 } from "./review-scroll";
+import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import {
   HUNK_ATTRIBUTE,
   ReviewHunkView,
   ReviewSectionHeader,
   useNoteMarks,
   type AddComment,
+  type ToggleFileViewed,
 } from "./review-sections";
 
 /*
@@ -94,6 +99,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   viewed,
   theme,
   onToggleViewed,
+  onToggleFileViewed,
   navigator,
   listRef: list,
   notes,
@@ -109,6 +115,7 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
   viewed: ReadonlySet<string>;
   theme: "light" | "dark";
   onToggleViewed: (hunkId: string) => void;
+  onToggleFileViewed: ToggleFileViewed;
   navigator: Ref<SectionNavigator>;
   /** The rows' box, which the gutter beside it follows. */
   listRef: RefObject<HTMLDivElement | null>;
@@ -349,6 +356,42 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
       settle(`[data-index="${row}"] [${HUNK_ATTRIBUTE}]`, offset);
       return true;
     },
+    reveal(hunkId, row, point) {
+      const index = rows.findIndex(
+        (entry) => entry.kind === "hunk" && entry.entry.hunk.id === hunkId,
+      );
+      if (index < 0 || !scroller || !list.current) return;
+      // A jump to where the rows above say its line is, then the line
+      // holds its place by its own position as the rows near it draw.
+      const start = virtualizer.measurementsCache[index]?.start ?? 0;
+      virtualizer.scrollToOffset(
+        start +
+          HUNK_PADDING +
+          HUNK_HEADER +
+          HUNK_GAP +
+          (row - CITATION_ROWS) * lineHeight -
+          readingOffset(list.current),
+      );
+      const run = (reaching.current += 1);
+      let frames = 0;
+      let still = 0;
+      const attempt = () => {
+        if (run !== reaching.current) return;
+        frames += 1;
+        const box = hunkBoxOf(list.current, hunkId);
+        if (box) {
+          const distance = revealDistance(box, row, point);
+          if (Math.abs(distance) > 1) {
+            virtualizer.scrollToOffset(scroller.scrollTop + distance);
+            still = 0;
+          } else {
+            still += 1;
+          }
+        }
+        if (still < 3 && frames < 60) requestAnimationFrame(attempt);
+      };
+      requestAnimationFrame(attempt);
+    },
   }));
 
   return (
@@ -392,6 +435,10 @@ export const VirtualReviewSections = memo(function VirtualReviewSections({
                 section={section}
                 seen={viewedCount(section, viewed)}
                 headingId={`${baseId}-${row.section}`}
+                fileViewed={
+                  section.file ? fileIsViewed(section.file, viewed) : false
+                }
+                onToggleFileViewed={onToggleFileViewed}
               />
             ) : (
               <ReviewHunkView

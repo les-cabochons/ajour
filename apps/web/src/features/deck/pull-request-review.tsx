@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { CodeHostReviewThread } from "@ajour/shared";
 import { SectionHeading } from "@/components/section-heading";
+import { showErrorToast } from "@/components/ui/toast";
 import {
   draftReviewOf,
   lineAnchor,
@@ -12,13 +21,21 @@ import {
 import { authorActions } from "@/domain/deck/author-actions";
 import { reviewNotes, type ComposerTarget } from "@/domain/deck/review-notes";
 import { placeThreads } from "@/domain/deck/review-threads";
+import { viewedHunks, viewedMarksOf } from "@/domain/deck/viewed-marks";
 import {
   changedHunks,
   pushesSince,
   reviewedVersion,
 } from "@/domain/deck/versions";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
-import { postPullRequestComment } from "@/lib/app-api";
+import {
+  AppApiError,
+  isAccessOffError,
+  postPullRequestComment,
+  replyToPullRequestThread,
+  setPullRequestFileViewed,
+  setPullRequestThreadResolved,
+} from "@/lib/app-api";
 import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -30,9 +47,11 @@ import {
   mayAlreadyBeThere,
   writeFailure,
 } from "./finish-review";
+import { FileViewedSync } from "./file-viewed-sync";
 import {
   PullRequestChanges,
   type ReviewVersionsView,
+  type ReviewViewedView,
 } from "./pull-request-changes";
 import {
   DescriptionDrawer,
@@ -48,6 +67,8 @@ import {
   type ReviewNoteActions,
 } from "./review-notes";
 import type { AddComment } from "./review-sections";
+import { ThreadActionsContext, type ThreadActions } from "./thread-actions";
+import { ThreadStates } from "./thread-state";
 import {
   usePullRequestChecks,
   usePullRequestConversation,
@@ -55,6 +76,12 @@ import {
   usePullRequestVersions,
   useSinceReview,
 } from "./use-pull-request-read";
+
+const NOTHING_VIEWED: ReadonlySet<string> = new Set();
+
+/** The code host refused the operation as one its plugin doesn't offer. */
+const notSupported = (error: unknown) =>
+  error instanceof AppApiError && error.payload?.reason === "not_supported";
 
 /**
  * A pull request's review page: its header with **Finish review** and the
@@ -64,7 +91,9 @@ import {
  * or after its line, the draft comments a push made outdated, then the
  * conversation. The diff and its guide, the conversation, the checks and
  * the versions are read at once when the page opens, and again on Refresh
- * after a push came in. A "+" beside a line opens the composer there (#784).
+ * after a push came in. A "+" beside a line opens the composer there (#784);
+ * a thread takes replies and resolves, and the viewed marks last, a file's
+ * synced with the code host where it keeps them (#785).
  */
 export function PullRequestReview({
   pullRequest,
@@ -107,9 +136,12 @@ export function PullRequestReview({
 
   const diffState = diff.state;
   const shown = diffState.status === "ready" ? diffState.value : undefined;
-  // A new head marks the draft's comments on lines it changed outdated.
+  // A new head marks the draft's comments on lines it changed outdated,
+  // and clears the viewed marks of the hunks it changed.
   useEffect(() => {
-    if (shown) localStore.refreshDraftReview(ref, shown);
+    if (!shown) return;
+    localStore.refreshDraftReview(ref, shown);
+    localStore.refreshViewedMarks(ref, shown);
   }, [shown, ref]);
 
   const threads =
@@ -152,11 +184,177 @@ export function PullRequestReview({
   );
 
   const retryConversation = conversation.retry;
+  const reloadConversation = conversation.reload;
+
+  const allMarks = useLocalState().deckViewedMarks;
+  const marks = useMemo(
+    () => viewedMarksOf(allMarks ?? [], ref),
+    [allMarks, ref],
+  );
+  const viewed = useMemo(
+    () => (shown ? viewedHunks(marks, shown) : NOTHING_VIEWED),
+    [marks, shown],
+  );
+  const { pluginName, connectionLabel } = pullRequest;
+  // Per-file marks on the code host, for this page; one without them stops it.
+  const [fileSync] = useState(
+    () =>
+      new FileViewedSync(
+        (path, { viewed: isViewed, headSha: at }) =>
+          setPullRequestFileViewed(pluginId, connectionId, {
+            repository,
+            number,
+            path,
+            viewed: isViewed,
+            headSha: at,
+          }),
+        (path, isViewed, error) => {
+          if (notSupported(error)) return "stop";
+          if (isAccessOffError(error)) {
+            showErrorToast({
+              id: "deck-file-viewed",
+              title: `Viewed files stay on this computer`,
+              description: `Turn on Review pull requests for ${connectionLabel} in Settings › Plugins to mark them viewed on ${pluginName} too.`,
+            });
+            return "stop";
+          }
+          showErrorToast({
+            id: "deck-file-viewed",
+            title: `Couldn't mark ${path} ${isViewed ? "viewed" : "not viewed"} on ${pluginName}`,
+            description: error instanceof Error ? error.message : String(error),
+          });
+          return "continue";
+        },
+      ),
+  );
+  const shownRef = useRef(shown);
+  useEffect(() => {
+    shownRef.current = shown;
+  }, [shown]);
+  const viewing = useMemo(
+    (): ReviewViewedView => ({
+      viewed,
+      setViewed: (hunkIds, isViewed) => {
+        const diffShown = shownRef.current;
+        if (!diffShown) return;
+        const files = localStore.setHunksViewed(
+          ref,
+          diffShown,
+          hunkIds,
+          isViewed,
+        );
+        // A closed pull request's marks stay on this computer.
+        if (!open) return;
+        for (const file of files)
+          fileSync.set(file.path, file.viewed, diffShown.headSha);
+      },
+    }),
+    [viewed, ref, open, fileSync],
+  );
+  // The files the code host says the user viewed, each taken in once per
+  // head: a file the user marked or unmarked since stays as they left it.
+  const hostViewed =
+    conversation.state.status === "ready"
+      ? conversation.state.value.viewedPaths
+      : undefined;
+  useEffect(() => {
+    if (shown && hostViewed?.length)
+      localStore.adoptViewedFiles(ref, shown, hostViewed);
+  }, [shown, hostViewed, ref]);
+
+  // Replies and resolves, kept per thread while its card scrolls away.
+  const [threadStates] = useState(() => new ThreadStates());
+  const conversationValue =
+    conversation.state.status === "ready"
+      ? conversation.state.value
+      : undefined;
+  // Before the page draws it, so a write's answer is stamped with this read.
+  useLayoutEffect(() => {
+    threadStates.conversation = conversationValue;
+  }, [conversationValue, threadStates]);
+  const threadActions = useMemo(
+    (): ThreadActions | undefined =>
+      open
+        ? {
+            states: threadStates,
+            conversation: conversationValue,
+            reply: async (thread: CodeHostReviewThread, body: string) => {
+              const { submission, fields } = nameSubmission(
+                threadStates.of(thread.id).submission,
+                JSON.stringify([thread.id, body]),
+                false,
+                {
+                  now: Date.now(),
+                  createId: () => `reply_submission_${crypto.randomUUID()}`,
+                },
+              );
+              threadStates.replyStarted(thread.id, submission);
+              let result;
+              try {
+                result = await replyToPullRequestThread(
+                  pluginId,
+                  connectionId,
+                  { repository, number, threadId: thread.id, body, ...fields },
+                );
+              } catch (error) {
+                threadStates.replyFailed(
+                  thread.id,
+                  submission.id,
+                  writeFailure(error, pullRequest),
+                );
+                return;
+              }
+              if ("uncertain" in result) {
+                threadStates.replyUnsettled(
+                  thread.id,
+                  submission.id,
+                  mayAlreadyBeThere("reply", pullRequest),
+                );
+                return;
+              }
+              threadStates.replySent(thread.id, submission.id, body);
+              reloadConversation();
+            },
+            setResolved: async (thread: CodeHostReviewThread, resolved) => {
+              threadStates.update(thread.id, {
+                resolving: true,
+                resolveFailure: undefined,
+              });
+              try {
+                const result = await setPullRequestThreadResolved(
+                  pluginId,
+                  connectionId,
+                  { repository, number, threadId: thread.id, resolved },
+                );
+                threadStates.resolvedAs(thread.id, result.resolved);
+              } catch (error) {
+                threadStates.update(thread.id, {
+                  resolving: false,
+                  resolveFailure: writeFailure(error, pullRequest),
+                });
+                return;
+              }
+              reloadConversation();
+            },
+          }
+        : undefined,
+    [
+      open,
+      threadStates,
+      pluginId,
+      connectionId,
+      repository,
+      number,
+      pullRequest,
+      reloadConversation,
+      conversationValue,
+    ],
+  );
   const onAddComment = useCallback<AddComment>(
-    (path, _hunkId, lines) => {
-      if (!shown) return;
+    (path, _hunkId, lines, body) => {
+      if (!shown) return false;
       const side = lines.side === "deletions" ? "base" : "head";
-      setComposer({
+      const target: ComposerTarget = {
         path,
         side,
         line: lines.end,
@@ -169,10 +367,17 @@ export function PullRequestReview({
             line: lines.end,
             startLine: lines.start,
           }) ?? "",
-        body: "",
-      });
+        body: body ?? "",
+      };
+      // The composer open there keeps its words and adds these after them;
+      // another composer holding words keeps them, and the answer stays.
+      if (body !== undefined && !composerState.transfer(target, body)) {
+        return false;
+      }
+      setComposer(target);
+      return true;
     },
-    [shown],
+    [shown, composerState],
   );
   const headSha = shown?.headSha;
   const actions = useMemo(
@@ -365,90 +570,100 @@ export function PullRequestReview({
 
   return (
     <ReviewNotesContext.Provider value={actions}>
-      <PullRequestHeader
-        pullRequest={pullRequest}
-        now={now}
-        review={
-          open ? (
-            <FinishReview
-              pullRequest={pullRequest}
-              draft={draft}
-              headSha={headSha}
-              onSubmitted={retryConversation}
-            />
-          ) : null
-        }
-        author={
-          authorActions(pullRequest.facts) ? (
-            <>
-              <DraftToggle pullRequest={pullRequest} />
-              <MergePullRequest
-                pullRequest={pullRequest}
-                headSha={headSha}
-                methods={
-                  conversation.state.status === "ready"
-                    ? conversation.state.value.mergeMethods
-                    : undefined
-                }
-                pushes={versionsView.pushes}
-                onFailed={retryVersions}
-                versionName={
-                  versions.state.status === "ready"
-                    ? versions.state.value.versionName
-                    : undefined
-                }
-              />
-            </>
-          ) : null
-        }
-      />
-      <PullRequestStatusLine pullRequest={pullRequest} checks={checks.state} />
-      {!open && draft?.comments.length ? (
-        <ClosedDraftReview
+      <ThreadActionsContext.Provider value={threadActions}>
+        <PullRequestHeader
           pullRequest={pullRequest}
-          draft={draft}
-          onPosted={retryConversation}
+          now={now}
+          review={
+            open ? (
+              <FinishReview
+                pullRequest={pullRequest}
+                draft={draft}
+                headSha={headSha}
+                onSubmitted={retryConversation}
+              />
+            ) : null
+          }
+          author={
+            authorActions(pullRequest.facts) ? (
+              <>
+                <DraftToggle pullRequest={pullRequest} />
+                <MergePullRequest
+                  pullRequest={pullRequest}
+                  headSha={headSha}
+                  methods={
+                    conversation.state.status === "ready"
+                      ? conversation.state.value.mergeMethods
+                      : undefined
+                  }
+                  pushes={versionsView.pushes}
+                  onFailed={retryVersions}
+                  versionName={
+                    versions.state.status === "ready"
+                      ? versions.state.value.versionName
+                      : undefined
+                  }
+                />
+              </>
+            ) : null
+          }
         />
-      ) : null}
-      {shown ? (
-        <PullRequestSummary
-          pullRequest={shown}
-          repository={pullRequest.facts.repository}
-          onReach={onReach}
+        <PullRequestStatusLine
+          pullRequest={pullRequest}
+          checks={checks.state}
         />
-      ) : null}
-      <DescriptionDrawer
-        state={conversation.state}
-        retry={conversation.retry}
-      />
-      <PullRequestChanges
-        pullRequest={pullRequest}
-        state={diff.state}
-        retry={diff.retry}
-        notes={{
-          notes,
-          floating,
-          hovered,
-          onAddComment: open ? onAddComment : undefined,
-        }}
-        reachHunkRef={reachHunk}
-        versions={versionsView}
-      />
-      {outdated.length ? (
-        <section className="deck-draft-elsewhere" aria-label="Draft comments">
-          <SectionHeading trailing={outdated.length}>
-            Draft comments on lines that changed
-          </SectionHeading>
-          {outdated.map((comment) => (
-            <DraftCommentCard key={comment.id} comment={comment} showLocation />
-          ))}
-        </section>
-      ) : null}
-      <PullRequestConversation
-        state={conversation.state}
-        retry={conversation.retry}
-        elsewhere={elsewhere}
-      />
+        {!open && draft?.comments.length ? (
+          <ClosedDraftReview
+            pullRequest={pullRequest}
+            draft={draft}
+            onPosted={retryConversation}
+          />
+        ) : null}
+        {shown ? (
+          <PullRequestSummary
+            pullRequest={shown}
+            repository={pullRequest.facts.repository}
+            onReach={onReach}
+          />
+        ) : null}
+        <DescriptionDrawer
+          state={conversation.state}
+          retry={conversation.retry}
+        />
+        <PullRequestChanges
+          pullRequest={pullRequest}
+          state={diff.state}
+          retry={diff.retry}
+          notes={{
+            notes,
+            floating,
+            hovered,
+            onAddComment: open ? onAddComment : undefined,
+          }}
+          reachHunkRef={reachHunk}
+          versions={versionsView}
+          viewing={viewing}
+        />
+        {outdated.length ? (
+          <section className="deck-draft-elsewhere" aria-label="Draft comments">
+            <SectionHeading trailing={outdated.length}>
+              Draft comments on lines that changed
+            </SectionHeading>
+            {outdated.map((comment) => (
+              <DraftCommentCard
+                key={comment.id}
+                comment={comment}
+                showLocation
+              />
+            ))}
+          </section>
+        ) : null}
+        <PullRequestConversation
+          state={conversation.state}
+          retry={conversation.retry}
+          elsewhere={elsewhere}
+        />
+      </ThreadActionsContext.Provider>
     </ReviewNotesContext.Provider>
   );
 }

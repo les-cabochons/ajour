@@ -63,7 +63,7 @@ export function writeFailure(error: unknown, pullRequest: LocalPullRequest) {
  * chooses whether to post again.
  */
 export function mayAlreadyBeThere(
-  what: "review" | "comment",
+  what: "review" | "comment" | "reply",
   pullRequest: LocalPullRequest,
 ) {
   return `This ${what} may already be on ${pullRequest.pluginName}: something you posted since may be it. Check the pull request, then post again if it's not there.`;
