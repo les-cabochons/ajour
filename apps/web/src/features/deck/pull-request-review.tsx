@@ -556,6 +556,7 @@ export function PullRequestReview({
     return () => chat.detach();
   }, [chat]);
   const author = authorActions(pullRequest.facts);
+  const pullRequestUrl = pullRequest.facts.url;
   const chatTarget = useMemo(
     (): DeckChatTarget | undefined =>
       headSha
@@ -566,10 +567,20 @@ export function PullRequestReview({
             number,
             head: headSha,
             author,
+            pullRequestUrl,
             ...(cloneSource ? { clone: cloneSource } : {}),
           }
         : undefined,
-    [headSha, pluginId, connectionId, repository, number, author, cloneSource],
+    [
+      headSha,
+      pluginId,
+      connectionId,
+      repository,
+      number,
+      author,
+      pullRequestUrl,
+      cloneSource,
+    ],
   );
   useShortcut("deck.chat", () => {
     if (chatTarget) setChatOpen((isOpen) => !isOpen);

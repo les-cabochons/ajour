@@ -348,6 +348,7 @@ it("sends a message, streams the reply, and shows each write as an action line w
         number: 1,
         head: HEAD,
         message: "Post a note about the shouting.",
+        pullRequestUrl: "https://github.com/acme/api/pull/1",
       },
       expect.any(AbortSignal),
     ),
@@ -392,6 +393,31 @@ it("sends a message, streams the reply, and shows each write as an action line w
   });
   expect(within(line).queryByRole("button", { name: "Delete" })).toBeNull();
 });
+
+it.each([["javascript:alert(1)"], ["https://github.com.evil.example/pr/1"]])(
+  "links the pull request instead of a link off its code host: %s",
+  async (url) => {
+    vi.mocked(api.chatDeck).mockResolvedValueOnce({ turn: turn("t9") });
+    await renderReview();
+    press("a");
+    sendMessage("Post it.");
+    await waitFor(() => expect(api.chatDeck).toHaveBeenCalled());
+
+    acted("t9", {
+      id: "a9",
+      kind: "review",
+      text: "Approved the pull request",
+      url,
+    });
+
+    const line = within(chatPanel()!)
+      .getByText("Approved the pull request")
+      .closest("li")!;
+    expect(
+      within(line).getByRole("link", { name: "Open" }).getAttribute("href"),
+    ).toBe("https://github.com/acme/api/pull/1");
+  },
+);
 
 it("says so on the line when the code host can't delete a comment", async () => {
   vi.mocked(api.chatDeck).mockResolvedValueOnce({ turn: turn("t2") });

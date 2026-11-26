@@ -54,6 +54,7 @@ import {
 } from "@/features/backlog/backlog-source-writes";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { getUncheckedChangeIds } from "@/lib/commit-selection";
+import { agentTurnEnded } from "@/lib/agent-turns";
 import { localStore } from "@/lib/local-store";
 import { StaleWindowError } from "@/lib/stale-window-error";
 import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
@@ -260,10 +261,17 @@ function finishWrite(
 /**
  * A draft comment Deck's chat adds (#796): the draft review lives here, in
  * the window's local state (#784), so the local API hands it over. It goes
- * on the head the draft's other comments are on, never another.
+ * on the head the draft's other comments are on, never another, and only
+ * while its turn runs: a call that waited behind the window's other calls
+ * until its turn ended adds nothing.
  */
 function addDeckDraftComment(call: BridgeToolCall): BridgeToolResult {
   const input = deckDraftCommentCallSchema.parse(call.input);
+  if (agentTurnEnded(input.turnId)) {
+    throw new AgentToolRefusal(
+      "This chat turn ended before Ajour added the draft comment, so it added nothing. Stop.",
+    );
+  }
   const ref = {
     pluginId: input.pluginId,
     connectionId: input.connectionId,

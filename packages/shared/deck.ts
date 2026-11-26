@@ -620,6 +620,11 @@ export const deckChatRequestSchema = z.object({
    * toggle draft, as the page lets them (#786).
    */
   author: z.boolean().optional(),
+  /**
+   * The pull request's address on its code host: an action line links
+   * only to its origin (`deckLinkOnHost`).
+   */
+  pullRequestUrl: z.string().url().max(2_000).optional(),
   /** Where the repository is cloned from, so the agent can read the user's clone too. */
   clone: deckCloneSourceSchema.optional(),
 });
@@ -962,6 +967,11 @@ export type DeckChatToolOutput = z.infer<typeof deckChatToolOutputSchema>;
 export const DECK_DRAFT_COMMENT_TOOL = "deck_add_draft_comment";
 
 export const deckDraftCommentCallSchema = z.object({
+  /**
+   * The chat turn that adds it: the window adds nothing for a turn it
+   * already heard end.
+   */
+  turnId: z.string().min(1),
   pluginId: z.string().min(1),
   connectionId: z.string().min(1),
   repository: codeHostPullRequestRefSchema.shape.repository,
@@ -975,6 +985,33 @@ export const deckDraftCommentCallSchema = z.object({
 export type DeckDraftCommentCall = z.infer<typeof deckDraftCommentCallSchema>;
 
 export const deckDraftCommentResultSchema = z.object({ draftId: z.string() });
+
+/**
+ * The link an action line may show for what a chat write posted (#796): an
+ * http(s) address on the pull request's own origin, as the plugin gave it,
+ * or undefined, and the line links the pull request instead. A plugin's
+ * address is never trusted as it comes: `javascript:` or a look-alike
+ * host would otherwise reach the page as a link.
+ */
+export function deckLinkOnHost(
+  url: string | undefined,
+  pullRequestUrl: string | undefined,
+): string | undefined {
+  if (!url || !pullRequestUrl) return undefined;
+  try {
+    const link = new URL(url);
+    const home = new URL(pullRequestUrl);
+    const web = (protocol: string) =>
+      protocol === "https:" || protocol === "http:";
+    return web(link.protocol) &&
+      web(home.protocol) &&
+      link.origin === home.origin
+      ? url
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /*
  * The guide run's answer (#794): `submit_guide`, a tool of a conversation's

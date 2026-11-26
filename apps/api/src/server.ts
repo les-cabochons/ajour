@@ -2237,12 +2237,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   /**
    * A chat write's code host operation (#796), through the pull request's
    * plugin and connection, as the user's own writes go: refused before the
-   * plugin runs when the connection's access doesn't allow it.
+   * plugin runs when the connection's access doesn't allow it, or when
+   * `beforeStart`, the chat's last check, refuses it after the admission.
    */
   async function deckCodeHostWrite<Operation extends CodeHostOperation>(
     source: DeckPullRequestSource,
     operation: Operation,
     request: CodeHostOperationRequest<Operation>,
+    beforeStart: () => void,
   ): Promise<CodeHostOperationResult<Operation>> {
     const { plugin } = await findPlugin(pluginManager, source.pluginId);
     if (!plugin || !pluginHasCodeHost(plugin)) {
@@ -2262,6 +2264,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
     }
     const call = admittedCall(plugin, connection.secrets);
+    /** The chat's own refusal, which the agent reads as it is. */
+    let refused: DeckChatRefused | undefined;
     try {
       return await pluginManager.runCodeHostOperation(
         source.pluginId,
@@ -2269,8 +2273,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         pluginConnection(connection),
         request,
         call.admit,
+        {
+          beforeStart() {
+            try {
+              beforeStart();
+            } catch (error) {
+              if (!(error instanceof DeckChatRefused)) throw error;
+              refused = error;
+              // The operation's event records it as the route's refusal.
+              throw new PluginOperationRefused(error.message, "agent_access");
+            }
+          },
+        },
       );
     } catch (error) {
+      if (refused) throw refused;
       // The plugin's own words may hold what the agent shouldn't see.
       throw new DeckChatRefused(
         error instanceof PluginExportMissing
@@ -2283,6 +2300,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
     allowed: (binding) =>
       deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    allowedNow: (binding) =>
+      deckAsks.allowedNow(binding.pullRequest, binding.cli),
     deck: deckService,
     codeHost: deckCodeHostWrite,
     // The draft review lives in the window (#784): the bridge hands it there.
@@ -2328,8 +2347,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     deck: deckService,
     requireConsent: (pullRequest) =>
       deckAsks.requireTurnConsent(pullRequest, "context"),
-    allowed: (binding) =>
-      deckAsks.allowedWith(binding.pullRequest, binding.cli),
+    allowed: (binding, covers) =>
+      deckAsks.allowedWith(binding.pullRequest, binding.cli, covers),
     runningTurnOf: (clientId) => agentRunner.runningTurnOf(clientId),
     startTurn: (request) => agentRunner.startTurn(request),
     completeTurn: (turnId) => void agentRunner.completeTurn(turnId),
@@ -5196,14 +5215,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         if (!response.writableFinished) stop.abort();
       });
       try {
+        // What the page says about the turn is kept as the turn is queued,
+        // before its first tool call can come. The API keeps no pull
+        // request facts, so the page tells whether the user authored it.
         const { cloneFact, ...chatted } = await deckAsks.chat(
           { pluginId, connectionId },
           payload,
           stop.signal,
+          (turnId) =>
+            deckChat.chatStarted(turnId, {
+              author: payload.author === true,
+              ...(payload.pullRequestUrl
+                ? { pullRequestUrl: payload.pullRequestUrl }
+                : {}),
+            }),
         );
-        deckChat.chatStarted(chatted.turn.id, {
-          author: payload.author === true,
-        });
         unit.set({
           agent: { turn_id: chatted.turn.id },
           ...(cloneFact ? { deck: { clone: cloneFact } } : {}),

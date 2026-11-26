@@ -1,6 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { RiCloseLine } from "@remixicon/react";
-import { DECK_QUESTION_MAX, type DeckAskAnchor } from "@ajour/shared/deck";
+import {
+  DECK_QUESTION_MAX,
+  deckLinkOnHost,
+  type DeckAskAnchor,
+} from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
 import { SidePanel } from "@/components/side-panel";
 import { TooltipButton } from "@/components/tooltip-button";
@@ -306,13 +310,15 @@ function ChatLine({
   }
   if (entry.kind === "action") {
     const { action, deletion } = entry;
+    // A plugin's address links only on the pull request's own code host.
+    const link = deckLinkOnHost(action.url, pullRequestUrl);
     return (
       <li className="deck-chat-action">
         <span className={deletion === "deleted" ? "line-through" : undefined}>
           {action.text}
         </span>
-        {action.url ? (
-          <a href={action.url} target="_blank" rel="noreferrer">
+        {link ? (
+          <a href={link} target="_blank" rel="noreferrer">
             Open
           </a>
         ) : action.at ? (

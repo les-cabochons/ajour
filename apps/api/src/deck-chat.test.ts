@@ -219,10 +219,12 @@ async function startChatApi(conversation: FakeConversation) {
         head: HEAD,
       });
     },
-    consent() {
+    /** Allows the repository for its code, or for its context too as Regroup asks. */
+    consent(covers: "code" | "context" = "code") {
       return apiRequest(api.baseUrl, `${deck}/consent`, {
         repository: REPOSITORY,
         cli: "claude-code",
+        covers,
       });
     },
     chat(body: Record<string, unknown> = {}) {
@@ -231,6 +233,7 @@ async function startChatApi(conversation: FakeConversation) {
         number: 482,
         head: HEAD,
         message: "Post what you found.",
+        pullRequestUrl: "https://github.com/acme/billing-api/pull/482",
         ...body,
       });
     },
@@ -421,6 +424,7 @@ describe("Deck's chat writes", () => {
       // The draft comment went to the window's draft review, not the code host.
       expect(drafts).toEqual([
         {
+          turnId: chatted.body.turn.id,
           pluginId: "github",
           connectionId: expect.any(String),
           repository: REPOSITORY,
@@ -565,6 +569,30 @@ describe("Deck's chat writes", () => {
   );
 
   it(
+    "lets the author edit the title as the turn's very first call",
+    { timeout: 20_000 },
+    async () => {
+      const api = await startChatApi(() => [
+        { readTurn: true },
+        call("edit_title", { title: "Shout the second line" }),
+        { stream: ["Renamed."] },
+        { result: true },
+        { readTurn: true },
+      ]);
+      await api.consent();
+
+      const chatted = await api.chat({ author: true });
+      await api.ended(chatted.body.turn.id);
+
+      const [renamed] = await api.mcpReplies();
+      expect(renamed!.reply.result.isError).toBeFalsy();
+      expect(hostWrites().map(({ operation }) => operation)).toEqual([
+        "updatePullRequest",
+      ]);
+    },
+  );
+
+  it(
     "refuses a comment on lines the diff doesn't show",
     { timeout: 20_000 },
     async () => {
@@ -594,39 +622,45 @@ describe("Deck's chat writes", () => {
 
 describe("regroup from the chat (#794)", () => {
   it(
-    "saves the guide the chat's agent submits, shows it as an action line, and goes on with the chat",
+    "saves the guide the chat's agent submits once it read what a regroup reads, shows it as an action line, and goes on with the chat",
     { timeout: 20_000 },
     async () => {
+      const submitted = {
+        concerns: [
+          {
+            title: "Shout the second line",
+            rationale: "The handler upper-cases it.",
+            hunkIds: ["src/api.ts#0"],
+            kinds: ["feature"],
+          },
+        ],
+        summary: {
+          problem: {
+            text: "Quiet handlers go unnoticed.",
+            source: "inferred",
+          },
+          breaking: [],
+          risks: [],
+        },
+      };
       const api = await startChatApi(() => [
         { readTurn: true },
-        call("submit_guide", {
-          concerns: [
-            {
-              title: "Shout the second line",
-              rationale: "The handler upper-cases it.",
-              hunkIds: ["src/api.ts#0"],
-              kinds: ["feature"],
-            },
-          ],
-          summary: {
-            problem: {
-              text: "Quiet handlers go unnoticed.",
-              source: "inferred",
-            },
-            breaking: [],
-            risks: [],
-          },
-        }),
+        call("submit_guide", submitted),
+        call("submit_guide", submitted),
         { stream: ["Regrouped."] },
         { result: true },
         { readTurn: true },
       ]);
-      await api.consent();
+      // A regroup sends the description and linked tickets: Regroup's consent.
+      await api.consent("context");
 
       const chatted = await api.chat({ message: "Regroup the guide." });
       await api.ended(chatted.body.turn.id);
 
-      const [saved] = await api.mcpReplies();
+      const [context, saved] = await api.mcpReplies();
+      expect(context!.reply.result.content[0].text).toContain(
+        "Ajour saved nothing yet",
+      );
       expect(saved!.reply.result.structuredContent).toEqual({
         saved: true,
         concernCount: 1,

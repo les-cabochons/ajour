@@ -8,6 +8,8 @@ import type {
 import type { CodeHostLinkedTicket } from "../../../packages/shared/code-host.ts";
 import {
   deckPullRequestKey,
+  parseDeckPullRequestKey,
+  type DeckConsentCovers,
   type DeckGuide,
   type DeckPullRequestSource,
   type DeckRegroupRequest,
@@ -39,9 +41,11 @@ import type { McpClientPullRequestBinding } from "./storage.ts";
  * naming it. A guide turn that ends with nothing saved fails.
  *
  * The chat regroups too (#796): asked to in a chat turn, its agent calls
- * `submit_guide` under the same rules, from what it read of the pull
- * request, and the saved guide shows as an action line. The chat turn
- * goes on after it.
+ * `submit_guide` under the same rules and the same consent, the one that
+ * covers the description and linked tickets. Its first call reads them
+ * again, as a regroup's turn does, and hands them to the agent with
+ * nothing saved; the next ones are checked against those tickets. The
+ * saved guide shows as an action line, and the chat turn goes on after it.
  */
 
 /** The changed lines the turn quotes before the agent reads more. */
@@ -83,8 +87,14 @@ export interface DeckGuideRunsOptions {
    * description and linked tickets it sends (`deck-asks.ts`).
    */
   requireConsent(pullRequest: string): Promise<void>;
-  /** Whether the binding's repository is still allowed with its agent. */
-  allowed(binding: McpClientPullRequestBinding): Promise<boolean>;
+  /**
+   * Whether the binding's repository is still allowed with its agent, for
+   * what `covers` names: the code, unless it says the context.
+   */
+  allowed(
+    binding: McpClientPullRequestBinding,
+    covers?: DeckConsentCovers,
+  ): Promise<boolean>;
   /** The turn a conversation's client is in now. */
   runningTurnOf(
     clientId: string,
@@ -134,24 +144,14 @@ function quotedLines(held: DeckHeldPullRequest) {
   return lines;
 }
 
-/** The turn's words: the user's instruction, the context, then the guide to regroup. */
-export function guideTurnMessage(
-  held: DeckHeldPullRequest,
-  instruction: string | undefined,
-  context: { description?: string; tickets?: CodeHostLinkedTicket[] },
-): string {
-  const concerns = held.guide?.concerns ?? [];
-  const hunkCount = concerns.reduce(
-    (count, concern) => count + concern.hunkIds.length,
-    0,
-  );
+/** What a regroup reads besides the code: the description, then the linked tickets. */
+function contextLines(context: {
+  description?: string;
+  tickets?: CodeHostLinkedTicket[];
+}): string[] {
   const description = context.description?.trim();
   const tickets = context.tickets;
-  const parts = [
-    instruction
-      ? `The user's instruction for the new guide: ${instruction}`
-      : "The user gave no instruction: group the changes as you see best.",
-    "",
+  return [
     description
       ? `The pull request's description:\n${clip(description, DESCRIPTION_MAX)}`
       : "The pull request has no description.",
@@ -175,6 +175,26 @@ export function guideTurnMessage(
                   .join("\n"),
               ),
           ].join("\n"),
+  ];
+}
+
+/** The turn's words: the user's instruction, the context, then the guide to regroup. */
+export function guideTurnMessage(
+  held: DeckHeldPullRequest,
+  instruction: string | undefined,
+  context: { description?: string; tickets?: CodeHostLinkedTicket[] },
+): string {
+  const concerns = held.guide?.concerns ?? [];
+  const hunkCount = concerns.reduce(
+    (count, concern) => count + concern.hunkIds.length,
+    0,
+  );
+  const parts = [
+    instruction
+      ? `The user's instruction for the new guide: ${instruction}`
+      : "The user gave no instruction: group the changes as you see best.",
+    "",
+    ...contextLines(context),
     "",
     `The guide as it is now, in reading order. Each of its ${hunkCount} hunks goes in exactly one concern of yours:`,
     ...concerns.map(
@@ -207,6 +227,8 @@ const REVOKED =
   "The user no longer allows Ajour to send this repository's code to you. Stop, and say only that you can't regroup it now.";
 const STOPPED =
   "This regroup ended before Ajour saved its guide, so Ajour keeps the one it shows. Stop.";
+const NEEDS_CONTEXT =
+  "Ajour saved nothing: a regroup sends you the pull request's description and linked tickets, and the user allows this repository for its code only. Don't call submit_guide again in this turn. Tell the user that Regroup… on the review page asks them to allow it, then regroups the guide.";
 
 export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
   /** The guide turns that called `submit_guide`, by turn ID. */
@@ -329,6 +351,28 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
       );
     }
     if (!(await options.allowed(binding))) throw new DeckGuideRefused(REVOKED);
+    // The chat regroups under Regroup's rules (#796): with the consent that
+    // covers the context, and from the context the agent was given.
+    const chat = task === "deck.chat";
+    if (chat && !(await options.allowed(binding, "context"))) {
+      throw new DeckGuideRefused(NEEDS_CONTEXT);
+    }
+    if (chat && !quoted.has(turnId)) {
+      const source = parseDeckPullRequestKey(binding.pullRequest);
+      if (!source) throw new DeckGuideRefused(MOVED_ON);
+      const context = await options.readContext(source);
+      if (!going()) throw new DeckGuideRefused(STOPPED);
+      quoted.set(turnId, context.tickets?.map(ticketOf) ?? null);
+      throw new DeckGuideRefused(
+        [
+          "Ajour saved nothing yet: a regroup is written from what Ajour reads besides the code, which this chat hasn't given you. Here it is.",
+          "",
+          ...contextLines(context),
+          "",
+          "Write the guide's problem from it, and call submit_guide again.",
+        ].join("\n"),
+      );
+    }
     const held = await options.deck.held(binding.pullRequest, binding.head);
     if (!held?.builtGuide) throw new DeckGuideRefused(MOVED_ON);
     // The tickets the turn quoted; a turn started elsewhere, the guide's.
@@ -368,7 +412,9 @@ export function createDeckGuideRuns(options: DeckGuideRunsOptions) {
         binding.head,
         guide,
         async () => {
-          if (!(await options.allowed(binding))) return REVOKED;
+          if (!(await options.allowed(binding, chat ? "context" : "code"))) {
+            return REVOKED;
+          }
           // Last, with nothing awaited after it before the write.
           return going() ? undefined : STOPPED;
         },

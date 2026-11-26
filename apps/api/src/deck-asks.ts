@@ -95,6 +95,11 @@ export class DeckTurnRefused extends Error {
 export interface DeckAsksOptions {
   storage: {
     getDeckConsents(): Promise<DeckAgentConsent[]>;
+    /**
+     * The consents as Ajour holds them now, without waiting, or undefined
+     * before they are first read.
+     */
+    deckConsentsNow?(): DeckAgentConsent[] | undefined;
     getAgentRunnerSettings(): Promise<{ cli: AgentCliId | null }>;
   };
   /**
@@ -310,6 +315,23 @@ const anchorKey = (anchor: DeckAskAnchor) =>
         anchor.end.line,
       ];
 
+/** Whether `consents` allow the repository with `cli`, for what `covers` names. */
+function consentIn(
+  consents: DeckAgentConsent[],
+  source: DeckPullRequestSource,
+  cli: AgentCliId,
+  covers: DeckConsentCovers,
+) {
+  return consents.some(
+    (consent) =>
+      consent.pluginId === source.pluginId &&
+      consent.connectionId === source.connectionId &&
+      consent.repository === source.repository &&
+      consent.cli === cli &&
+      deckConsentCovers(consent.covers, covers),
+  );
+}
+
 export function createDeckAsks(options: DeckAsksOptions) {
   /** Done answers by `cacheKey`, oldest first. */
   const answers = new Map<string, Answer>();
@@ -417,14 +439,11 @@ export function createDeckAsks(options: DeckAsksOptions) {
     covers: DeckConsentCovers = "code",
   ) {
     if (!cli) return false;
-    const consents = await options.storage.getDeckConsents();
-    return consents.some(
-      (consent) =>
-        consent.pluginId === source.pluginId &&
-        consent.connectionId === source.connectionId &&
-        consent.repository === source.repository &&
-        consent.cli === cli &&
-        deckConsentCovers(consent.covers, covers),
+    return consentIn(
+      await options.storage.getDeckConsents(),
+      source,
+      cli,
+      covers,
     );
   }
 
@@ -472,9 +491,36 @@ export function createDeckAsks(options: DeckAsksOptions) {
      * each turn is sent to it, and at each of its reads. Another agent's
      * consent never counts.
      */
-    async allowedWith(pullRequest: string, cli: AgentCliId | undefined) {
+    async allowedWith(
+      pullRequest: string,
+      cli: AgentCliId | undefined,
+      covers: DeckConsentCovers = "code",
+    ) {
       const source = parseDeckPullRequestKey(pullRequest);
-      return source !== undefined && (await consentedWith(source, cli ?? null));
+      return (
+        source !== undefined &&
+        (await consentedWith(source, cli ?? null, covers))
+      );
+    },
+
+    /**
+     * The same, from the consents Ajour holds now, without waiting: the
+     * last check of a chat write, right before it is made (#796). False
+     * before the consents are first read.
+     */
+    allowedNow(
+      pullRequest: string,
+      cli: AgentCliId | undefined,
+      covers: DeckConsentCovers = "code",
+    ) {
+      const source = parseDeckPullRequestKey(pullRequest);
+      const consents = options.storage.deckConsentsNow?.();
+      return (
+        source !== undefined &&
+        cli !== undefined &&
+        consents !== undefined &&
+        consentIn(consents, source, cli, covers)
+      );
     },
 
     /**
@@ -575,6 +621,8 @@ export function createDeckAsks(options: DeckAsksOptions) {
       source: Pick<DeckPullRequestSource, "pluginId" | "connectionId">,
       request: DeckChatRequest,
       signal?: AbortSignal,
+      /** Called with the turn's ID as it is queued, before it can run. */
+      queued?: (turnId: string) => void,
     ): Promise<DeckChatResponse & { cloneFact?: DeckAskCloneFact }> {
       const pullRequestSource: DeckPullRequestSource = {
         ...source,
@@ -597,7 +645,10 @@ export function createDeckAsks(options: DeckAsksOptions) {
       if (signal?.aborted) throw new DeckAskStopped();
       const turn = await options.startTurn(
         { task: "deck.chat", pullRequest, head: request.head, message },
-        clone.root ? { readRoot: clone.root } : {},
+        {
+          ...(clone.root ? { readRoot: clone.root } : {}),
+          ...(queued ? { queued } : {}),
+        },
       );
       return {
         turn,

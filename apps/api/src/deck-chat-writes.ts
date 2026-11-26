@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentTurnAction,
-  AgentTurnEvent,
-  CoreAgentTask,
+import {
+  AGENT_TURN_ACTION_TEXT_MAX,
+  type AgentTurnAction,
+  type AgentTurnEvent,
+  type CoreAgentTask,
 } from "../../../packages/shared/agent-runs.ts";
 import type {
   CodeHostOperation,
@@ -11,6 +12,7 @@ import type {
 } from "../../../packages/shared/code-host.ts";
 import {
   deckLineText,
+  deckLinkOnHost,
   parseDeckPullRequestKey,
   type DeckChatToolInput,
   type DeckChatToolName,
@@ -32,6 +34,11 @@ import type { DeckHeldPullRequest } from "./deck-service.ts";
  * it posted, lets the user delete it. A draft comment goes to the draft
  * review in the window, over the bridge. Merge is not one of them: merging
  * stays the user's own confirmed action.
+ *
+ * A write checks its turn, head and consent again as its last step, with
+ * nothing awaited before the plugin starts or the window hears of it: the
+ * user may stop the turn, or revoke the repository, while it reads the
+ * diff or while the plugin is admitted.
  */
 
 /** A write the chat can't make, with a sentence for the agent. */
@@ -51,6 +58,11 @@ export interface DeckChatWritesOptions {
   runningTurnOf(clientId: string): RunningTurn | undefined;
   /** Whether the user still allows the binding's repository with its agent. */
   allowed(binding: McpClientPullRequestBinding): Promise<boolean>;
+  /**
+   * The same, from what Ajour holds now, without waiting: the last check
+   * before a write, which nothing may await after.
+   */
+  allowedNow(binding: McpClientPullRequestBinding): boolean;
   deck: {
     held(
       pullRequest: string,
@@ -59,14 +71,20 @@ export interface DeckChatWritesOptions {
   };
   /**
    * Runs a code host write through the pull request's plugin and
-   * connection. Throws a `DeckChatRefused` the agent can read.
+   * connection, calling `beforeStart` right before the plugin starts, after
+   * its admission: what it throws starts nothing. Throws a
+   * `DeckChatRefused` the agent can read.
    */
   codeHost<Operation extends CodeHostOperation>(
     source: DeckPullRequestSource,
     operation: Operation,
     request: CodeHostOperationRequest<Operation>,
+    beforeStart: () => void,
   ): Promise<CodeHostOperationResult<Operation>>;
-  /** Adds a draft comment to the window's draft review, over the bridge. */
+  /**
+   * Adds a draft comment to the window's draft review, over the bridge,
+   * which hands the window the call before it awaits anything.
+   */
   addDraftComment(call: DeckDraftCommentCall): Promise<{ draftId: string }>;
   /** Sends a turn event to the window. */
   publish(event: AgentTurnEvent): void;
@@ -77,7 +95,16 @@ export interface DeckChatWritesOptions {
 interface ChatTurnFacts {
   /** The user authored the pull request: its title and draft state are theirs to change. */
   author: boolean;
+  /** The pull request's address, whose origin an action line's link must have. */
+  pullRequestUrl?: string;
 }
+
+const NOT_CHATTING =
+  "Ajour takes review writes only in a chat turn, when the user asks for them in Deck's chat. Answer in words instead.";
+const REVOKED =
+  "The user no longer allows Ajour to send this repository's code to you. Stop, and say only that you can't act on it now.";
+const TURN_ENDED =
+  "This chat turn ended before Ajour made the write, so it wasn't made. Stop.";
 
 const VERDICT_TEXT = {
   approve: "Approved the pull request",
@@ -85,17 +112,36 @@ const VERDICT_TEXT = {
   comment: "Submitted a review",
 } as const;
 
+/** How much of a path an action line names: its start, then its end. */
+const PATH_SHOWN = 120;
+const PATH_START_SHOWN = 40;
+/** How much of a title an action line quotes. */
+const TITLE_SHOWN = 200;
+
+const shorten = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+
+/** A path short enough for its line, file name kept: `src/deeply/…/nested/api.ts`. */
+function shownPath(path: string) {
+  if (path.length <= PATH_SHOWN) return path;
+  const end = PATH_SHOWN - PATH_START_SHOWN - 1;
+  return `${path.slice(0, PATH_START_SHOWN)}…${path.slice(-end)}`;
+}
+
 /** How an action line names lines of a file: `src/api.ts:12` or `src/api.ts:10–12`. */
 function placeName(lines: { path: string; line: number; startLine?: number }) {
+  const path = shownPath(lines.path);
   return lines.startLine !== undefined && lines.startLine < lines.line
-    ? `${lines.path}:${lines.startLine}–${lines.line}`
-    : `${lines.path}:${lines.line}`;
+    ? `${path}:${lines.startLine}–${lines.line}`
+    : `${path}:${lines.line}`;
 }
 
 export function createDeckChatWrites(options: DeckChatWritesOptions) {
   const createId = options.createId ?? (() => randomUUID());
   /** The chat turns started from the page, until they end. */
   const chatTurns = new Map<string, ChatTurnFacts>();
+  /** Stops waiting for the window's draft comments, by turn, once it ends. */
+  const draftWaits = new Map<string, Set<() => void>>();
 
   /** The chat turn this call is part of, at the binding's head, or a refusal. */
   async function chatTurnOf(
@@ -109,19 +155,48 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
       turn.pullRequest !== binding.pullRequest ||
       turn.head !== binding.head
     ) {
-      throw new DeckChatRefused(
-        "Ajour takes review writes only in a chat turn, when the user asks for them in Deck's chat. Answer in words instead.",
-      );
+      throw new DeckChatRefused(NOT_CHATTING);
     }
-    if (!(await options.allowed(binding))) {
-      throw new DeckChatRefused(
-        "The user no longer allows Ajour to send this repository's code to you. Stop, and say only that you can't act on it now.",
-      );
-    }
+    if (!(await options.allowed(binding))) throw new DeckChatRefused(REVOKED);
     const source = parseDeckPullRequestKey(binding.pullRequest);
     if (!source)
       throw new DeckChatRefused("Deck doesn't know this pull request.");
-    return { turn, source, facts: chatTurns.get(turn.id) };
+    /**
+     * The write's last check: the same turn still runs, at the same head,
+     * and the user still allows the repository. Nothing in it waits.
+     */
+    const confirm = () => {
+      const now = options.runningTurnOf(clientId);
+      if (
+        now?.id !== turn.id ||
+        now.pullRequest !== binding.pullRequest ||
+        now.head !== binding.head
+      ) {
+        throw new DeckChatRefused(TURN_ENDED);
+      }
+      if (!options.allowedNow(binding)) throw new DeckChatRefused(REVOKED);
+    };
+    return { turn, source, facts: chatTurns.get(turn.id), confirm };
+  }
+
+  /**
+   * The window's answer to a draft comment, or a refusal as soon as the
+   * turn ends: a call queued behind the window's other calls doesn't keep
+   * the tool waiting.
+   */
+  function untilTurnEnds<T>(turnId: string, work: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const waits = draftWaits.get(turnId) ?? new Set<() => void>();
+      draftWaits.set(turnId, waits);
+      const stop = () => reject(new DeckChatRefused(TURN_ENDED));
+      waits.add(stop);
+      work.then(resolve, reject).finally(() => {
+        waits.delete(stop);
+        if (waits.size === 0 && draftWaits.get(turnId) === waits) {
+          draftWaits.delete(turnId);
+        }
+      });
+    });
   }
 
   /** The diff at the binding's head, to check lines against. */
@@ -163,21 +238,28 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     }
   }
 
-  /** Shows the action line in the chat, then answers the agent with it. */
+  /**
+   * Shows the action line in the chat, then answers the agent with it. Its
+   * link stays only on the pull request's own origin, and its text fits.
+   */
   function done(
     turn: RunningTurn,
-    action: Omit<AgentTurnAction, "id">,
+    facts: ChatTurnFacts | undefined,
+    { url, ...rest }: Omit<AgentTurnAction, "id">,
   ): DeckChatToolOutput {
+    const link = deckLinkOnHost(url, facts?.pullRequestUrl);
+    const action = {
+      ...rest,
+      text: shorten(rest.text, AGENT_TURN_ACTION_TEXT_MAX),
+      ...(link ? { url: link } : {}),
+    };
     options.publish({
       type: "action",
       turnId: turn.id,
       conversationId: turn.conversationId,
       action: { id: createId(), ...action },
     });
-    return {
-      action: action.text,
-      ...(action.url ? { url: action.url } : {}),
-    };
+    return { action: action.text, ...(link ? { url: link } : {}) };
   }
 
   const ref = (source: DeckPullRequestSource) => ({
@@ -199,9 +281,23 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     ) => Promise<DeckChatToolOutput>;
   } = {
     async add_draft_comment(clientId, binding, { body, ...lines }) {
-      const { turn, source } = await chatTurnOf(clientId, binding);
+      const { turn, source, facts, confirm } = await chatTurnOf(
+        clientId,
+        binding,
+      );
       const lineText = await linesOf(binding, lines);
-      const { draftId } = await options.addDraftComment({
+      const line = (draftId: string) =>
+        done(turn, facts, {
+          kind: "draft_comment",
+          text: `Added a draft comment on ${placeName(lines)}`,
+          at: { path: lines.path, side: lines.side, line: lines.line },
+          posted: { kind: "draft_comment", draftId },
+        });
+      confirm();
+      // The window hears of it in this tick, and adds nothing for a turn
+      // it already heard end.
+      const adding = options.addDraftComment({
+        turnId: turn.id,
         pluginId: source.pluginId,
         connectionId: source.connectionId,
         ...ref(source),
@@ -210,25 +306,39 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
         body,
         lineText,
       });
-      return done(turn, {
-        kind: "draft_comment",
-        text: `Added a draft comment on ${placeName(lines)}`,
-        at: { path: lines.path, side: lines.side, line: lines.line },
-        posted: { kind: "draft_comment", draftId },
-      });
+      try {
+        const { draftId } = await untilTurnEnds(turn.id, adding);
+        return line(draftId);
+      } catch (error) {
+        // The window may have added it before it heard the turn end: its
+        // line still shows, so the user can delete it.
+        if (error instanceof DeckChatRefused && error.message === TURN_ENDED) {
+          adding.then(({ draftId }) => line(draftId)).catch(() => undefined);
+        }
+        throw error;
+      }
     },
 
     async post_comment(clientId, binding, { body, lines }) {
-      const { turn, source } = await chatTurnOf(clientId, binding);
+      const { turn, source, facts, confirm } = await chatTurnOf(
+        clientId,
+        binding,
+      );
       if (lines) await linesOf(binding, lines);
-      const result = await options.codeHost(source, "postComment", {
-        ...ref(source),
-        body,
-        ...(lines ? { anchor: { ...lines, headSha: binding.head } } : {}),
-        submissionId: `chat_${createId()}`,
-      });
+      confirm();
+      const result = await options.codeHost(
+        source,
+        "postComment",
+        {
+          ...ref(source),
+          body,
+          ...(lines ? { anchor: { ...lines, headSha: binding.head } } : {}),
+          submissionId: `chat_${createId()}`,
+        },
+        confirm,
+      );
       if ("uncertain" in result) throw uncertain();
-      return done(turn, {
+      return done(turn, facts, {
         kind: "comment",
         text: lines
           ? `Commented on ${placeName(lines)}`
@@ -242,15 +352,24 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     },
 
     async reply_to_thread(clientId, binding, { threadId, body }) {
-      const { turn, source } = await chatTurnOf(clientId, binding);
-      const result = await options.codeHost(source, "replyToThread", {
-        ...ref(source),
-        threadId,
-        body,
-        submissionId: `chat_${createId()}`,
-      });
+      const { turn, source, facts, confirm } = await chatTurnOf(
+        clientId,
+        binding,
+      );
+      confirm();
+      const result = await options.codeHost(
+        source,
+        "replyToThread",
+        {
+          ...ref(source),
+          threadId,
+          body,
+          submissionId: `chat_${createId()}`,
+        },
+        confirm,
+      );
       if ("uncertain" in result) throw uncertain();
-      return done(turn, {
+      return done(turn, facts, {
         kind: "reply",
         text: "Replied in a thread",
         ...(result.url ? { url: result.url } : {}),
@@ -259,14 +378,20 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     },
 
     async resolve_thread(clientId, binding, { threadId, resolved }) {
-      const { turn, source } = await chatTurnOf(clientId, binding);
-      const result = await options.codeHost(source, "setThreadResolved", {
-        ...ref(source),
-        threadId,
-        resolved,
-      });
+      const { turn, source, facts, confirm } = await chatTurnOf(
+        clientId,
+        binding,
+      );
+      confirm();
+      const result = await options.codeHost(
+        source,
+        "setThreadResolved",
+        { ...ref(source), threadId, resolved },
+        confirm,
+      );
       return done(
         turn,
+        facts,
         result.resolved
           ? { kind: "resolve", text: "Resolved a thread" }
           : { kind: "reopen", text: "Reopened a thread" },
@@ -274,19 +399,28 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     },
 
     async submit_review(clientId, binding, { verdict, body }) {
-      const { turn, source } = await chatTurnOf(clientId, binding);
+      const { turn, source, facts, confirm } = await chatTurnOf(
+        clientId,
+        binding,
+      );
+      confirm();
       // The draft review stays the user's, sent with Finish review: a
       // chat's review is its verdict and summary.
-      const result = await options.codeHost(source, "submitReview", {
-        ...ref(source),
-        headSha: binding.head,
-        verdict,
-        ...(body ? { body } : {}),
-        comments: [],
-        submissionId: `chat_${createId()}`,
-      });
+      const result = await options.codeHost(
+        source,
+        "submitReview",
+        {
+          ...ref(source),
+          headSha: binding.head,
+          verdict,
+          ...(body ? { body } : {}),
+          comments: [],
+          submissionId: `chat_${createId()}`,
+        },
+        confirm,
+      );
       if ("uncertain" in result) throw uncertain();
-      return done(turn, {
+      return done(turn, facts, {
         kind: "review",
         // Azure DevOps calls request changes "Wait for author" (#784).
         text:
@@ -298,28 +432,41 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     },
 
     async edit_title(clientId, binding, { title }) {
-      const { turn, source, facts } = await chatTurnOf(clientId, binding);
+      const { turn, source, facts, confirm } = await chatTurnOf(
+        clientId,
+        binding,
+      );
       requireAuthor(facts, "edit its title");
-      const edited = await options.codeHost(source, "updatePullRequest", {
-        ...ref(source),
-        title,
-      });
-      return done(turn, {
+      confirm();
+      const edited = await options.codeHost(
+        source,
+        "updatePullRequest",
+        { ...ref(source), title },
+        confirm,
+      );
+      return done(turn, facts, {
         kind: "title",
-        text: `Renamed the pull request “${edited.title}”`,
+        text: `Renamed the pull request “${shorten(edited.title, TITLE_SHOWN)}”`,
         edited,
       });
     },
 
     async set_draft(clientId, binding, { draft }) {
-      const { turn, source, facts } = await chatTurnOf(clientId, binding);
+      const { turn, source, facts, confirm } = await chatTurnOf(
+        clientId,
+        binding,
+      );
       requireAuthor(facts, draft ? "turn it into a draft" : "mark it ready");
-      const edited = await options.codeHost(source, "updatePullRequest", {
-        ...ref(source),
-        draft,
-      });
+      confirm();
+      const edited = await options.codeHost(
+        source,
+        "updatePullRequest",
+        { ...ref(source), draft },
+        confirm,
+      );
       return done(
         turn,
+        facts,
         edited.draft
           ? {
               kind: "draft",
@@ -343,17 +490,30 @@ export function createDeckChatWrites(options: DeckChatWritesOptions) {
     regrouped(clientId: string, turnId: string) {
       const turn = options.runningTurnOf(clientId);
       if (turn?.id !== turnId) return;
-      done(turn, { kind: "regroup", text: "Regrouped the guide" });
+      done(turn, chatTurns.get(turnId), {
+        kind: "regroup",
+        text: "Regrouped the guide",
+      });
     },
 
-    /** Records what the page said about a chat turn as it started it. */
+    /**
+     * Records what the page said about a chat turn, as the turn is queued
+     * and before it can run, so its first call already finds it.
+     */
     chatStarted(turnId: string, facts: ChatTurnFacts) {
       chatTurns.set(turnId, facts);
     },
 
-    /** Reads every turn event, to forget a chat turn once it ends. */
+    /**
+     * Reads every turn event, to forget a chat turn once it ends and stop
+     * waiting for the window's draft comments.
+     */
     observe(event: AgentTurnEvent) {
-      if (event.type === "ended") chatTurns.delete(event.turnId);
+      if (event.type !== "ended") return;
+      chatTurns.delete(event.turnId);
+      const waits = draftWaits.get(event.turnId);
+      draftWaits.delete(event.turnId);
+      for (const stop of waits ?? []) stop();
     },
 
     run<Name extends DeckChatToolName>(

@@ -372,6 +372,7 @@ describe("agent read tools", () => {
 
 describe("a draft comment from Deck's chat (#796)", () => {
   const draftCall = (headSha = "a41c9e2f0d") => ({
+    turnId: "turn-1",
     pluginId: "github",
     connectionId: "gh-1",
     repository: "acme/api",
@@ -407,6 +408,23 @@ describe("a draft comment from Deck's chat (#796)", () => {
       ok: true,
       output: { draftId: review!.comments[0]!.id },
     });
+  });
+
+  it("adds nothing for a turn the window already heard end", async () => {
+    const { call, localStore } = await setup();
+    const { receiveAgentTurnEvent } = await import("@/lib/agent-turns");
+    receiveAgentTurnEvent({
+      type: "ended",
+      turnId: "turn-1",
+      conversationId: "conversation-1",
+      outcome: "cancelled",
+    });
+
+    expect(await call("deck_add_draft_comment", draftCall())).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("ended"),
+    });
+    expect(localStore.snapshot().deckDraftReviews ?? []).toEqual([]);
   });
 
   it("refuses one on another head than the draft's", async () => {

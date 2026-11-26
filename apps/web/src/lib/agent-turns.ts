@@ -35,6 +35,14 @@ export function receiveAgentTurnEvent(event: AgentTurnEvent) {
   listeners.get(event.turnId)?.forEach((listener) => listener(event));
 }
 
+/**
+ * Whether the window heard the turn end. A turn it never heard of, or
+ * forgot among older ones, hasn't.
+ */
+export function agentTurnEnded(turnId: string) {
+  return kept.get(turnId)?.some((event) => event.type === "ended") ?? false;
+}
+
 /** Calls `listener` each time a conversation closes, from now on. */
 export function watchClosedConversations(listener: ClosedListener) {
   closedListeners.add(listener);

@@ -218,6 +218,12 @@ export interface TurnOptions {
    * read with its read-only file tools (#795). Ignored by a CLI that can't.
    */
   readRoot?: string;
+  /**
+   * Called with the turn's ID as it is queued, before it can be sent to
+   * its CLI: what a caller keeps about the turn is there for its first
+   * tool call (#796).
+   */
+  queued?: (turnId: string) => void;
 }
 
 interface Conversation {
@@ -325,6 +331,7 @@ export class AgentConversations {
 
     const free = conversation.turns.length === 0 && this.options.slot.isFree();
     const turn = this.addTurn(conversation, request, options);
+    options.queued?.(turn.id);
     if (conversation.turns[0] === turn) {
       // Takes the slot in this tick when it is free.
       conversation.draining = this.runTurns(conversation);

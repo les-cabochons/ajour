@@ -42,6 +42,8 @@ import type { ConsentAnswer, DeckAskTarget } from "./deck-ask-sessions";
 export interface DeckChatTarget extends DeckAskTarget {
   /** The user authored it, so the chat may edit its title and draft state. */
   author: boolean;
+  /** Its address on the code host: an action line links only to its origin. */
+  pullRequestUrl: string;
 }
 
 export class DeckChatSession {
@@ -116,6 +118,7 @@ export class DeckChatSession {
             message: text,
             ...(anchor ? { anchor } : {}),
             ...(target.author ? { author: true } : {}),
+            pullRequestUrl: target.pullRequestUrl,
             ...(target.clone ? { clone: target.clone } : {}),
           },
           starting.signal,

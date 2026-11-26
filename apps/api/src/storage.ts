@@ -3032,6 +3032,15 @@ export class AppApiStorage {
   }
 
   /**
+   * The consents as they are held now, without waiting: undefined before
+   * the state is first read. A chat write checks them right before it is
+   * made (#796).
+   */
+  deckConsentsNow(): DeckAgentConsent[] | undefined {
+    return this.cache?.agentRunner.deckConsents;
+  }
+
+  /**
    * Records a repository's consent in place of the one it had. One for the
    * code alone keeps what the same agent's consent covered: an older page
    * asking again never takes the context back.

@@ -4,7 +4,10 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { InvalidPluginResultError } from "./event-errors.ts";
 import { createApiEvents } from "./events.ts";
-import { PluginOperationLifetime } from "./plugin-operation-lifetime.ts";
+import {
+  PluginOperationLifetime,
+  PluginOperationRefused,
+} from "./plugin-operation-lifetime.ts";
 import type {
   PluginInvocation,
   PluginRunOutcome,
@@ -171,6 +174,38 @@ describe("plugin operation lifetime", () => {
     await expect(result).resolves.toBe(42);
     expect(runs[0]!.terminated).toEqual(["settled"]);
     expect(host.activeOperationCount).toBe(0);
+  });
+  it("checks the caller's last refusal once prepared, and a refusal there starts nothing", async () => {
+    const { host, runs } = setup();
+    const order: string[] = [];
+    let refuse = false;
+    const run = () =>
+      host.run("test", "sync", async () => {
+        order.push("prepared");
+        return {
+          invocation,
+          parse: (value: unknown) => value,
+          beforeStart: () => {
+            order.push("checked");
+            if (refuse) {
+              throw new PluginOperationRefused("Not now.", "agent_access");
+            }
+          },
+        };
+      });
+
+    refuse = true;
+    await expect(run()).rejects.toMatchObject({ reason: "agent_access" });
+    expect(order).toEqual(["prepared", "checked"]);
+    expect(runs).toEqual([]);
+    expect(host.activeOperationCount).toBe(0);
+
+    refuse = false;
+    const started = run();
+    await waitForWorkerStart();
+    expect(runs).toHaveLength(1);
+    runs[0]!.complete({ ok: true, result: 1 });
+    await expect(started).resolves.toBe(1);
   });
   it("times out and terminates a stalled run", async () => {
     const { host, runs, run } = setup(50);

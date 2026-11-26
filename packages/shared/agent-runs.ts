@@ -146,6 +146,9 @@ export type AgentTurn = z.infer<typeof agentTurnSchema>;
 export const agentTurnBlockerSchema = z.enum(["agent-run", "turn"]);
 export type AgentTurnBlocker = z.infer<typeof agentTurnBlockerSchema>;
 
+/** The longest action line: a writer shortens what it names to fit. */
+export const AGENT_TURN_ACTION_TEXT_MAX = 500;
+
 /**
  * A write a chat turn made in the user's name (#796, ADR 0024): one action
  * line in the chat, saying what it did, with where it shows and, for what
@@ -167,7 +170,7 @@ export const agentTurnActionSchema = z.object({
     "regroup",
   ]),
   /** The line as the chat shows it, such as "Commented on src/api.ts:12". */
-  text: z.string().min(1).max(500),
+  text: z.string().min(1).max(AGENT_TURN_ACTION_TEXT_MAX),
   /** Where it shows on the code host, when the code host says. */
   url: z.string().url().max(2_000).optional(),
   /** Where it sits in the diff, for a comment on lines: the line links there. */

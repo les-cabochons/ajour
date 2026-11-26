@@ -115,7 +115,7 @@ For anything the questions in place don't cover, open the chat: **Chat** at the 
 
 The chat can also do what you ask it to on the pull request, in your name: add a draft comment, post a comment, reply in a thread, resolve a thread, approve, request changes or comment with a review, regroup the guide, and, on a pull request you opened, rename it or switch it between draft and ready. Each one goes to the code host at once and shows in the chat as one line, such as **Commented on src/api.ts:12**, with **Open** to see it on the code host and **Delete** to remove a comment, a reply or a draft comment it added. A review it submits sends its verdict and summary only: your draft comments wait for **Finish review**. The chat never merges: only **Merge…** on the page does.
 
-The chat sends what a question sends, so a repository you allowed for questions needs nothing more.
+The chat sends what a question sends, so a repository you allowed for questions needs nothing more. A regroup you ask the chat for sends what **Regroup…** sends, the pull request's description and its linked tickets too, so it needs what Regroup asks for: until you allow it, the chat says that **Regroup…** asks you, and regroups nothing.
 
 ## Regroup the guide
 
