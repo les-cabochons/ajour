@@ -1,3 +1,4 @@
+import { builtFrom } from "./test-support/deck-guides.ts";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -59,7 +60,7 @@ async function startService() {
     runtime: {
       async build(input) {
         builds.push(input.diff);
-        return [];
+        return builtFrom(input, []);
       },
       close: async () => {},
     },

@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDiff } from "../../../packages/review-deck/diff.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
+import { builtFrom } from "./test-support/deck-guides.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { apiRequest, startLocalApi } from "./test-support/local-api.ts";
@@ -109,7 +110,7 @@ export async function getFileContent(connection, request) {
 /** One concern holding every hunk, built in process instead of the worker thread. */
 const oneConcern: DeckGuideRuntime = {
   async build(input) {
-    return [
+    return builtFrom(input, [
       {
         id: "g1",
         title: "Everything",
@@ -118,7 +119,7 @@ const oneConcern: DeckGuideRuntime = {
           file.hunks.map((hunk) => hunk.id),
         ),
       },
-    ];
+    ]);
   },
   close: async () => {},
 };

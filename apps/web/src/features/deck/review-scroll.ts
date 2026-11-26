@@ -34,6 +34,32 @@ export interface SectionNavigator {
   tops(): number[];
   /** Scrolls section `index` to the reading line and focuses its title. */
   reach(index: number): void;
+  /**
+   * Scrolls the hunk to the reading line and focuses it, for a summary
+   * line (#789). False when the list doesn't show it.
+   */
+  reachHunk(hunkId: string): boolean;
+}
+
+/** Scrolls `element` to `offset` below the top of its scroller, or of the window. */
+export function scrollToReadingLine(element: HTMLElement, offset: number) {
+  const scroller = scrollerOf(element);
+  const top = element.getBoundingClientRect().top;
+  if (scroller) {
+    scroller.scrollTo({
+      top:
+        scroller.scrollTop +
+        top -
+        scroller.getBoundingClientRect().top -
+        offset,
+      behavior: "instant",
+    });
+  } else {
+    window.scrollTo({
+      top: window.scrollY + top - offset,
+      behavior: "instant",
+    });
+  }
 }
 
 /** The element that scrolls `element`, or undefined for the window. */

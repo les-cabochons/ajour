@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { NO_DECK_SUMMARY } from "@/test-support/deck";
 import { StrictMode, type ReactNode } from "react";
 import {
   act,
@@ -106,18 +107,21 @@ const GUIDED: DeckOpenedPullRequest = {
   ],
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "g1",
         title: "Handle the request",
         rationale: "The handler and the export it reads.",
         hunkIds: ["src/api.ts#1", "src/new.ts#0"],
+        kinds: [],
       },
       {
         id: "mechanical",
         title: "Mechanical changes",
         rationale: "Nothing to review line by line.",
         hunkIds: ["src/api.ts#0"],
+        kinds: [],
       },
     ],
   },
@@ -570,11 +574,13 @@ const HUGE: DeckOpenedPullRequest = {
   ],
   guide: {
     madeWith: "code",
+    summary: NO_DECK_SUMMARY,
     concerns: [
       {
         id: "big",
         title: "Rewrite the big file",
         rationale: "Every line of it changes.",
+        kinds: [],
         hunkIds: Array.from(
           { length: 600 },
           (_, index) => `src/big.ts#${index}`,
