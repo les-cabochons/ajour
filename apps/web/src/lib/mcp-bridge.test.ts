@@ -48,6 +48,10 @@ class FakeEventSource {
   sendToolCall(call: object) {
     this.listeners.get("tool-call")?.({ data: JSON.stringify(call) });
   }
+  /** The API sends an event of a turn. */
+  sendTurnEvent(event: object) {
+    this.listeners.get("agent-turn")?.({ data: JSON.stringify(event) });
+  }
   open() {
     this.readyState = FakeEventSource.OPEN;
     this.onopen?.();
@@ -152,6 +156,86 @@ describe("MCP bridge connection", () => {
       requestId: "r2",
       ok: false,
       error: "Not allowed",
+    });
+  });
+});
+
+describe("a draft comment queued behind another call (#796)", () => {
+  const client = { id: "c1", name: "Claude Code" };
+  const draftCall = (requestId: string, turnId: string) => ({
+    requestId,
+    tool: "deck_add_draft_comment",
+    client,
+    input: {
+      turnId,
+      pluginId: "github",
+      connectionId: "gh-1",
+      repository: "acme/api",
+      number: 7,
+      headSha: "a41c9e2f0d",
+      anchor: { path: "src/api.ts", side: "head", line: 2 },
+      body: "Rename this.",
+      lineText: "TWO",
+    },
+  });
+
+  beforeEach(() => {
+    postMcpBridgeResult.mockClear();
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("runs no more once its turn ends, however many turns come after", async () => {
+    let release!: () => void;
+    const blocking = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ran: string[] = [];
+    const turnEvents: string[] = [];
+    connectMcpBridge({
+      runToolCall: async (call) => {
+        ran.push(call.requestId);
+        if (call.requestId === "r1") await blocking;
+        return { requestId: call.requestId, ok: true, output: null };
+      },
+      onStatus: () => undefined,
+      onAgentTurn: (event) => turnEvents.push(event.type),
+    });
+    const stream = FakeEventSource.instances[0]!;
+
+    stream.sendToolCall({ requestId: "r1", tool: "list_projects", client });
+    stream.sendToolCall(draftCall("r2", "turn-1"));
+    stream.sendToolCall(draftCall("r3", "turn-2"));
+    stream.sendTurnEvent({
+      type: "ended",
+      turnId: "turn-1",
+      conversationId: "conversation-1",
+      outcome: "cancelled",
+    });
+    // Newer turns come and go while the call waits.
+    for (let turn = 0; turn < 60; turn += 1) {
+      stream.sendTurnEvent({
+        type: "ended",
+        turnId: `later-${turn}`,
+        conversationId: "conversation-1",
+        outcome: "done",
+      });
+    }
+    release();
+    await vi.waitFor(() =>
+      expect(postMcpBridgeResult).toHaveBeenCalledTimes(3),
+    );
+
+    // The window still hears every event.
+    expect(turnEvents).toHaveLength(61);
+    expect(ran).toEqual(["r1", "r3"]);
+    expect(postMcpBridgeResult.mock.calls[1]![0]).toEqual({
+      requestId: "r2",
+      ok: false,
+      error: expect.stringContaining("ended"),
     });
   });
 });

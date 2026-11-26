@@ -2,6 +2,10 @@ import {
   agentTurnEventSchema,
   type AgentTurnEvent,
 } from "@ajour/shared/agent-runs";
+import {
+  DECK_DRAFT_COMMENT_TOOL,
+  deckDraftCommentCallSchema,
+} from "@ajour/shared/deck";
 import { handoffsSnapshotSchema } from "@ajour/shared/handoffs";
 import { setHandoffs } from "./handoffs";
 import {
@@ -79,6 +83,19 @@ async function runSafely(
   }
 }
 
+/**
+ * The turn a call may act only in: Deck's chat adds a draft comment only
+ * while its turn runs (#796). Undefined for a call of no turn.
+ */
+function turnOfCall(call: BridgeToolCall): string | undefined {
+  if (call.tool !== DECK_DRAFT_COMMENT_TOOL) return undefined;
+  return deckDraftCommentCallSchema.safeParse(call.input).data?.turnId;
+}
+
+/** What a call whose turn ended while it waited in the queue answers. */
+const TURN_ENDED =
+  "This chat turn ended before Ajour ran the call, so it did nothing. Stop.";
+
 /** Starts a tool call's job as it arrives, so its wait in the queue counts. */
 function startToolCall(call: BridgeToolCall) {
   const unit = wideEvents.start("agent_tool.call", {
@@ -100,16 +117,22 @@ function startToolCall(call: BridgeToolCall) {
   return unit;
 }
 
-/** Runs a tool call in its job, posts its result, and ends the job once. */
+/**
+ * Runs a tool call in its job, posts its result, and ends the job once. A
+ * call whose turn ended while it waited runs no more and is refused.
+ */
 async function runToolCall(
   handlers: McpBridgeHandlers,
   call: BridgeToolCall,
   unit: Unit<AjourCatalog, "agent_tool.call">,
   queuedAt: number,
+  turnEnded: () => boolean,
 ) {
   try {
     unit.set({ agent_tool: { queue_ms: Date.now() - queuedAt } });
-    const result = await unit.enter(() => runSafely(handlers, call, unit));
+    const result: BridgeToolResult = turnEnded()
+      ? { requestId: call.requestId, ok: false, error: TURN_ENDED }
+      : await unit.enter(() => runSafely(handlers, call, unit));
     // A refusal is the tool working as designed; a failure, recorded above,
     // is a bug.
     if (!result.ok && !result.failed) unit.refuse("tool_refused");
@@ -129,6 +152,12 @@ export function connectMcpBridge(
   let connection: Unit<AjourCatalog, "mcp_bridge.connection"> | undefined;
   let reopenTimer: ReturnType<typeof setTimeout> | undefined;
   let queue: Promise<void> = Promise.resolve();
+  /**
+   * The queued calls of each turn, whose flag its end sets. The stream
+   * sends a turn's call before its end, so a call queued for a turn is one
+   * the turn still ran for: the window needs no memory of older turns.
+   */
+  const queuedByTurn = new Map<string, Set<{ ended: boolean }>>();
 
   const open = () => {
     const stream = new EventSource(appApiUrl(endpoint));
@@ -176,7 +205,13 @@ export function connectMcpBridge(
         const parsed = agentTurnEventSchema.safeParse(
           JSON.parse((message as MessageEvent<string>).data),
         );
-        if (parsed.success) handlers.onAgentTurn?.(parsed.data);
+        if (!parsed.success) return;
+        if (parsed.data.type === "ended") {
+          const queued = queuedByTurn.get(parsed.data.turnId);
+          queuedByTurn.delete(parsed.data.turnId);
+          queued?.forEach((call) => (call.ended = true));
+        }
+        handlers.onAgentTurn?.(parsed.data);
       } catch {
         /* Ignore an invalid event. */
       }
@@ -190,9 +225,27 @@ export function connectMcpBridge(
       job.set({ mcp_bridge: { call_count: calls } });
       const unit = startToolCall(parsed.data);
       const queuedAt = Date.now();
-      queue = queue.then(() =>
-        runToolCall(handlers, parsed.data, unit, queuedAt),
-      );
+      const turnId = turnOfCall(parsed.data);
+      const waiting = { ended: false };
+      if (turnId !== undefined) {
+        const queued = queuedByTurn.get(turnId) ?? new Set();
+        queued.add(waiting);
+        queuedByTurn.set(turnId, queued);
+      }
+      queue = queue.then(() => {
+        if (turnId !== undefined) {
+          const queued = queuedByTurn.get(turnId);
+          queued?.delete(waiting);
+          if (queued?.size === 0) queuedByTurn.delete(turnId);
+        }
+        return runToolCall(
+          handlers,
+          parsed.data,
+          unit,
+          queuedAt,
+          () => waiting.ended,
+        );
+      });
     });
   };
 

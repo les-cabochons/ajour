@@ -499,6 +499,64 @@ it("shows the line of a draft comment the window added as its turn ended, with D
   expect(within(line).getByRole("button", { name: "Delete" })).toBeTruthy();
 });
 
+it("shows an earlier turn's late action after the next message started, with Delete", async () => {
+  vi.mocked(api.chatDeck)
+    .mockResolvedValueOnce({ turn: turn("t20") })
+    .mockResolvedValueOnce({ turn: turn("t21") });
+  await renderReview();
+  press("a");
+  sendMessage("Post a comment.");
+  await waitFor(() => expect(api.chatDeck).toHaveBeenCalledTimes(1));
+  text("t20", 0, "Posting it.");
+  ended("t20");
+  sendMessage("Anything else?");
+  await waitFor(() => expect(api.chatDeck).toHaveBeenCalledTimes(2));
+  text("t21", 0, "Nothing else.");
+
+  // The code host answered the first turn's post only now.
+  acted("t20", {
+    id: "a20",
+    kind: "comment",
+    text: "Commented on src/api.ts:1",
+    posted: { kind: "comment", commentId: "c-20" },
+  });
+
+  const line = screen.getByText("Commented on src/api.ts:1").closest("li")!;
+  expect(within(line).getByRole("button", { name: "Delete" })).toBeTruthy();
+});
+
+it("shows a late action of a turn that ended before its message's answer came", async () => {
+  let answer!: (value: { turn: AgentTurn }) => void;
+  vi.mocked(api.chatDeck).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+  );
+  await renderReview();
+  press("a");
+  sendMessage("Add a draft comment.");
+  await waitFor(() => expect(api.chatDeck).toHaveBeenCalled());
+  // The whole turn ran before the window heard its id.
+  text("t22", 0, "Done.");
+  ended("t22");
+  await act(async () => answer({ turn: turn("t22") }));
+  await screen.findByText("Done.");
+
+  acted("t22", {
+    id: "a22",
+    kind: "draft_comment",
+    text: "Added a draft comment on src/api.ts:1",
+    at: { path: "src/api.ts", side: "head", line: 1 },
+    posted: { kind: "draft_comment", draftId: "draft-22" },
+  });
+
+  const line = screen
+    .getByText("Added a draft comment on src/api.ts:1")
+    .closest("li")!;
+  expect(within(line).getByRole("button", { name: "Delete" })).toBeTruthy();
+});
+
 it("shows the title a chat edit gave the pull request", async () => {
   localStore.removeConnectionPullRequests("github", "work");
   sync(true);

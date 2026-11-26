@@ -33,9 +33,11 @@ import type { ConsentAnswer, DeckAskTarget } from "./deck-ask-sessions";
  * The chat of one review page (#796), kept by the page so closing the
  * panel, or the narrow sheet, keeps the conversation: reopening it shows it
  * as it was, and a reply still coming carries on. A message goes through
- * the repository's consent as an ask does. Each write the reply's turn
+ * the repository's consent as an ask does. Each write a reply's turn
  * makes arrives once as an action line, and the page hears it, to show
- * the new comment, title or draft state.
+ * the new comment, title or draft state. A write can come after its turn
+ * ended, and after the next message started, so the chat follows each of
+ * its turns while the page shows.
  */
 
 /** The pull request the chat is about, at the head the page shows. */
@@ -53,8 +55,8 @@ export class DeckChatSession {
     request: DeckNeedsConsent,
   ) => Promise<ConsentAnswer>;
   readonly #onAction: (action: AgentTurnAction) => void;
-  /** Stops following the reply's turn. */
-  #unwatch?: () => void;
+  /** Stops following each of the chat's turns, by turn. */
+  readonly #watching = new Map<string, () => void>();
   /** Stops the message before its turn starts, while it waits for consent too. */
   #starting?: AbortController;
   /** Stops hearing about closed conversations. */
@@ -237,46 +239,51 @@ export class DeckChatSession {
   }
 
   /**
-   * The page shows: the chat follows its reply's turn again, and hears its
+   * The page shows: the chat follows each of its turns again, the writes
+   * that came while it was away replaying first, and hears its
    * conversation close. React's development remount detaches it first.
    */
   attach() {
     this.#unwatchClosed ??= watchClosedConversations((event) => {
-      // A conversation closed under a reply still coming: it comes no more.
+      // A conversation closed under a reply still coming: its text comes
+      // no more, but a write it made still has its line.
       if (event.conversationId === this.#conversationId && this.going) {
-        this.#unwatch?.();
-        this.#unwatch = undefined;
         this.#set(stopReply(this.#state));
       }
     });
-    const reply = this.#state.entries.at(-1);
-    if (reply?.kind === "reply" && reply.turnId && this.going) {
-      this.#watch(reply.turnId);
+    for (const entry of this.#state.entries) {
+      if (entry.kind === "reply" && entry.turnId) this.#watch(entry.turnId);
     }
   }
 
-  /** The page is gone: the chat stops following its turn, and writes nothing to the page. */
+  /** The page is gone: the chat stops following its turns, and writes nothing to the page. */
   detach() {
-    this.#unwatch?.();
-    this.#unwatch = undefined;
+    this.#watching.forEach((unwatch) => unwatch());
+    this.#watching.clear();
     this.#unwatchClosed?.();
     this.#unwatchClosed = undefined;
   }
 
+  /**
+   * Follows one of the chat's turns until the page goes. An ended turn is
+   * followed too: a write its agent made can be confirmed after the end,
+   * as a draft comment the window added as the turn ended or a comment the
+   * code host answered late, and its line needs its Delete (#796). The
+   * window doesn't say when a turn's last write is in, so nothing earlier
+   * stops it; an ended reply takes nothing but action lines.
+   */
   #watch(turnId: string) {
-    this.#unwatch?.();
-    this.#unwatch = watchAgentTurn(turnId, (event) => {
-      const next = applyChatEvent(this.#state, event);
-      if (next === this.#state) return;
-      this.#set(next);
-      // Once per write: a replayed event changes nothing.
-      if (event.type === "action") this.#onAction(event.action);
-      // An ended reply's turn is still followed until the next message: a
-      // draft comment the window added as the turn ended has its line
-      // after the end (#796), and it needs its Delete.
-    });
-    // Its events so far replay first: a turn already over is followed no more.
-    if (!chatGoing(this.#state)) this.detach();
+    if (this.#watching.has(turnId)) return;
+    this.#watching.set(
+      turnId,
+      watchAgentTurn(turnId, (event) => {
+        const next = applyChatEvent(this.#state, event);
+        if (next === this.#state) return;
+        this.#set(next);
+        // Once per write: a replayed event changes nothing.
+        if (event.type === "action") this.#onAction(event.action);
+      }),
+    );
   }
 
   #set(state: ChatState) {
