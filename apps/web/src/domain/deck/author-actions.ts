@@ -95,3 +95,22 @@ export function mergeBlocker(
     return `This repository allows no merge method Deck offers. Merge it on ${host.pluginName}.`;
   return undefined;
 }
+
+/**
+ * Where a merge the code host took but is still completing stands, read
+ * from the pull request's facts and whether the sync the merge started has
+ * finished. Merged or closed ends it, and conflicting branches fail it. The
+ * facts can't tell a merge still running from one a policy stopped, so once
+ * that sync finishes with the pull request still open, it ends too: Merge
+ * asks again, and the plugin answers with the completion it's still making
+ * or why it stopped. The facts' activity time is no sign either way, since
+ * a code host needn't change it when a merge goes on or stops.
+ */
+export function pendingMerge(
+  facts: Pick<CodeHostPullRequestFacts, "state" | "mergeability">,
+  merge: { synced: boolean },
+): "completing" | "ended" | "conflicting" {
+  if (facts.state !== "open") return "ended";
+  if (facts.mergeability === "conflicting") return "conflicting";
+  return merge.synced ? "ended" : "completing";
+}

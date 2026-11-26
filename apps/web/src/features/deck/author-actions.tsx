@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { RiPencilLine } from "@remixicon/react";
 import type {
   CodeHostMergeMethod,
@@ -16,7 +16,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { showActionToast, showToast } from "@/components/ui/toast";
+import {
+  showActionToast,
+  showErrorToast,
+  showToast,
+} from "@/components/ui/toast";
 import {
   authorActions,
   defaultCommitTitle,
@@ -24,6 +28,7 @@ import {
   draftActionLabel,
   mergeBlocker,
   mergeMethodLabels,
+  pendingMerge,
 } from "@/domain/deck/author-actions";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import {
@@ -268,14 +273,27 @@ export function MergePullRequest({
   const [sending, setSending] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
   /**
-   * The facts' update time when the code host took a merge it's still
-   * completing: Merge waits until a sync brings newer facts.
+   * A merge the code host took and is still completing, and whether the
+   * sync it started has finished. Merge waits while `pendingMerge` says so.
    */
-  const [completingAt, setCompletingAt] = useState<number | undefined>();
+  const [pending, setPending] = useState<{ synced: boolean } | undefined>();
   const titleId = useId();
   const { pluginId, connectionId, facts } = pullRequest;
   const labels = mergeMethodLabels(pluginId);
-  const completing = completingAt === facts.updatedAt;
+  const outcome = pending ? pendingMerge(facts, pending) : undefined;
+  const completing = outcome === "completing";
+  useEffect(() => {
+    if (!outcome || outcome === "completing") return;
+    setPending(undefined);
+    if (outcome === "conflicting") {
+      showErrorToast({
+        id: `deck-merge-${pullRequest._id}`,
+        title: `${pullRequest.pluginName} couldn't complete the merge`,
+        description:
+          "The source and target branches conflict. Resolve the conflicts, then merge again.",
+      });
+    }
+  }, [outcome, pullRequest._id, pullRequest.pluginName]);
   const ready = headSha !== undefined && methods !== undefined && !completing;
   const chosen =
     method && methods?.includes(method) ? method : (methods?.[0] ?? undefined);
@@ -305,17 +323,20 @@ export function MergePullRequest({
         ...(chosen !== "rebase" && words ? { commitTitle: words } : {}),
       });
       setOpen(false);
-      if (result.mergeCommitSha) {
+      const completed = !!result.mergeCommitSha;
+      if (completed) {
         localStore.changePullRequest(pullRequest._id, { type: "merged" });
         showToast("Merged");
       } else {
-        setCompletingAt(facts.updatedAt);
+        setPending({ synced: false });
         showToast(`${pullRequest.pluginName} is completing the merge`);
       }
       // The next sync says how it closed.
-      void syncCodeHostConnection(pluginId, connectionId).catch(
-        () => undefined,
-      );
+      void syncCodeHostConnection(pluginId, connectionId)
+        .catch(() => undefined)
+        .finally(() => {
+          if (!completed) setPending((current) => current && { synced: true });
+        });
     } catch (error) {
       setFailure(writeFailure(error, pullRequest));
       onFailed?.();

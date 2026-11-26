@@ -6,6 +6,7 @@ import {
   draftActionLabel,
   mergeBlocker,
   mergeMethodLabels,
+  pendingMerge,
 } from "./author-actions";
 
 const facts = { title: "Stop retries on 410", number: 7 };
@@ -130,5 +131,36 @@ describe("mergeBlocker", () => {
     expect(mergeBlocker(GITHUB, { ...ready, methods: [] })).toBe(
       "This repository allows no merge method Deck offers. Merge it on GitHub.",
     );
+  });
+});
+
+describe("pendingMerge", () => {
+  const open = { state: "open", mergeability: "unknown" } as const;
+
+  it("keeps a merge the code host took completing until something tells how it went", () => {
+    expect(pendingMerge(open, { synced: false })).toBe("completing");
+    // Azure DevOps works the merge out again before it completes.
+    expect(
+      pendingMerge({ ...open, mergeability: "mergeable" }, { synced: false }),
+    ).toBe("completing");
+  });
+
+  it("ends it once the pull request merged or closed", () => {
+    expect(pendingMerge({ ...open, state: "merged" }, { synced: false })).toBe(
+      "ended",
+    );
+    expect(pendingMerge({ ...open, state: "closed" }, { synced: false })).toBe(
+      "ended",
+    );
+  });
+
+  it("fails it when the branches turn out to conflict", () => {
+    expect(
+      pendingMerge({ ...open, mergeability: "conflicting" }, { synced: false }),
+    ).toBe("conflicting");
+  });
+
+  it("ends it when the sync after the merge finds it still open, so Merge can ask again", () => {
+    expect(pendingMerge(open, { synced: true })).toBe("ended");
   });
 });

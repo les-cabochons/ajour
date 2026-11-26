@@ -46,11 +46,16 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   mergePullRequest: vi.fn(),
   syncCodeHostConnection: vi.fn(),
 }));
-const toasts = vi.hoisted(() => ({ show: vi.fn(), action: vi.fn() }));
+const toasts = vi.hoisted(() => ({
+  show: vi.fn(),
+  action: vi.fn(),
+  error: vi.fn(),
+}));
 vi.mock("@/components/ui/toast", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/ui/toast")>()),
   showToast: toasts.show,
   showActionToast: toasts.action,
+  showErrorToast: toasts.error,
 }));
 vi.mock("@pierre/diffs/react", () => ({
   PatchDiff: ({ patch }: { patch: string }) => <pre>{patch}</pre>,
@@ -182,6 +187,7 @@ afterEach(() => {
   vi.mocked(api.syncCodeHostConnection).mockReset();
   toasts.show.mockReset();
   toasts.action.mockReset();
+  toasts.error.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -559,13 +565,22 @@ it("reads the versions again after a refused merge, so a push since holds Merge 
   expect(api.mergePullRequest).toHaveBeenCalledTimes(1);
 });
 
-it("holds Merge while Azure DevOps is still completing it, until a sync says how", async () => {
-  vi.mocked(api.mergePullRequest).mockResolvedValue({});
-  const id = await renderAuthorPage({}, "azure_devops");
+/** The sync a merge starts, answered when the test says. */
+function heldSync() {
+  let finish!: () => void;
+  vi.mocked(api.syncCodeHostConnection).mockReturnValue(
+    new Promise((resolve) => {
+      finish = () =>
+        resolve({ viewer: { login: "alex", isBot: false }, pullRequests: [] });
+    }),
+  );
+  return () => finish();
+}
 
+/** Merges from the dialog, which Azure DevOps answers as still completing. */
+async function mergeStillCompleting(id: string) {
   const dialog = await openMerge();
   fireEvent.click(within(dialog).getByRole("button", { name: "Merge" }));
-
   await waitFor(() =>
     expect(toasts.show).toHaveBeenCalledWith(
       "Azure DevOps is completing the merge",
@@ -574,16 +589,56 @@ it("holds Merge while Azure DevOps is still completing it, until a sync says how
   expect(facts(id).state).toBe("open");
   const button = screen.getByRole("button", { name: "Merging…" });
   expect(button.hasAttribute("disabled")).toBe(true);
+}
 
-  // A sync that still finds it open lets the author try again.
+it("holds Merge while Azure DevOps is still completing it, until the sync after it finishes", async () => {
+  vi.mocked(api.mergePullRequest).mockResolvedValue({});
+  const finishSync = heldSync();
+  const id = await renderAuthorPage({ updatedAt: 100 }, "azure_devops");
+  await mergeStillCompleting(id);
+
+  // The sync finds it still open, with the same activity time: Azure DevOps
+  // needn't change it when the merge goes on or stops. Merge can ask again.
   act(() => {
-    sync({ id: `pr${number}`, number, updatedAt: 200 }, "azure_devops");
+    sync({ id: `pr${number}`, number, updatedAt: 100 }, "azure_devops");
+  });
+  expect(screen.getByRole("button", { name: "Merging…" })).toBeTruthy();
+  await act(async () => finishSync());
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Merge…" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+});
+
+it("says the merge failed when a sync finds the branches conflict, whatever the activity time", async () => {
+  vi.mocked(api.mergePullRequest).mockResolvedValue({});
+  heldSync();
+  const id = await renderAuthorPage({ updatedAt: 100 }, "azure_devops");
+  await mergeStillCompleting(id);
+
+  act(() => {
+    sync(
+      {
+        id: `pr${number}`,
+        number,
+        updatedAt: 100,
+        mergeability: "conflicting",
+      },
+      "azure_devops",
+    );
   });
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: "Merge…" }).hasAttribute("disabled"),
     ).toBe(false),
   );
+  expect(toasts.error).toHaveBeenCalledWith({
+    id: `deck-merge-${id}`,
+    title: "Azure DevOps couldn't complete the merge",
+    description:
+      "The source and target branches conflict. Resolve the conflicts, then merge again.",
+  });
 });
 
 it("sends nothing from an old toast's Retry once the draft state is what it asked for", async () => {
