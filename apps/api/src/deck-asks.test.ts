@@ -442,11 +442,15 @@ describe("consent for one agent", () => {
       await api.consent();
       const asked = await api.ask();
       await api.waitForStarted(asked.body.turn.id);
+      // The agent has the turn: one not sent yet is refused instead (#937).
+      await vi.waitFor(async () =>
+        expect(await api.turnsRead()).toHaveLength(1),
+      );
 
       // Claude Code still runs; the repository is now allowed with Codex only.
       expect((await api.pick("codex")).status).toBe(200);
       expect((await api.consent("codex")).status).toBe(200);
-      await api.answerOf(asked.body.turn.id);
+      expect(await api.answerOf(asked.body.turn.id)).toBe("Done.");
 
       const [read] = await api.mcpReplies();
       expect(read!.reply.result.isError).toBe(true);
@@ -476,6 +480,10 @@ describe("consent for one agent", () => {
       const third = await api.startTurn("And the tests?");
       expect(second.status).toBe(201);
       expect(third.status).toBe(201);
+      // The agent has the first turn: one not sent yet is refused too (#937).
+      await vi.waitFor(async () =>
+        expect(await api.turnsRead()).toHaveLength(1),
+      );
 
       await api.pick("codex");
       await api.consent("codex");
