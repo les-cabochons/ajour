@@ -6,7 +6,9 @@ import {
   readFile,
   rename,
   rm,
+  stat,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -1131,6 +1133,27 @@ describe(
         await deck.release(entry().key);
       }
     });
+
+    // Windows git reads a file's creation time as its ctime, so an edit
+    // that keeps its size and modification time can't be told there.
+    it.skipIf(process.platform === "win32")(
+      "keeps an edit that keeps the file's size and time, whatever the clone sets for stat checks",
+      async () => {
+        git(fixture.clone, "config", "core.checkStat", "minimal");
+        git(fixture.clone, "config", "core.trustctime", "false");
+        const { deck, root } = await prepared();
+        const changed = path.join(root, "head only.ts");
+        const before = await stat(changed);
+        const same = (await readFile(changed, "utf8")).replace(/[a-z]/, "Z");
+        await writeFile(changed, same);
+        await utimes(changed, before.atime, before.mtime);
+
+        await deck.release(entry().key);
+
+        expect(await readFile(changed, "utf8")).toBe(same);
+        expect(kept).toEqual(["not_clean"]);
+      },
+    );
 
     it("keeps a file changed in a checkout of a clone that sets core.ignorestat", async () => {
       git(fixture.clone, "config", "core.ignorestat", "true");

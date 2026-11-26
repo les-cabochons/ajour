@@ -316,13 +316,20 @@ const DECK_FOLDER = /^([0-9a-f]{16})(?:-[0-9a-f]{8})?$/;
 
 /**
  * What git reads a worktree with, as Deck checked it out: its committed
- * links are plain files, and its long paths are allowed.
+ * links are plain files, and its long paths are allowed. Its stat checks
+ * are git's full ones, whatever the clone sets, so an edit that keeps a
+ * file's size and modification time still shows by its ctime (except on
+ * Windows, where git reads the creation time as ctime).
  */
 const AS_CHECKED_OUT = [
   "-c",
   "core.symlinks=false",
   "-c",
   "core.longpaths=true",
+  "-c",
+  "core.checkStat=default",
+  "-c",
+  "core.trustctime=true",
 ] as const;
 
 const isMissing = (error: unknown) =>
