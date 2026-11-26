@@ -15,7 +15,8 @@ export function fileNote(file: DeckFile): string | undefined {
   return undefined;
 }
 
-const lineCount = (count: number) =>
+/** "1 line", "4,200 lines". */
+const linesOf = (count: number) =>
   `${count.toLocaleString("en-US")} ${count === 1 ? "line" : "lines"}`;
 
 /**
@@ -29,10 +30,10 @@ export function fileWithoutLines(file: DeckFile): string | undefined {
     const { oldLines, newLines } = file.tooLarge;
     const counts =
       file.status === "added"
-        ? lineCount(newLines)
+        ? linesOf(newLines)
         : file.status === "deleted"
-          ? lineCount(oldLines)
-          : `${lineCount(oldLines)} before and ${newLines.toLocaleString("en-US")} after`;
+          ? linesOf(oldLines)
+          : `${linesOf(oldLines)} before and ${newLines.toLocaleString("en-US")} after`;
     return `Not shown: too large to compare here, ${counts}.`;
   }
   if (file.binary) return "Not shown: a binary file, or one too large to read.";

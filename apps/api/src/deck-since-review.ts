@@ -64,24 +64,34 @@ function exactChangedLines(patch: string): string[][][] {
  * The files and hunks of a patch, each hunk signed with what it changes:
  * its added and removed lines in order, byte for byte. A file shown
  * without lines, binary or only renamed, is signed with its status, its
- * base path and whether it is binary.
+ * base path and whether it is binary, and one too large to compare also
+ * with its index line, its versions' hashes (`diff-worker.ts`).
  */
 export function signedDiff(patch: string): SignedFile[] {
   const exact = exactChangedLines(patch);
-  return parseDiff(patch).map((file, fileIndex) => ({
-    file,
-    hunks: file.hunks.map((hunk, hunkIndex) => {
-      const lines = hunk.header ? exact[fileIndex]?.[hunkIndex] : undefined;
-      return {
-        hunk,
-        signature: JSON.stringify(
-          lines?.length
-            ? lines
-            : ["file", file.status, file.oldPath ?? "", file.binary],
-        ),
-      };
-    }),
-  }));
+  return parseDiff(patch).map((file, fileIndex) => {
+    const index = file.headerLines.find((line) => line.startsWith("index "));
+    return {
+      file,
+      hunks: file.hunks.map((hunk, hunkIndex) => {
+        const lines = hunk.header ? exact[fileIndex]?.[hunkIndex] : undefined;
+        return {
+          hunk,
+          signature: JSON.stringify(
+            lines?.length
+              ? lines
+              : [
+                  "file",
+                  file.status,
+                  file.oldPath ?? "",
+                  file.binary,
+                  ...(index ? [index] : []),
+                ],
+          ),
+        };
+      }),
+    };
+  });
 }
 
 export function diffSignatures(patch: string): DiffSignatures {

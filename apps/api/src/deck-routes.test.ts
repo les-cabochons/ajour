@@ -17,10 +17,7 @@ import {
 import type { GuideJobConcern } from "../../../packages/review-deck/guide-job.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
 import { builtFrom } from "./test-support/deck-guides.ts";
-import {
-  DECK_FILE_DIFF_BUDGET_MS,
-  DECK_GUIDE_HUNK_LIMIT,
-} from "./deck-service.ts";
+import { DECK_GUIDE_HUNK_LIMIT } from "./deck-service.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import {
@@ -112,7 +109,7 @@ const SUMMARY_CHANGED_FILES = ${JSON.stringify(SUMMARY_CHANGED_FILES)};
 export async function validateConnection({ config }) {
   return { normalizedConfig: config, connectionSummary: {} };
 }
-// So many hunks, 100 a file: a file of more would pass the diff's time budget.
+// So many hunks, 100 a file, so no file nears the diff's time budget on a slow runner.
 function hugeFiles(hunks) {
   const files = [];
   for (let left = hunks, index = 0; left > 0; left -= 100, index += 1) {
@@ -143,6 +140,7 @@ export async function getPullRequestContent(connection, request) {
     : request.number === 41 ? hugeFiles(1001)
     : request.number === 42
       ? [{ path: "rewritten/lock.json", status: "modified" }, { path: "src/api.ts", status: "modified" }]
+    : request.number === 43 ? [{ path: "huge500/0-500.ts", status: "modified" }]
     : CHANGED_FILES;
   return {
     headSha: globalThis.deckHeads?.[request.number] ?? "head",
@@ -426,16 +424,16 @@ function push(number: number, headSha: string) {
   });
 }
 
+/** How many hunks an opened pull request's files have. */
+const hunkCount = (files: { hunks: unknown[] }[]) =>
+  files.reduce((count, file) => count + file.hunks.length, 0);
+
 /**
  * Builds guides in process instead of the worker thread: one concern per
  * pull request, titled with its folder, such as `pr20`. `hold` keeps a
  * pull request's build running until its release is called. `started` and
  * `built` list the builds in the order they started and ended.
  */
-/** The hunks of an opened pull request's files. */
-const hunkCount = (files: { hunks: unknown[] }[]) =>
-  files.reduce((count, file) => count + file.hunks.length, 0);
-
 function heldGuides() {
   const started: string[] = [];
   const built: string[] = [];
@@ -730,8 +728,8 @@ describe("opening a pull request in Deck", () => {
   });
 
   it("shows a file whose diff would take too long as too large to diff, without stalling the API, and opens the rest", async () => {
-    // Without a budget, diffing this lockfile blocks the API for seconds
-    // and gives one hunk of 8,000 lines.
+    // Diffed on the main thread with no budget, this lockfile blocked the
+    // API for seconds and gave one hunk of 8,000 lines.
     const { api, open } = await startDeck();
     let longestStall = 0;
     let last = performance.now();
@@ -767,15 +765,26 @@ describe("opening a pull request in Deck", () => {
     expect((other!.hunks as unknown[]).length).toBe(2);
     // Its guide is built from the rest.
     expect(opened.body.guide).toMatchObject({ madeWith: "code" });
-    // The budget is DECK_FILE_DIFF_BUDGET_MS a file; the margin is a slow
-    // CI runner's.
-    expect(longestStall).toBeLessThan(DECK_FILE_DIFF_BUDGET_MS * 4);
-    expect(took).toBeLessThan(2_000);
+    // The diff is written in a worker: the API's own thread never waits on
+    // it. The margins are a slow CI runner's.
+    expect(longestStall).toBeLessThan(250);
+    expect(took).toBeLessThan(3_000);
     expect(
       api.events.find(
         (event) => event.name === "deck.open" && event.kind === "request",
       ),
     ).toMatchObject({ outcome: "ok", deck: { file_count: 2, hunk_count: 3 } });
+  });
+
+  it("shows the hunks of a long file with many scattered changes", async () => {
+    const { open } = await startDeck();
+
+    const opened = await open(43);
+
+    expect(opened.status).toBe(200);
+    const [file] = opened.body.files as Record<string, unknown>[];
+    expect(file).not.toHaveProperty("tooLarge");
+    expect(file!.hunks as unknown[]).toHaveLength(500);
   });
 
   it("keeps the pull request on screen, and reads no file again of one opened before, from the content cache", async () => {

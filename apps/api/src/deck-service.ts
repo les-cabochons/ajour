@@ -6,7 +6,6 @@ import type {
 } from "../../../packages/shared/code-host.ts";
 import type {
   DeckFile,
-  DeckFileTooLarge,
   DeckGuide,
   DeckGuideSkipped,
   DeckOpenedPullRequest,
@@ -17,7 +16,6 @@ import type {
 } from "../../../packages/shared/deck.ts";
 import { parseDeckPullRequestKey } from "../../../packages/shared/deck.ts";
 import {
-  fileDiff,
   hunkToPatch,
   parseDiff,
   type FileChange,
@@ -37,6 +35,11 @@ import {
   type GuideBuildInput,
   type GuideBuilds,
 } from "./deck-guide-builds.ts";
+import {
+  createWorkerDeckDiffs,
+  type DeckDiffLane,
+  type DeckDiffs,
+} from "./deck-diffs.ts";
 import { guideOf, withTickets } from "./deck-summary.ts";
 import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 import {
@@ -125,6 +128,16 @@ const stopped = (signal: AbortSignal) =>
   signal.reason instanceof DeckConnectionRemoved
     ? signal.reason
     : new DeckBuildReplaced();
+
+/** A diff the worker wrote, or the stop's own error once the work stopped. */
+async function written<T>(writing: Promise<T>, signal: AbortSignal) {
+  try {
+    return await writing;
+  } catch (error) {
+    if (signal.aborted) throw stopped(signal);
+    throw error;
+  }
+}
 
 /**
  * Files read at once. The plugin host runs at most 4 operations of a plugin
@@ -230,61 +243,14 @@ function guideSkippedFor(
 }
 
 /**
- * The most one file's diff may block the local API, in milliseconds (#774's
- * council). jsdiff's work grows with the square of the lines changed: a
- * lockfile of 4,200 lines with 4,000 replaced took 2.5 s, as one hunk, and
- * every request waited behind it. Past the budget the file is too large to
- * diff, and the diff yields between files. With the reads around it, a
- * request then waits at most about 65 ms behind an open, under the 75 ms of
- * a store write in the performance budgets of `docs/agents/code-standards.md`.
+ * Writes a diff in Deck's diff workers, off the main thread, a file past
+ * its budget written as too large to compare (`deck-diffs.ts`).
  */
-export const DECK_FILE_DIFF_BUDGET_MS = 40;
-
-/** The lines of a version of a file: its newlines, and a last line without one. */
-function lineCount(text: string | null) {
-  if (!text) return 0;
-  let count = 0;
-  for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1))
-    count += 1;
-  return text.endsWith("\n") ? count : count + 1;
-}
-
-/** Lets the requests waiting behind the diff run. */
-const yieldToRequests = () =>
-  new Promise<void>((resolve) => setImmediate(resolve));
-
-/**
- * Review Deck's `buildDiff`, one file at a time within
- * `DECK_FILE_DIFF_BUDGET_MS`, yielding between files. A file past the budget
- * is written as one too large to read, so it has no hunks for the guide
- * either, and is answered with its line counts.
- */
-async function boundedDiff(
-  changes: readonly FileChange[],
-  contents: ReadonlyMap<string, FileContents>,
+type WriteDiff = (
+  changes: FileChange[],
+  contents: Map<string, FileContents>,
   signal: AbortSignal,
-) {
-  const parts: string[] = [];
-  const tooLarge = new Map<string, DeckFileTooLarge>();
-  for (const change of changes) {
-    await yieldToRequests();
-    if (signal.aborted) throw stopped(signal);
-    const content = contents.get(change.path)!;
-    const part = fileDiff(change, content, {
-      timeout: DECK_FILE_DIFF_BUDGET_MS,
-    });
-    if (part !== undefined) {
-      parts.push(part);
-      continue;
-    }
-    tooLarge.set(change.path, {
-      oldLines: lineCount(content.old),
-      newLines: lineCount(content.new),
-    });
-    parts.push(fileDiff(change, { ...content, tooLarge: true })!);
-  }
-  return { text: parts.join(""), tooLarge };
-}
+) => ReturnType<DeckDiffs["write"]>;
 
 /** One version of a changed file: its text, or that it is binary. */
 type Side = { text: string | null; binary: boolean };
@@ -315,6 +281,7 @@ async function buildPullRequestDiff(
   codeHost: DeckCodeHost,
   repository: string,
   content: CodeHostOperationResult<"getPullRequestContent">,
+  writeDiff: WriteDiff,
   signal: AbortSignal,
   reads: { atOnce: number; beforeEach?: () => Promise<void> } = {
     atOnce: FILE_READS_AT_ONCE,
@@ -378,9 +345,8 @@ async function buildPullRequestDiff(
       ];
     }),
   );
-  const { text: diffText, tooLarge } = await boundedDiff(
-    changes,
-    contents,
+  const { text: diffText, tooLarge } = await written(
+    writeDiff(changes, contents, signal),
     signal,
   );
   // The pipeline reads a file's base version by its base path.
@@ -402,8 +368,10 @@ async function buildPullRequestDiff(
       ? { previousPath: file.oldPath }
       : {}),
     status: file.status,
-    binary: file.binary && !tooLarge.has(file.path),
-    ...(tooLarge.has(file.path) ? { tooLarge: tooLarge.get(file.path) } : {}),
+    // A file too large to compare is written as one too large to read.
+    ...(tooLarge.get(file.path)
+      ? { binary: false, tooLarge: tooLarge.get(file.path) }
+      : { binary: file.binary }),
     hunks: file.hunks.map((hunk) => ({
       id: hunk.id,
       header: hunk.header,
@@ -526,6 +494,7 @@ async function versionDiff(
   files: readonly DeckFile[],
   version: { headSha: string; baseSha: string },
   reads: FileReads,
+  writeDiff: WriteDiff,
   check: () => void,
   signal: AbortSignal,
   counted: { fileReadCount: number },
@@ -591,7 +560,7 @@ async function versionDiff(
       tooLarge: false,
     });
   });
-  return (await boundedDiff(changes, contents, signal)).text;
+  return (await written(writeDiff(changes, contents, signal), signal)).text;
 }
 
 /** The pull request on screen at one base and head: its diff and its guide. */
@@ -662,8 +631,15 @@ const guideOrNull = (built: Promise<DeckGuide>): Promise<DeckGuide | null> =>
 export function createDeckService(options: {
   guides: GuideBuilds;
   cache: DeckContentCache;
+  /** Where diffs are written: Deck's worker threads unless a test passes its own. */
+  diffs?: DeckDiffs;
 }) {
   const { guides, cache } = options;
+  const diffs = options.diffs ?? createWorkerDeckDiffs();
+  const writeDiff =
+    (lane: DeckDiffLane): WriteDiff =>
+    (changes, contents, signal) =>
+      diffs.write(changes, contents, lane, signal);
   /**
    * The pull request on screen: the last one opened, at its base and head.
    * Opening another stops its reads and its guide build, so they don't hold
@@ -970,6 +946,7 @@ export function createDeckService(options: {
       codeHost,
       request.repository,
       content,
+      writeDiff("open"),
       stop.signal,
     );
     const entry: Entry = {
@@ -1056,6 +1033,7 @@ export function createDeckService(options: {
       codeHost,
       request.repository,
       content,
+      writeDiff("preload"),
       stop.signal,
       { atOnce: PRELOAD_READS_AT_ONCE, beforeEach: opensDone },
     );
@@ -1327,6 +1305,7 @@ export function createDeckService(options: {
             baseSha: version.baseSha ?? current.key.baseSha,
           },
           reads,
+          writeDiff("open"),
           check,
           work.stop.signal,
           counted,
@@ -1464,7 +1443,9 @@ export function createDeckService(options: {
     /** The content cache, for Settings › Storage and syncs. */
     cache,
 
-    close: () => guides.close(),
+    close: async () => {
+      await Promise.all([guides.close(), diffs.close()]);
+    },
   };
 }
 

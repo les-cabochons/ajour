@@ -30,7 +30,7 @@ import {
 } from "@/domain/deck/guide";
 import type { ReviewNote } from "@/domain/deck/review-notes";
 import { fileIsViewed } from "@/domain/deck/viewed-marks";
-import { useCodeHostFiles } from "./code-host-files";
+import { useCodeHostLink } from "./code-host-link";
 import { useHunkLines } from "./review-line-selection";
 import { highlightOfSelection, LinesToolbar } from "./review-lines";
 import { useReviewLines, type AddComment } from "./review-lines-context";
@@ -108,7 +108,7 @@ export const ReviewHunkView = memo(function ReviewHunkView({
   const note = inConcern ? fileNote(file) : undefined;
   // The page's selected lines and cited line, when they are in this hunk.
   const lines = useReviewLines();
-  const codeHost = useCodeHostFiles();
+  const codeHost = useCodeHostLink();
   const shown = useHunkLines(lines?.selection, hunk.id);
   const onSelectLines = useMemo(
     () =>

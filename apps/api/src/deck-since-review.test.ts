@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDiff } from "../../../packages/review-deck/diff.ts";
 import type { DeckGuideRuntime } from "./deck-guide-builds.ts";
+import { diffSignatures } from "./deck-since-review.ts";
 import { builtFrom } from "./test-support/deck-guides.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
@@ -468,5 +469,27 @@ describe("changes since your review in Deck", () => {
         ],
       },
     });
+  });
+});
+
+describe("the signature of a file too large to compare", () => {
+  /** A file written without lines, as the diff workers write one past its budget. */
+  const tooLarge = (index: string) =>
+    [
+      "diff --git a/lock.json b/lock.json",
+      `index ${index}`,
+      "Binary files a/lock.json and b/lock.json differ",
+      "",
+    ].join("\n");
+
+  it("changes with either version's content, so a regenerated lockfile counts as changed", () => {
+    const reviewed = diffSignatures(tooLarge("aaaaaaaaaaaa..bbbbbbbbbbbb"));
+
+    expect(diffSignatures(tooLarge("aaaaaaaaaaaa..bbbbbbbbbbbb"))).toEqual(
+      reviewed,
+    );
+    expect(diffSignatures(tooLarge("aaaaaaaaaaaa..cccccccccccc"))).not.toEqual(
+      reviewed,
+    );
   });
 });
