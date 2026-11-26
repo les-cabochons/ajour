@@ -952,10 +952,13 @@ export const deckChatToolInputSchemas = {
     /** False opens it again. */
     resolved: z.boolean(),
   }),
-  submit_review: z.object({
-    verdict: z.enum(["approve", "request_changes", "comment"]),
-    body: chatBodySchema.optional(),
-  }),
+  /**
+   * A comment review: its summary, with no verdict. Approve and request
+   * changes stay the user's, with Finish review (ADR 0024). Unknown keys
+   * pass, so the local API refuses a verdict sent anyway instead of
+   * dropping it and posting a review the agent didn't mean.
+   */
+  submit_review: z.object({ body: chatBodySchema }).passthrough(),
   edit_title: z.object({ title: z.string().trim().min(1).max(1_000) }),
   set_draft: z.object({ draft: z.boolean() }),
 } as const;

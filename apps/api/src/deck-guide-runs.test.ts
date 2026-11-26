@@ -15,6 +15,7 @@ import { createDeckService } from "./deck-service.ts";
 import { addedFileCodeHost, builtFrom } from "./test-support/deck-guides.ts";
 import {
   fakeCliAdapter,
+  fakeCodexAdapter,
   type FakeConversation,
 } from "./test-support/fake-cli-adapter.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
@@ -68,6 +69,11 @@ export async function getFileContent(connection, request) {
 }
 export async function getLinkedTickets() {
   globalThis.__ajourTicketReads = (globalThis.__ajourTicketReads ?? 0) + 1;
+  const gate = globalThis.__ajourTicketsGate;
+  if (gate) {
+    gate.reached();
+    await gate.released;
+  }
   if (${ticketsFailFirst} && globalThis.__ajourTicketReads === 1) {
     throw new Error("The tracker is down.");
   }
@@ -106,7 +112,25 @@ const stops: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const stop of stops.splice(0).reverse()) await stop();
   delete (globalThis as { __ajourTicketReads?: number }).__ajourTicketReads;
+  delete (globalThis as { __ajourTicketsGate?: unknown }).__ajourTicketsGate;
 });
+
+/**
+ * Holds the plugin's next ticket reads until `release`: `reached`
+ * resolves once one waits. Set after the pull request opened, so its build
+ * reads them at once.
+ */
+function holdTicketReads() {
+  let reached!: () => void;
+  const waiting = new Promise<void>((resolve) => (reached = resolve));
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  (globalThis as { __ajourTicketsGate?: unknown }).__ajourTicketsGate = {
+    reached,
+    released,
+  };
+  return { reached: waiting, release };
+}
 
 async function createCodeHostPlugin(
   parent: string,
@@ -225,9 +249,11 @@ async function startGuideApi(
   const report = path.join(root, "report.jsonl");
   const bin = path.join(root, "bin");
   await mkdir(bin);
-  await writeFile(path.join(bin, "claude"), "#!/bin/sh\nexit 0\n", {
-    mode: 0o755,
-  });
+  for (const name of ["claude", "codex"]) {
+    await writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", {
+      mode: 0o755,
+    });
+  }
   let mcpUrl = "";
   const api = await startLocalApi({
     pluginRuntime: new InProcessPluginRuntime(),
@@ -240,6 +266,7 @@ async function startGuideApi(
     agentCliPath: bin,
     agentCliAdapters: [
       fakeCliAdapter([{ exit: 0 }], report, () => mcpUrl, conversation),
+      fakeCodexAdapter(report, () => mcpUrl, conversation),
     ],
   });
   stops.push(api.stop);
@@ -320,6 +347,26 @@ async function startGuideApi(
           ? [data.action]
           : [];
       });
+    },
+    /** Picks another agent in Settings › Agents and allows the repository with it. */
+    async switchTo(cli: "claude-code" | "codex", covers: "code" | "context") {
+      expect(
+        (
+          await apiRequest(api.baseUrl, "/api/agents/settings", {
+            cli,
+            browserMode: "my-chrome",
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await apiRequest(api.baseUrl, `${deck}/consent`, {
+            repository: REPOSITORY,
+            cli,
+            covers,
+          })
+        ).status,
+      ).toBe(200);
     },
     revoke() {
       return apiRequest(api.baseUrl, "/api/deck/consents/revoke", {
@@ -741,6 +788,34 @@ describe("a regroup", () => {
   );
 
   it(
+    "sends the regroup to no agent whose consent doesn't cover the context, though Settings › Agents switched to it while Deck read the tickets",
+    { timeout: 30_000 },
+    async () => {
+      const api = await startGuideApi(() => [
+        { readTurn: true },
+        submit(regrouped()),
+        { result: true },
+        { readTurn: true },
+      ]);
+      const reads = holdTicketReads();
+
+      const regrouping = api.regroup();
+      await reads.reached;
+      // Codex, allowed for the code only, is the agent the turn will reach.
+      await api.switchTo("codex", "code");
+      reads.release();
+      const started = await regrouping;
+
+      expect(started.status).toBe(201);
+      expect(await api.endingOf(started.body.turn.id)).toMatchObject({
+        outcome: "failed",
+      });
+      expect(await api.launches()).toEqual([]);
+      expect((await api.guide()).madeWith).toBe("code");
+    },
+  );
+
+  it(
     "asks for the repository's consent before anything reaches the agent",
     { timeout: 30_000 },
     async () => {
@@ -844,6 +919,45 @@ describe("a regroup asked for in the chat (#796)", () => {
       expect(replyText(refused!)).not.toContain("Calm the retry storm.");
       expect((await api.guide()).madeWith).toBe("code");
       expect(api.actionsOf(chatted.body.turn.id)).toEqual([]);
+    },
+  );
+});
+
+describe("a chat regroup's context (council round 1)", () => {
+  it(
+    "hands the agent no description or tickets once its consent no longer covers them, though it did when Deck began reading them",
+    { timeout: 30_000 },
+    async () => {
+      const ticket = {
+        number: 12,
+        title: "Handlers are too quiet",
+        body: "Nobody hears the second line.",
+        url: "https://github.com/acme/billing-api/issues/12",
+        state: "Open",
+      };
+      const api = await startGuideApi(
+        () => [
+          { readTurn: true },
+          submit(regrouped()),
+          { stream: ["Allow it first."] },
+          { result: true },
+          { readTurn: true },
+        ],
+        { tickets: [ticket] },
+      );
+      const reads = holdTicketReads();
+
+      const chatted = await api.chat("Regroup the guide.");
+      await reads.reached;
+      // Allowing the repository with Codex takes it back from Claude Code.
+      await api.switchTo("codex", "code");
+      reads.release();
+      await api.endingOf(chatted.body.turn.id);
+
+      const [refused] = await api.mcpReplies();
+      expect(refused!.reply.result.isError).toBe(true);
+      expect(replyText(refused!)).not.toContain("Calm the retry storm.");
+      expect(replyText(refused!)).not.toContain("Handlers are too quiet");
     },
   );
 });

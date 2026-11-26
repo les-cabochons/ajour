@@ -57,7 +57,7 @@ Asking for more detail about a pull request in Deck sends parts of that reposito
 
 Comments, replies, reviews, resolved threads and viewed files you send from Deck go to the code host at once, under your account, as your own: an approval or a request for changes counts there like one made on GitHub or Azure DevOps. Ajour keeps your draft review on your device until you send it, and can't take back what the code host received. The same goes for a title, a draft change or a merge you make on your own pull request: a merge you confirm lands on the code host and can't be undone from Ajour.
 
-Deck's chat sends what a question sends, and, when you ask it to, its agent makes these review writes for you, under your account, as if you made them yourself: comments, replies, resolved threads, reviews with their verdict, a regrouped guide, and on your own pull request its title and draft state. Read what it did in the chat. Delete removes a comment or reply it posted, but not the notifications the code host already sent. The chat never merges.
+Deck's chat sends what a question sends, and, when you ask it to, its agent makes these review writes for you, under your account, as if you made them yourself: comments, replies, resolved threads, reviews with a summary but no verdict (approving and requesting changes stay yours, with Finish review), a regrouped guide, and on your own pull request its title and draft state. Read what it did in the chat. Delete removes a comment or reply it posted, but not the notifications the code host already sent. The chat never merges.
 
 We do not promise the availability, security or accuracy of independent services, and we do not offer an Ajour-hosted team service under these terms.
 

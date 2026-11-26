@@ -1096,7 +1096,12 @@ export type CodeHostOperations = {
       firstTriedAt?: number | undefined;
     };
     result:
-      { uncertain: true } | { reviewId: string; url?: string | undefined };
+      | { uncertain: true }
+      | {
+          reviewId: string;
+          url?: string | undefined;
+          voteWithheld?: { reason: "new_commits" } | undefined;
+        };
   };
   readonly postComment: {
     request: {

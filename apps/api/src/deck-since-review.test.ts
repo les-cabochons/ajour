@@ -348,7 +348,7 @@ describe("changes since your review in Deck", () => {
     });
   });
 
-  it("says the code host doesn't offer versions when its plugin has none", async () => {
+  it("says to update the plugin when it lists no versions", async () => {
     const deck = await startDeck(
       pluginSource.replace(
         "export async function getPullRequestVersions",
@@ -359,7 +359,11 @@ describe("changes since your review in Deck", () => {
 
     await expect(deck.sinceReview("h1")).resolves.toMatchObject({
       status: 404,
-      body: { reason: "not_supported" },
+      body: {
+        error:
+          "Update the GitHub plugin in Settings › Plugins to see a pull request's versions in Deck.",
+        reason: "not_supported",
+      },
     });
   });
 

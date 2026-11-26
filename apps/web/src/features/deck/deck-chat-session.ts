@@ -226,7 +226,7 @@ export class DeckChatSession {
       this.#set(
         markDeletion(this.#state, action.id, {
           failed: unsupported
-            ? `${pluginName} doesn't let Ajour delete it yet. Delete it on ${pluginName}.`
+            ? `Update the ${pluginName} plugin in Settings › Plugins to delete it from Deck, or delete it on ${pluginName}.`
             : error instanceof Error
               ? error.message
               : "Ajour couldn't delete it.",

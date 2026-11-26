@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import {
   RiCheckLine as Passed,
   RiCloseLine as Failed,
@@ -31,6 +31,7 @@ import {
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 import { openSourceUrl } from "@/lib/source-navigation";
 import type { PullRequestReadState } from "./use-pull-request-read";
+import { useOpenPluginSettings } from "./plugin-update-link";
 
 /** A check's mark: a ring while pending, a tick once passed, a cross once failed. */
 function CheckMark({ state }: { state: CodeHostCheckRunState }) {
@@ -94,6 +95,7 @@ function ChecksMenu({
   state: PullRequestReadState<CodeHostChecksResult>;
   pullRequestUrl: string;
 }) {
+  const openPluginSettings = useOpenPluginSettings();
   const note = (text: string) => (
     <p className="px-3 py-1.5 text-sm text-muted-foreground">{text}</p>
   );
@@ -103,7 +105,14 @@ function ChecksMenu({
       {state.status === "loading"
         ? note("Loading the checks…")
         : state.status === "unavailable"
-          ? note("This code host doesn't list its checks yet.")
+          ? [
+              <Fragment key="note">{note(state.message)}</Fragment>,
+              state.update ? (
+                <DropdownMenuItem key="update" onClick={openPluginSettings}>
+                  Open Settings › Plugins
+                </DropdownMenuItem>
+              ) : null,
+            ]
           : state.status === "error"
             ? note(state.message)
             : state.value.checks.length === 0

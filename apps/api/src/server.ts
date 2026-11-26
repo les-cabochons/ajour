@@ -172,7 +172,11 @@ import {
   type DeckPullRequestSource,
 } from "../../../packages/shared/deck.ts";
 import { createDeckAgentReads, DeckReadRefused } from "./deck-agent-reads.ts";
-import { createDeckChatWrites, DeckChatRefused } from "./deck-chat-writes.ts";
+import {
+  createDeckChatWrites,
+  DeckChatRefused,
+  isChatPost,
+} from "./deck-chat-writes.ts";
 import {
   createDeckAsks,
   DeckAskStopped,
@@ -1538,6 +1542,25 @@ function refuseUnavailablePlugin(
   return true;
 }
 
+/**
+ * What a route says when the plugin is older than what Deck asks of it:
+ * every code host the official plugins serve offers it at their current
+ * version, so the user's way forward is an update. The page links Settings
+ * › Plugins beside it.
+ */
+function pluginUpdateMessage(displayName: string, what: string) {
+  return `Update the ${displayName} plugin in Settings › Plugins to ${what}.`;
+}
+
+/** What an older plugin can't do yet, by code host operation, as a route says it. */
+const outdatedPluginWhat: Partial<Record<CodeHostOperation, string>> = {
+  getPullRequestConversation: "see a pull request's conversation in Deck",
+  getChecks: "see a pull request's checks in Deck",
+  getPullRequestVersions: "see a pull request's versions in Deck",
+  getLinkedTickets: "see a pull request's linked tickets in Deck",
+  deleteComment: "delete comments from Deck",
+};
+
 /** The plugins that can run, each with what it reaches now. */
 function runnablePlugins(
   plugins: readonly PluginManifest[],
@@ -2154,8 +2177,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       deckChat.observe(event);
       mcpBridge.publish("agent-turn", event);
     },
-    // Each turn is sent only while its repository is allowed with its agent.
-    admitsTurn: (pullRequest, cli) => deckAsks.allowedWith(pullRequest, cli),
+    // Each turn is sent only while its repository is allowed with the agent
+    // it goes to, for what it sends: a regroup's needs the context (#794).
+    admitsTurn: (pullRequest, cli, task) =>
+      deckAsks.allowedWith(
+        pullRequest,
+        cli,
+        task === "deck.guide" ? "context" : "code",
+      ),
     // A guide turn that saved no guide fails (#794).
     turnDoneFailure: (turn) => deckGuideRuns.doneFailure(turn),
     ...(options.agentConversationIdleMs === undefined
@@ -2226,7 +2255,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // The plugin's own words may hold what the agent shouldn't see.
       throw new DeckReadRefused(
         error instanceof PluginExportMissing
-          ? `This code host doesn't share a pull request's ${what} yet.`
+          ? `${pluginUpdateMessage(plugin.displayName, `let Ajour read a pull request's ${what}`)} Tell the user so.`
           : `Ajour couldn't read the ${what} from the code host.`,
       );
     }
@@ -2290,10 +2319,33 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     } catch (error) {
       if (refused) throw refused;
       // The plugin's own words may hold what the agent shouldn't see.
+      const name = plugin.displayName;
+      if (error instanceof PluginExportMissing) {
+        throw new DeckChatRefused(
+          `${pluginUpdateMessage(name, "do this from Deck")} Tell the user so, or to do it on ${name}.`,
+        );
+      }
+      // Turned away before the plugin ran, or answered with a refusal by
+      // the code host: nothing was taken.
+      if (
+        error instanceof PluginOperationRefused ||
+        (error instanceof PluginOperationFailure &&
+          error.httpStatus !== undefined &&
+          error.httpStatus >= 400 &&
+          error.httpStatus < 500 &&
+          error.httpStatus !== 408)
+      ) {
+        throw new DeckChatRefused(
+          `${name} didn't take it. Tell the user it wasn't done.`,
+        );
+      }
+      // The request may have reached the code host, whose answer was lost:
+      // a post tried again keeps its submission, so the plugin finds it.
       throw new DeckChatRefused(
-        error instanceof PluginExportMissing
-          ? `${plugin.displayName} doesn't offer this yet. Tell the user to do it on ${plugin.displayName}.`
-          : `${plugin.displayName} didn't take it. Tell the user it wasn't done.`,
+        isChatPost(operation)
+          ? `${name} may have taken it, but its answer didn't reach Ajour. Tell the user it may already be there; don't post it again.`
+          : `${name} may have done it, but its answer didn't reach Ajour. Tell the user to check the pull request on ${name}.`,
+        { maybeSent: true },
       );
     }
   }
@@ -2304,6 +2356,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     allowedNow: (binding) =>
       deckAsks.allowedNow(binding.pullRequest, binding.cli),
     deck: deckService,
+    // Read again for each thread write: an id alone names a thread on the
+    // code host, so only this pull request's own are written to.
+    threadIds: async (source) =>
+      new Set((await deckConversation(source)).threads.map(({ id }) => id)),
     codeHost: deckCodeHostWrite,
     // The draft review lives in the window (#784): the bridge hands it
     // there, and the window adds it only once the bridge grants its claim.
@@ -5002,10 +5058,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 200, result);
       } catch (error) {
         if (error instanceof PluginExportMissing) {
-          // An older plugin, or a code host that doesn't offer this yet.
+          // An older plugin: the page links Settings › Plugins.
           unit.refuse("not_supported");
           writeJson(response, 404, {
-            error: `${plugin.displayName} doesn't offer this yet.`,
+            error: pluginUpdateMessage(
+              plugin.displayName,
+              outdatedPluginWhat[operation.data] ??
+                "review pull requests in Deck",
+            ),
             reason: "not_supported",
           });
           return;
@@ -5096,7 +5156,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         if (error instanceof PluginExportMissing) {
           unit.refuse("not_supported");
           writeJson(response, 404, {
-            error: "This code host doesn't list a pull request's versions yet.",
+            error: pluginUpdateMessage(
+              deck.pluginName,
+              outdatedPluginWhat.getPullRequestVersions!,
+            ),
             reason: "not_supported",
           });
           return;
@@ -6397,6 +6460,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       source,
       ref,
       codeHost,
+      pluginName: plugin.displayName,
       async failed(error: unknown) {
         if (error instanceof DeckBuildReplaced) {
           unit.refuse("replaced");
@@ -6412,10 +6476,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
         if (error instanceof PluginExportMissing) {
-          // An older plugin, or a code host Deck doesn't read.
+          // An older plugin: the page links Settings › Plugins.
           unit.refuse("not_supported");
           writeJson(response, 404, {
-            error: `${plugin.displayName} doesn't show a pull request's changes yet.`,
+            error: pluginUpdateMessage(
+              plugin.displayName,
+              "review pull requests in Deck",
+            ),
             reason: "not_supported",
           });
           return;
