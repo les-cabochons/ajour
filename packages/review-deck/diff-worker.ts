@@ -1,6 +1,7 @@
 // Entry point: the worker thread that writes Deck's diffs (#774's council). Ajour starts it by `DIFF_WORKER_URL`
 // from `diff-job.ts`. jsdiff's work grows with the square of the lines changed, so a rewritten lockfile would
-// hold the local API's main thread for seconds: here it holds only this thread, and each file stops at its budget.
+// hold the local API's main thread for seconds: here it holds only this thread, and each file stops at its budget,
+// its added and removed lines first, then its time.
 import { createHash } from "node:crypto";
 import { parentPort } from "node:worker_threads";
 import type { DiffJob, DiffJobResult, DiffTooLarge } from "./diff-job.ts";
@@ -32,7 +33,12 @@ function write(job: DiffJob): DiffJobResult {
     const tooLarge = new Map<string, DiffTooLarge>();
     for (const change of job.changes) {
       const content = job.contents.get(change.path)!;
-      const part = fileDiff(change, content, { timeout: job.fileBudgetMs });
+      const part = fileDiff(change, content, {
+        timeout: job.fileBudgetMs,
+        ...(content.old && content.new
+          ? { maxEditLength: job.fileMaxEditLines }
+          : {}),
+      });
       if (part !== undefined) {
         parts.push(part);
         continue;

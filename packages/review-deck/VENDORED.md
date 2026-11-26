@@ -56,8 +56,9 @@ copied files keep upstream's formatting, so `.prettierignore` lists them.
   (#782), then the summary's rules (#789). It answers each job with the
   groups in reading order, their kinds, and the summary's lines.
 - `diff-worker.ts`: the worker thread Deck's service writes diffs in, off
-  the local API's main thread, each file with `fileDiff` within its time
-  budget. A file past it is written as one too large to read, with git's
+  the local API's main thread, each file with `fileDiff` within its budget:
+  its added and removed lines when both versions have lines, then its time.
+  A file past it is written as one too large to read, with git's
   `index` line of its versions' hashes, and answered with its line counts.
 - `diff-job.ts`: that worker's messages and `DIFF_WORKER_URL`, types only.
 - `guide-job.ts`: the worker's messages and `GUIDE_WORKER_URL`. It imports only types,

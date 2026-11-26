@@ -21,8 +21,8 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((diffs) => diffs.close()));
 });
 
-function diffsOf() {
-  const diffs = createWorkerDeckDiffs();
+function diffsOf(budget?: Parameters<typeof createWorkerDeckDiffs>[1]) {
+  const diffs = createWorkerDeckDiffs(undefined, budget);
   running.push(diffs);
   return diffs;
 }
@@ -72,6 +72,50 @@ describe("Deck's diff workers", () => {
       /^diff --git a\/lock.json b\/lock.json\nindex [0-9a-f]{12}\.\.[0-9a-f]{12}\n/,
     );
     expect(written.text).toContain("@@ -1,2 +1,2 @@");
+  });
+
+  it("writes a rewritten lockfile as too large by its edits, however long the clock allows", async () => {
+    // A minute per file: only the edit limit can stop it.
+    const { changes, contents } = lockfile();
+    const written = await diffsOf({ timeoutMs: 60_000 }).write(
+      changes,
+      contents,
+      "open",
+      new AbortController().signal,
+    );
+    expect([...written.tooLarge.keys()]).toEqual(["lock.json"]);
+  });
+
+  it("shows the hunks of a long file with scattered edits, and of a long added file, under the edit limit", async () => {
+    const line = (index: number, tag: string) =>
+      `const value${index} = "${tag}";\n`;
+    const old = Array.from({ length: 8_000 }, (_, index) => line(index, "a"));
+    // 1,000 lines replaced, one in eight: 2,000 added and removed.
+    const next = old.map((text, index) =>
+      index % 8 === 0 ? line(index, "b") : text,
+    );
+    const { changes, contents } = modified(
+      "big.ts",
+      old.join(""),
+      next.join(""),
+    );
+    changes.push({ path: "new.ts", changeType: "add" });
+    contents.set("new.ts", {
+      old: null,
+      new: next.join(""),
+      binary: false,
+      tooLarge: false,
+    });
+
+    const written = await diffsOf({ timeoutMs: 60_000 }).write(
+      changes,
+      contents,
+      "open",
+      new AbortController().signal,
+    );
+    expect(written.tooLarge.size).toBe(0);
+    expect(written.text).toContain("@@ -1,4 +1,4 @@");
+    expect(written.text).toContain("+++ b/new.ts\n@@ -1,0 +1,8000 @@");
   });
 
   it("writes the diffs queued behind a stopped one", async () => {

@@ -14,17 +14,39 @@ import type {
  * Where Deck's diffs are written: in worker threads, never on the local
  * API's main thread (#774's council). jsdiff's work grows with the square
  * of the lines changed: a lockfile of 4,200 lines with 4,000 replaced took
- * 2.5 s, as one hunk, and every request waited behind it. Each file stops
- * at `DECK_FILE_DIFF_BUDGET_MS` and is then too large to compare. Opens and
- * preloads have a worker each, so an open never waits behind a preload.
+ * 2.5 s, as one hunk, and every request waited behind it. A file whose
+ * versions differ by more than `DECK_FILE_MAX_EDIT_LINES` is too large to
+ * compare, on every computer alike; `DECK_FILE_DIFF_BUDGET_MS` stops one
+ * that takes too long anyway. Opens and preloads have a worker each, so an
+ * open never waits behind a preload.
  */
 
 /**
- * The most one file's diff may take, in milliseconds. A file of 8,000
- * lines with 1,000 scattered changes takes about 400 ms, so it still shows
- * its hunks; a rewritten lockfile stops here instead of after seconds.
+ * The most lines one file's diff may add and remove, both versions having
+ * lines. jsdiff's work grows with the square of it: a file with 1,000 lines
+ * replaced, 2,000 added and removed, takes about 300 ms and shows its
+ * hunks; a rewritten lockfile, 8,000, stops here whatever the computer's
+ * speed. An added, deleted or emptied file costs only its length, so has
+ * no limit but the clock's.
+ */
+export const DECK_FILE_MAX_EDIT_LINES = 2_000;
+
+/**
+ * The most one file's diff may take, in milliseconds: the backstop for a
+ * file under the edit limit that still takes too long, on a slow computer.
  */
 export const DECK_FILE_DIFF_BUDGET_MS = 500;
+
+/** One file's diff budget: its time, and its added and removed lines. */
+export interface DeckFileBudget {
+  timeoutMs: number;
+  maxEditLines: number;
+}
+
+const FILE_BUDGET: DeckFileBudget = {
+  timeoutMs: DECK_FILE_DIFF_BUDGET_MS,
+  maxEditLines: DECK_FILE_MAX_EDIT_LINES,
+};
 
 /** A worker idle this long ends. */
 const WORKER_IDLE_MS = 2 * 60_000;
@@ -64,7 +86,7 @@ type Pending = Map<
  * diff can't stop halfway, and the diffs queued behind it go to a new one.
  * Each worker answers only its own jobs.
  */
-function workerLane(workerUrl: URL) {
+function workerLane(workerUrl: URL, budget: DeckFileBudget) {
   type Held = { worker: Worker; pending: Pending };
   let current: Held | undefined;
   let idle: NodeJS.Timeout | undefined;
@@ -126,7 +148,8 @@ function workerLane(workerUrl: URL) {
         id,
         changes,
         contents,
-        fileBudgetMs: DECK_FILE_DIFF_BUDGET_MS,
+        fileBudgetMs: budget.timeoutMs,
+        fileMaxEditLines: budget.maxEditLines,
       };
       const onAbort = () => {
         const holder = holders.get(id);
@@ -168,11 +191,18 @@ function workerLane(workerUrl: URL) {
   };
 }
 
-/** Deck's diffs in worker threads, one for opens and one for preloads. */
-export function createWorkerDeckDiffs(workerUrl = DIFF_WORKER_URL): DeckDiffs {
+/**
+ * Deck's diffs in worker threads, one for opens and one for preloads.
+ * `budget` changes a file's budget, for tests.
+ */
+export function createWorkerDeckDiffs(
+  workerUrl = DIFF_WORKER_URL,
+  budget: Partial<DeckFileBudget> = {},
+): DeckDiffs {
+  const fileBudget = { ...FILE_BUDGET, ...budget };
   const lanes = {
-    open: workerLane(workerUrl),
-    preload: workerLane(workerUrl),
+    open: workerLane(workerUrl, fileBudget),
+    preload: workerLane(workerUrl, fileBudget),
   };
   return {
     write: (changes, contents, lane, signal) =>

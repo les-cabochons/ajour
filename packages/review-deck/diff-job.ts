@@ -10,9 +10,14 @@ export interface DiffJob {
   contents: Map<string, FileContents>;
   /** The most one file's diff may take, in milliseconds: jsdiff's `timeout`. */
   fileBudgetMs: number;
+  /**
+   * The most lines one file's diff may add and remove, jsdiff's `maxEditLength`, when both its versions have
+   * lines: an added, deleted or emptied file costs only its length.
+   */
+  fileMaxEditLines: number;
 }
 
-/** A file whose diff took longer than its budget: its lines in each version, 0 for a version it has none in. */
+/** A file whose diff passed its budget: its lines in each version, 0 for a version it has none in. */
 export interface DiffTooLarge {
   oldLines: number;
   newLines: number;
