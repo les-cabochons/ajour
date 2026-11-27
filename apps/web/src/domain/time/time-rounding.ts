@@ -94,14 +94,6 @@ export function formatTimeRoundingMinimum(minutes: number): string {
   return minutes % 60 === 0 ? `${minutes / 60} h` : `${minutes} min`;
 }
 
-/** A whole rule in words: "Up to 15 minutes, at least 30 min". */
-export function describeTimeRounding(rule: TimeRoundingRule): string {
-  const step = describeTimeRoundingStep(rule);
-  return rule.minimumMinutes > 0
-    ? `${step}, at least ${formatTimeRoundingMinimum(rule.minimumMinutes)}`
-    : step;
-}
-
 function pick<T>(value: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
 }

@@ -155,6 +155,8 @@ export function normalizeTimesheetEntry(
     previousSubmittedAt: _previousSubmittedAt,
     syncKey,
     timeSyncRemoteId,
+    exactDurationMs,
+    durationTyped,
     ...entry
   } = stored;
   const normalized: LocalTimesheetEntry = {
@@ -167,6 +169,13 @@ export function normalizeTimesheetEntry(
     ...(typeof timeSyncRemoteId === "string" && timeSyncRemoteId.trim()
       ? { timeSyncRemoteId }
       : {}),
+    // A broken exact time reads as none: the rounded time is then exact.
+    ...(typeof exactDurationMs === "number" &&
+    Number.isFinite(exactDurationMs) &&
+    exactDurationMs >= 0
+      ? { exactDurationMs }
+      : {}),
+    ...(durationTyped === true ? { durationTyped } : {}),
   };
   const commit =
     normalizeTimesheetEntryCommit(storedCommit) ??

@@ -959,6 +959,43 @@ describe("the Commit page's lines for agents", () => {
     projectCode: "ACME-1",
   };
 
+  it("gives a line's hours, and a day's committed hours, as the Commit page turns time into hours", () => {
+    // 0:20:31 is 21 minutes, 0.35 h; its raw 0.342 h would read 0.34.
+    const exact = 1_231_000;
+    const base = weekState();
+    const state = {
+      ...base,
+      timesheetEntries: base.timesheetEntries.map((item) =>
+        item._id === "a3"
+          ? {
+              ...item,
+              durationMs: exact,
+              commit: {
+                at: 1,
+                localDate: item.localDate,
+                projectId: item.projectId,
+                taskId: item.taskId,
+                note: item.note,
+                durationMs: exact,
+              },
+            }
+          : item,
+      ),
+    } as LocalAppState;
+    const review = read(state, "day-task")
+      .sections.flatMap((section) => section.lines)
+      .find((line) => line.entryIds.includes("a3"));
+
+    expect(review?.hours).toBe(0.35);
+    expect(
+      getWeekStatusForAgent(state, {
+        weekDates: WEEK,
+        today: "2026-10-18",
+        propertyPlugins: plugins,
+      }).committedHoursByDay.find((day) => day.date === "2026-10-12")?.hours,
+    ).toBe(0.35);
+  });
+
   it("returns the lines, with the time kept out of them beside them", () => {
     expect(read(weekState(), "day-task")).toEqual({
       weekOf: "2026-10-12",

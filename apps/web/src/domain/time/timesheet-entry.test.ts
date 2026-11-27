@@ -341,6 +341,32 @@ describe("timesheet entry lifecycle", () => {
     expect(entry).not.toHaveProperty("submittedFingerprint");
   });
 
+  it("keeps a stored exact time and typed mark, and reads broken ones as none", () => {
+    const stored = {
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      label: "",
+      durationMs: 15 * 60_000,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    expect(
+      normalizeTimesheetEntry({
+        ...stored,
+        exactDurationMs: 7 * 60_000,
+        durationTyped: true,
+      }),
+    ).toMatchObject({ exactDurationMs: 7 * 60_000, durationTyped: true });
+
+    const broken = normalizeTimesheetEntry({
+      ...stored,
+      exactDurationMs: "7m",
+      durationTyped: "yes",
+    } as never);
+    expect(broken).not.toHaveProperty("exactDurationMs");
+    expect(broken).not.toHaveProperty("durationTyped");
+  });
+
   it("gives an entry edited since its submission no copy, so it shows as added", () => {
     const entry = normalizeTimesheetEntry({
       _id: "entry-1",

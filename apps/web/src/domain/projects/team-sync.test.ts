@@ -395,6 +395,29 @@ describe("applying a team sync", () => {
     ]);
   });
 
+  it("keeps the project's own rounding when a teammate renames it", () => {
+    const timeRounding = {
+      mode: "up" as const,
+      stepMinutes: 15,
+      minimumMinutes: 30,
+    };
+    const local = [{ ...syncedProject("p1"), timeRounding }];
+    const renamed = { ...localProject("p1"), name: "Renamed by Sam" };
+
+    const next = applyTeamSync(
+      stateOf(local),
+      CONNECTION,
+      [],
+      syncResult([teamProject(renamed, [])]),
+      createFactories(),
+    );
+
+    expect(next.projects[0]).toMatchObject({
+      name: "Renamed by Sam",
+      timeRounding,
+    });
+  });
+
   it("keeps personal fields when the team changes a task", () => {
     const task = localTask("t1", {
       pinnedSlot: "3",

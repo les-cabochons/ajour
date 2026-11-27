@@ -48,8 +48,6 @@ export function getPaceTolerancePercent(preferences: UserPreferences) {
   return preferences.paceTolerancePercent ?? DEFAULT_PACE_TOLERANCE_PERCENT;
 }
 
-const toHours = toDecimalHours;
-
 interface PaceInput {
   weekDates: string[];
   today: string;
@@ -114,9 +112,9 @@ export function computeWeekPace({
           ? "under"
           : "on-pace";
   return {
-    loggedHours: toHours(loggedMs),
-    targetHours: toHours(targetMs),
-    expectedHours: toHours(expectedMs),
+    loggedHours: toDecimalHours(loggedMs),
+    targetHours: toDecimalHours(targetMs),
+    expectedHours: toDecimalHours(expectedMs),
     status,
   };
 }

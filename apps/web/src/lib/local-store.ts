@@ -1,8 +1,8 @@
 import {
   normalizeTimeRounding,
-  reroundTimesheetEntries,
   setProjectTimeRounding as setProjectTimeRoundingTransition,
 } from "@/domain/time/time-rounding";
+import { updateUserPreferences } from "@/domain/user-preferences";
 import {
   BUILT_IN_PROJECT_DATA_SHAPE_ID,
   type ActivityBlockRecord,
@@ -4014,18 +4014,9 @@ const store = {
   },
   setUserPreferences(preferences: Partial<UserPreferences>) {
     const before = readState().userPreferences;
-    const after = updateState((state) => {
-      const userPreferences = { ...state.userPreferences, ...preferences };
-      if (recordsEqual(userPreferences, state.userPreferences)) return state;
-      const next = { ...state, userPreferences };
-      // A new rounding re-rounds the entries of the weeks not submitted.
-      return recordsEqual(
-        userPreferences.timeRounding,
-        state.userPreferences.timeRounding,
-      )
-        ? next
-        : reroundTimesheetEntries(next);
-    }).userPreferences;
+    const after = updateState((state) =>
+      updateUserPreferences(state, preferences),
+    ).userPreferences;
     describeUserPreferences(before, after);
   },
 };

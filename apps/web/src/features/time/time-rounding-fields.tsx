@@ -24,7 +24,7 @@ const CUSTOM_MODES: SelectOption<Exclude<TimeRoundingMode, "off">>[] = [
 ];
 const STEP_OPTIONS: SelectOption[] = TIME_ROUNDING_STEPS.map((step) => ({
   value: String(step),
-  label: step === 1 ? "minute" : `${step} min`,
+  label: `${step} min`,
 }));
 
 type StepRule = Pick<TimeRoundingRule, "mode" | "stepMinutes">;
@@ -41,7 +41,6 @@ export function TimeRoundingSelect({
   rule,
   onChange,
   inheritLabel,
-  disabled,
   className,
   inline = false,
 }: {
@@ -50,7 +49,6 @@ export function TimeRoundingSelect({
   rule: StepRule | undefined;
   onChange: (rule: StepRule | undefined) => void;
   inheritLabel?: string;
-  disabled?: boolean;
   /** The menu's trigger. */
   className?: string;
   /** In a properties card: the sentence starts at the value column's edge. */
@@ -81,7 +79,6 @@ export function TimeRoundingSelect({
         id={id}
         label={label}
         className={className ?? "w-48"}
-        disabled={disabled}
         value={value}
         options={options}
         onChange={(next) => {
@@ -115,7 +112,6 @@ export function TimeRoundingSelect({
           <OptionSelect
             label="Direction"
             className="w-36"
-            disabled={disabled}
             value={rule.mode}
             options={CUSTOM_MODES}
             onChange={(mode) => onChange({ ...rule, mode })}
@@ -123,7 +119,6 @@ export function TimeRoundingSelect({
           <OptionSelect
             label="Step"
             className="w-24"
-            disabled={disabled}
             value={String(rule.stepMinutes)}
             options={STEP_OPTIONS}
             onChange={(step) =>
@@ -149,14 +144,12 @@ export function TimeRoundingMinimumSelect({
   label,
   minimumMinutes,
   onChange,
-  disabled,
   className,
 }: {
   id?: string;
   label?: string;
   minimumMinutes: number;
   onChange: (minimumMinutes: number) => void;
-  disabled?: boolean;
   className?: string;
 }) {
   return (
@@ -164,7 +157,6 @@ export function TimeRoundingMinimumSelect({
       id={id}
       label={label}
       className={className ?? "w-28"}
-      disabled={disabled}
       value={String(minimumMinutes)}
       options={MINIMUM_OPTIONS}
       onChange={(minutes) => onChange(Number(minutes))}

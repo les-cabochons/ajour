@@ -12,7 +12,11 @@ import {
   type TimesheetEntryState,
 } from "@/domain/time/timesheet-entry";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
-import { getExactDuration, roundEntryTime } from "@/domain/time/time-rounding";
+import {
+  getExactDuration,
+  roundEntryTime,
+  withEntryTime,
+} from "@/domain/time/time-rounding";
 
 export type TimerFactories = TimesheetEntryFactories;
 
@@ -172,7 +176,9 @@ export function cancelTimer(
     ? state.timesheetEntries.find(
         (entry) =>
           entry._id === timer.entryId &&
-          entry.durationMs === 0 &&
+          // Its exact time, not its rounded one: a short time that rounds
+          // to 0:00 is still time the user saved.
+          getExactDuration(entry) === 0 &&
           // A committed entry stays: removing it silently would hide a
           // deletion the user never asked for from the Commit page.
           !entry.commit,
@@ -215,27 +221,27 @@ export function saveTimer<State extends TimerState>(
   });
   const entry = keepTimesheetEntryCommit(
     existingEntry,
-    createTimesheetEntry(
-      state.projects,
-      {
-        localDate: timer.localDate,
-        workItemId: timer.workItemId,
-        projectId: timer.projectId,
-        taskId: timer.taskId,
-        note: timer.note,
-        durationMs: time.durationMs,
-        sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
-        entryId: timer.entryId,
-        // A new entry takes the running entry's time sync key, so the other
-        // system sees this save as a stop. A resumed entry keeps its own.
-        syncKey: existingEntry ? existingEntry.syncKey : entrySyncKey(timer),
-      },
-      factories,
+    withEntryTime(
+      createTimesheetEntry(
+        state.projects,
+        {
+          localDate: timer.localDate,
+          workItemId: timer.workItemId,
+          projectId: timer.projectId,
+          taskId: timer.taskId,
+          note: timer.note,
+          durationMs: time.durationMs,
+          sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
+          entryId: timer.entryId,
+          // A new entry takes the running entry's time sync key, so the other
+          // system sees this save as a stop. A resumed entry keeps its own.
+          syncKey: existingEntry ? existingEntry.syncKey : entrySyncKey(timer),
+        },
+        factories,
+      ),
+      time,
     ),
   );
-  if (time.exactDurationMs !== undefined) {
-    entry.exactDurationMs = time.exactDurationMs;
-  }
   if (existingEntry) {
     entry.committedAt = existingEntry.committedAt;
     entry.usedAt = factories.now();

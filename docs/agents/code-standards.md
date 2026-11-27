@@ -68,7 +68,7 @@
 - Keep timesheet import conflict detection, project/task recovery, and batch commit in the timesheet-import transition module so the whole import remains atomic and directly testable.
 - Treat `local-store.ts` as an Adapter: it may load, migrate, persist, notify, and coordinate runtime side effects, but deterministic lifecycle rules belong in `domain`.
 - Add safe defaults for older local records when adding fields.
-- Preserve user-entered notes and time values exactly unless the user changes them.
+- Preserve user-entered notes and time values exactly unless the user changes them. The one exception is the user's own rounding rule (`domain/time/time-rounding.ts`): a saved entry's time rounds by it, and the entry keeps the time as typed or counted in `exactDurationMs`.
 - Backlog imports should produce reviewable candidates or explicit conflict states.
 - Standalone plugin packages must compile and run without imports from
   Ajour application source. Keep the host protocol structural and validate

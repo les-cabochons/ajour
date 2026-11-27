@@ -7,8 +7,9 @@ import type {
 } from "@/domain/local-state";
 import {
   DEFAULT_TIME_ROUNDING,
-  describeTimeRounding,
+  describeTimeRoundingStep,
   findTimeRoundingPreset,
+  formatTimeRoundingMinimum,
   normalizeTimeRounding,
   reroundTimesheetEntries,
   roundEntryDuration,
@@ -78,14 +79,16 @@ describe("the presets", () => {
     expect(findTimeRoundingPreset(rule("up", 10))).toBeUndefined();
   });
 
-  it("describes a whole rule in words", () => {
-    expect(describeTimeRounding(rule("up", 10, 30))).toBe(
-      "Up to 10 minutes, at least 30 min",
+  it("names a rule's step, and a minimum, as the menus show them", () => {
+    expect(describeTimeRoundingStep(rule("up", 10))).toBe("Up to 10 minutes");
+    expect(describeTimeRoundingStep(rule("nearest", 1))).toBe("Nearest minute");
+    expect(describeTimeRoundingStep(rule("down", 1))).toBe(
+      "Down to the minute",
     );
-    expect(describeTimeRounding(rule("nearest", 1))).toBe("Nearest minute");
-    expect(describeTimeRounding(rule("down", 1, 60))).toBe(
-      "Down to the minute, at least 1 h",
-    );
+    expect(describeTimeRoundingStep(rule("off", 15))).toBe("Exact");
+    expect(formatTimeRoundingMinimum(0)).toBe("None");
+    expect(formatTimeRoundingMinimum(30)).toBe("30 min");
+    expect(formatTimeRoundingMinimum(60)).toBe("1 h");
   });
 });
 

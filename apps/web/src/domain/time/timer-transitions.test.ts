@@ -509,6 +509,16 @@ describe("timer and timesheet entry lifecycle", () => {
     expect(cancelTimer(state, "timer-1").timesheetEntries).toEqual([]);
   });
 
+  it("keeps a saved entry whose short time rounds to 0:00 when its resumed timer is cancelled", () => {
+    const short = createEntry({ durationMs: 0, exactDurationMs: 20_000 });
+    const state = createState({
+      timesheetEntries: [short],
+      timers: [createRunningTimer({ entryId: short._id })],
+    });
+
+    expect(cancelTimer(state, "timer-1").timesheetEntries).toEqual([short]);
+  });
+
   it("keeps the resumed entry's committed copy, so the added time shows as a change", () => {
     const commit = {
       at: 650,

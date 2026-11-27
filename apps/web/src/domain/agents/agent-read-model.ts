@@ -211,7 +211,7 @@ export function listTimeEntriesForAgent(
         : null,
     targets: datesBetween(from, to).map((date) => ({
       date,
-      hours: toHours(getDayTargetMs(capacityTargets, date)),
+      hours: toDecimalHours(getDayTargetMs(capacityTargets, date)),
     })),
   };
 }
@@ -468,9 +468,6 @@ export function getWorkItemForAgent(
   };
 }
 
-/** Hours as every reader gives them: see `toDecimalHours`. */
-const toHours = toDecimalHours;
-
 /**
  * Non-empty values by plugin ID then field ID, or undefined when there are
  * none.
@@ -558,7 +555,7 @@ function toAgentChangeValues(
     date: values.localDate,
     ...describeTimesheetCommitValues(state.projects, values),
     ...resolveEntryProperties(state, values, plugins),
-    hours: toHours(values.durationMs),
+    hours: toDecimalHours(values.durationMs),
     ...(note ? { note } : {}),
   };
 }
@@ -765,7 +762,7 @@ export function getWeekStatusForAgent(
     uncommittedChanges,
     committedHoursByDay: weekDates.map((date, index) => ({
       date,
-      hours: toHours(committedMsByDay[index]!),
+      hours: toDecimalHours(committedMsByDay[index]!),
     })),
     committedEntries,
     pace: computeWeekPace({
