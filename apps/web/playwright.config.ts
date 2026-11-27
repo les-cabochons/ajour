@@ -24,7 +24,18 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: devices["Desktop Chrome"],
+      use: {
+        ...devices["Desktop Chrome"],
+        // The device says Windows. On a Mac host, Ajour would then expect
+        // Ctrl for its shortcuts while Chromium's clipboard keys stay on Cmd.
+        userAgent:
+          process.platform === "darwin"
+            ? devices["Desktop Chrome"].userAgent.replace(
+                "Windows NT 10.0; Win64; x64",
+                "Macintosh; Intel Mac OS X 10_15_7",
+              )
+            : devices["Desktop Chrome"].userAgent,
+      },
     },
   ],
   webServer: {
