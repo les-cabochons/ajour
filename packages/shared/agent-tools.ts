@@ -427,8 +427,8 @@ export const agentTimeEntrySchema = z.object({
   state: z.enum(["saved", "committed", "running"]),
   minutes: z.number(),
   /**
-   * The same time to the second. Totals add it and round to the minute
-   * once, as Ajour's own totals do. Missing from an older Ajour.
+   * The same time in seconds, with their fraction. Totals add it and round
+   * to the minute once, as Ajour's own totals do. Missing from an older Ajour.
    */
   seconds: z.number().optional(),
   /** When Stop or an edit last saved the entry, as an ISO time. */

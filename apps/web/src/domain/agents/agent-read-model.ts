@@ -44,6 +44,7 @@ import {
 } from "@/domain/time/timesheet-commit";
 import { getLockedWeek } from "@/domain/time/locked-weeks";
 import { toDecimalHours } from "@/domain/time/duration";
+import { getExactDuration } from "@/domain/time/time-rounding";
 import {
   buildCommitLines,
   getLineCommitTaskName,
@@ -134,7 +135,7 @@ export function toAgentEntry(
         ? "committed"
         : "saved",
     minutes: Math.round(entry.durationMs / MINUTE),
-    seconds: Math.round(entry.durationMs / 1000),
+    seconds: entry.durationMs / 1000,
     savedAt: new Date(entry.usedAt ?? entry.committedAt).toISOString(),
     ...(entry.note ? { note: entry.note } : {}),
     ...(entry.workItemId ? { workItemId: entry.workItemId } : {}),
@@ -940,7 +941,8 @@ function readUnsavedRunningTime(
     timerId: timer._id,
     date: timer.localDate,
     unsavedMinutes: Math.floor(
-      Math.max(0, countedMs - (saved?.durationMs ?? 0)) / MINUTE,
+      // The count goes on from the saved entry's exact time.
+      Math.max(0, countedMs - (saved ? getExactDuration(saved) : 0)) / MINUTE,
     ),
     ...(saved ? { entryId: saved._id } : {}),
     ...describeProjectTask(state, timer.projectId, timer.taskId),

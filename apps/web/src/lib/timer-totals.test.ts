@@ -24,6 +24,32 @@ describe("timer totals", () => {
     expect(contributionMs).toBe(5 * 60_000);
   });
 
+  it("adds only the time since Continue to a rounded entry, counting on from its exact time", () => {
+    // Saved at 0:15 from an exact 0:07; Continue counts on from 0:07.
+    const timer = {
+      entryId: "entry-1",
+      localDate: "2026-05-27",
+      startedAt: 1_000,
+      accumulatedDurationMs: 7 * 60_000,
+    };
+    const durations = getTimerDurationsMs(timer, timer.startedAt + 2 * 60_000);
+
+    expect(
+      getTimerContributionMs({
+        timer,
+        timesheetEntries: [
+          {
+            _id: "entry-1",
+            localDate: "2026-05-27",
+            durationMs: 15 * 60_000,
+            exactDurationMs: 7 * 60_000,
+          },
+        ],
+        runningDurationMs: durations.runningDurationMs,
+      }),
+    ).toBe(2 * 60_000);
+  });
+
   it("returns full running contribution when timer has no linked persisted entry", () => {
     const timer = {
       entryId: "entry-1",

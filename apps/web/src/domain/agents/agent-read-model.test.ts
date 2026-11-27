@@ -1176,6 +1176,37 @@ describe("the Commit page's lines for agents", () => {
     });
   });
 
+  it("counts the unsaved time from a rounded entry's exact time", () => {
+    // Saved at 0:15 from an exact 0:07; Continue counts on from 0:07.
+    const state = {
+      ...weekState(),
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: NOW - 2 * 60_000,
+          localDate: "2026-10-14",
+          projectId: "acme",
+          taskId: "review",
+          accumulatedDurationMs: 7 * 60_000,
+          entryId: "today",
+        },
+      ],
+    } as LocalAppState;
+    state.timesheetEntries.push(
+      entry({
+        _id: "today",
+        localDate: "2026-10-14",
+        projectId: "acme",
+        taskId: "review",
+        durationMs: 15 * 60_000,
+        exactDurationMs: 7 * 60_000,
+        committedAt: 8,
+      }),
+    );
+
+    expect(read(state, "day-task").running?.unsavedMinutes).toBe(2);
+  });
+
   it("groups the week by task in one section without a date", () => {
     const { sections } = read(weekState(), "task");
 
