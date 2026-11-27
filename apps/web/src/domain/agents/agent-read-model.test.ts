@@ -453,6 +453,24 @@ describe("agent read model", () => {
     propertyPlugins: NO_PROPERTY_PLUGINS,
   };
 
+  it("turns time into hours as the Commit page does: to the minute, then two decimals", () => {
+    const state = changesState();
+    const changes = getWeekChangesForAgent(
+      {
+        ...state,
+        timesheetEntries: state.timesheetEntries.map((item) =>
+          // 0:20:31 is 21 minutes, 0.35 h; its raw 0.342 h would read 0.34.
+          item._id === "e1" ? { ...item, durationMs: 1_231_000 } : item,
+        ),
+      },
+      allChecked,
+    ).changes;
+
+    expect(
+      changes.find((change) => change.entryId === "e1")?.current?.hours,
+    ).toBe(0.35);
+  });
+
   it("lists the week's changes with external ids, in decimal hours", () => {
     const acme = {
       projectName: "Acme",

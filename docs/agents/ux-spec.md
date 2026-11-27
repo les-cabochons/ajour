@@ -710,6 +710,7 @@ A "Commit week" button, in words, sits in the Day and Week headers on desktop, b
   - Task: one line per task for the whole week, no days, hours added up, comments merged.
 - Every line shows project, task, hours and comments. Each value has an always-visible copy icon. Clicking the value or the icon copies it, and a checkmark replaces the icon for a second. There is no hover reveal and no popover.
 - Copied hours use decimals, such as 5.00. The screen shows clock time, such as 5:00.
+- Hours read the same wherever Ajour gives them ([#974](https://github.com/les-cabochons/ajour/issues/974)): a total adds the entries' times, rounds to the minute once, and its hours are those minutes over 60, to two decimals. The Commit page, the agent tools, the week pace, the export and the CLI's totals all agree, so three 0:00:40 entries read 0:01 each and 0:02 together.
 
 ### Selection
 

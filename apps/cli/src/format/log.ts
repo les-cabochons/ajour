@@ -10,6 +10,7 @@ import {
   entryRow,
   formatRows,
   runningRow,
+  totalMinutes,
   type Row,
 } from "./rows.ts";
 import type { Paint } from "./style.ts";
@@ -119,7 +120,7 @@ function taskKeyOf(value: { projectId?: string; taskId?: string }): string {
 // Totals and targets
 
 function totalOf(rows: readonly LogRow[]): number {
-  return rows.reduce((total, row) => total + row.minutes, 0);
+  return totalMinutes(rows.reduce((total, row) => total + row.seconds, 0));
 }
 
 function targetOf(view: LogView, dates: readonly string[]): number {
@@ -541,6 +542,7 @@ export function formatLogByTask(
       project: string;
       task: string;
       minutes: number;
+      seconds: number;
       running?: number;
       mark?: CommitMark;
     }
@@ -550,9 +552,11 @@ export function formatLogByTask(
       project: row.project ?? "—",
       task: row.task ?? "—",
       minutes: 0,
+      seconds: 0,
       ...(row.mark ? { mark: row.mark } : {}),
     };
-    task.minutes += row.minutes;
+    task.seconds += row.seconds;
+    task.minutes = totalMinutes(task.seconds);
     if (row.running) task.running = row.minutes;
     tasks.set(row.taskKey, task);
   }

@@ -70,7 +70,6 @@ import {
  */
 
 const MINUTE = 60_000;
-const HOUR = 3_600_000;
 const DAY = 86_400_000;
 const MAX_RANGE_DAYS = 62;
 
@@ -135,6 +134,7 @@ export function toAgentEntry(
         ? "committed"
         : "saved",
     minutes: Math.round(entry.durationMs / MINUTE),
+    seconds: Math.round(entry.durationMs / 1000),
     savedAt: new Date(entry.usedAt ?? entry.committedAt).toISOString(),
     ...(entry.note ? { note: entry.note } : {}),
     ...(entry.workItemId ? { workItemId: entry.workItemId } : {}),
@@ -468,8 +468,8 @@ export function getWorkItemForAgent(
   };
 }
 
-const toHours = (durationMs: number) =>
-  Math.round((durationMs / HOUR) * 100) / 100;
+/** Hours as every reader gives them: see `toDecimalHours`. */
+const toHours = toDecimalHours;
 
 /**
  * Non-empty values by plugin ID then field ID, or undefined when there are

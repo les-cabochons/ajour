@@ -17,10 +17,37 @@ import {
  * short id, and the day when it isn't today. Columns line up across the rows
  * printed together.
  */
+/**
+ * A saved entry's time in seconds: `seconds` from an Ajour that sends it,
+ * else its minutes.
+ */
+export function entrySeconds(
+  entry: Pick<AgentTimeEntry, "minutes" | "seconds">,
+) {
+  return entry.seconds ?? entry.minutes * 60;
+}
+
+/** A running entry's counted time in seconds. */
+export function runningSeconds(
+  running: Pick<AgentRunningTimer, "countedMinutes" | "countedSeconds">,
+) {
+  return running.countedSeconds ?? running.countedMinutes * 60;
+}
+
+/**
+ * The minutes of a total, as Ajour's totals are: the entries' times added
+ * first, then rounded to the minute once.
+ */
+export function totalMinutes(seconds: number) {
+  return Math.round(seconds / 60);
+}
+
 export interface Row {
   running: boolean;
   committed: boolean;
   minutes: number;
+  /** The time to the second, which totals add. */
+  seconds: number;
   /** The project's code, else its name. */
   project?: string;
   task?: string;
@@ -50,6 +77,7 @@ export function entryRow(entry: AgentTimeEntry): Row {
     running: entry.state === "running",
     committed: entry.state === "committed",
     minutes: entry.minutes,
+    seconds: entrySeconds(entry),
     project: projectLabel(entry),
     task: entry.taskName,
     note: entry.note,
@@ -72,6 +100,7 @@ export function runningRow(running: AgentRunningTimer): Row {
     running: true,
     committed: false,
     minutes: running.countedMinutes,
+    seconds: runningSeconds(running),
     project: projectLabel(running),
     task: running.taskName,
     note: running.note,

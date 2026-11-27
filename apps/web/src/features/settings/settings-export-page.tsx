@@ -22,6 +22,7 @@ import { todayIsoDate } from "@/lib/utils";
 import {
   buildTimesheetExportFilename,
   buildTimesheetExportRows,
+  getTimesheetExportTotalHours,
   createTimesheetExportWorkbook,
   detectTimesheetImportConflicts,
   downloadWorkbookFile,
@@ -92,8 +93,15 @@ export function SettingsExportPage() {
   );
 
   const totalHours = useMemo(
-    () => rows.reduce((sum, row) => sum + row.hours, 0),
-    [rows],
+    () =>
+      hasInvalidRange
+        ? 0
+        : getTimesheetExportTotalHours({
+            entries: state.timesheetEntries,
+            startDate,
+            endDate,
+          }),
+    [endDate, hasInvalidRange, startDate, state.timesheetEntries],
   );
   const pendingImportCount = state.timesheetImportDrafts.length;
   const pendingConflictCount = state.timesheetImportDrafts.filter(

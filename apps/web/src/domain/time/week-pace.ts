@@ -2,6 +2,7 @@ import type {
   UserPreferences,
   WeeklyCapacityTargets,
 } from "@/domain/local-state";
+import { toDecimalHours } from "@/domain/time/duration";
 import { getWeekDates } from "@/domain/time/local-date";
 
 /**
@@ -22,7 +23,6 @@ export interface WeekPace {
 
 export const DEFAULT_PACE_TOLERANCE_PERCENT = 20;
 
-const HOUR = 3_600_000;
 const DAY_KEYS = [
   "monday",
   "tuesday",
@@ -48,7 +48,7 @@ export function getPaceTolerancePercent(preferences: UserPreferences) {
   return preferences.paceTolerancePercent ?? DEFAULT_PACE_TOLERANCE_PERCENT;
 }
 
-const toHours = (ms: number) => Math.round((ms / HOUR) * 100) / 100;
+const toHours = toDecimalHours;
 
 interface PaceInput {
   weekDates: string[];
