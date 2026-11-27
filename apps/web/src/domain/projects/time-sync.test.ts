@@ -2571,7 +2571,12 @@ describe("a running entry from the other system", () => {
       listing(timerElsewhere(40_000)),
     ).state;
     expect(entriesOf(kept)).toEqual([
-      expect.objectContaining({ taskId: "mine", durationMs: 40_000 }),
+      // 40 seconds round to the nearest minute, and keep their exact time.
+      expect.objectContaining({
+        taskId: "mine",
+        durationMs: 60_000,
+        exactDurationMs: 40_000,
+      }),
     ]);
     expect(changesAt(kept, NOW + MINUTE + 2_000)).toEqual([]);
   });

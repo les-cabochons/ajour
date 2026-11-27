@@ -19,7 +19,17 @@ import {
   type SidebarDensity,
   type SidebarGrouping,
 } from "@/lib/sidebar-layout";
-import type { ThemeMode, WeeklyCapacityTargets } from "@/domain/local-state";
+import type {
+  ThemeMode,
+  TimeRoundingSettings,
+  WeeklyCapacityTargets,
+} from "@/domain/local-state";
+import { getTimeRounding } from "@/domain/time/time-rounding";
+import {
+  describeTimeRoundingSamples,
+  TimeRoundingMinimumSelect,
+  TimeRoundingSelect,
+} from "@/features/time/time-rounding-fields";
 import {
   formatClockDuration,
   DAY_CAPACITY_LIMIT,
@@ -166,6 +176,12 @@ export function SettingsGeneralPage() {
     onCommit: (paceTolerancePercent) =>
       localStore.setUserPreferences({ paceTolerancePercent }),
   });
+  const timeRounding = getTimeRounding(preferences);
+  const setTimeRounding = (change: Partial<TimeRoundingSettings>) =>
+    localStore.setUserPreferences({
+      timeRounding: { ...timeRounding, ...change },
+    });
+  const roundingSamples = describeTimeRoundingSamples(timeRounding);
   const handleThemeChange = (mode: ThemeMode) => {
     localStore.setUserPreferences({ themeMode: mode });
   };
@@ -402,6 +418,37 @@ export function SettingsGeneralPage() {
                 </p>
               ) : null}
             </div>
+          </SettingRow>
+          <SettingRow
+            label="Rounding"
+            labelFor="time-rounding"
+            description="How each entry's time saves and commits. Ajour keeps the exact time, so a change re-rounds the weeks not submitted yet."
+          >
+            <div className="flex flex-col items-start gap-1 desktop:items-end">
+              <TimeRoundingSelect
+                id="time-rounding"
+                rule={timeRounding}
+                onChange={(rule) => {
+                  if (rule) setTimeRounding(rule);
+                }}
+              />
+              {roundingSamples ? (
+                <p className="text-left text-xs text-[var(--text-secondary)] tabular-nums desktop:text-right">
+                  {roundingSamples}
+                </p>
+              ) : null}
+            </div>
+          </SettingRow>
+          <SettingRow
+            label="Minimum per entry"
+            labelFor="time-rounding-minimum"
+            description="A shorter entry saves as this. An empty entry stays empty."
+          >
+            <TimeRoundingMinimumSelect
+              id="time-rounding-minimum"
+              minimumMinutes={timeRounding.minimumMinutes}
+              onChange={(minimumMinutes) => setTimeRounding({ minimumMinutes })}
+            />
           </SettingRow>
         </AppPanel>
       </section>

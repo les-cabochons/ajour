@@ -65,6 +65,13 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       maxPathSegments: 4,
     },
     userPreferences: {
+      // These tests count milliseconds, so the time stays exact.
+      timeRounding: {
+        mode: "off",
+        stepMinutes: 1,
+        minimumMinutes: 0,
+        roundTypedHours: true,
+      },
       themeMode: "system",
       updateTrack: "stable",
       projectDataShapeId: "default",

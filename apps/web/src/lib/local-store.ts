@@ -1,4 +1,8 @@
 import {
+  normalizeTimeRounding,
+  reroundTimesheetEntries,
+} from "@/domain/time/time-rounding";
+import {
   BUILT_IN_PROJECT_DATA_SHAPE_ID,
   type ActivityBlockRecord,
   type BrowserActivityBucket,
@@ -472,6 +476,7 @@ const defaultUserPreferences: UserPreferences = {
   changesEndSnoozeEarly: false,
   closeParentSubitems: "ask",
   calendarSuggestions: normalizeCalendarSuggestionSettings(undefined),
+  timeRounding: normalizeTimeRounding(undefined),
 };
 
 function normalizeCapacityTarget(value: unknown, fallback: number) {
@@ -810,6 +815,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
             : undefined,
         calendarSuggestions: normalizeCalendarSuggestionSettings(
           persistedState.userPreferences?.calendarSuggestions,
+        ),
+        timeRounding: normalizeTimeRounding(
+          persistedState.userPreferences?.timeRounding,
         ),
       },
     }),
@@ -2238,7 +2246,11 @@ const store = {
       return {
         state:
           applied.result.kind === "applied"
-            ? { ...state, ...applied.state }
+            ? {
+                ...state,
+                ...applied.state,
+                userPreferences: state.userPreferences,
+              }
             : state,
         result: applied.result,
       };
@@ -3989,9 +4001,15 @@ const store = {
     const before = readState().userPreferences;
     const after = updateState((state) => {
       const userPreferences = { ...state.userPreferences, ...preferences };
-      return recordsEqual(userPreferences, state.userPreferences)
-        ? state
-        : { ...state, userPreferences };
+      if (recordsEqual(userPreferences, state.userPreferences)) return state;
+      const next = { ...state, userPreferences };
+      // A new rounding re-rounds the entries of the weeks not submitted.
+      return recordsEqual(
+        userPreferences.timeRounding,
+        state.userPreferences.timeRounding,
+      )
+        ? next
+        : reroundTimesheetEntries(next);
     }).userPreferences;
     describeUserPreferences(before, after);
   },

@@ -12,6 +12,7 @@ import {
   type TimesheetEntryState,
 } from "@/domain/time/timesheet-entry";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
+import { getExactDuration, roundEntryTime } from "@/domain/time/time-rounding";
 
 export type TimerFactories = TimesheetEntryFactories;
 
@@ -206,9 +207,10 @@ export function saveTimer<State extends TimerState>(
   const existingEntry = timer.entryId
     ? state.timesheetEntries.find((entry) => entry._id === timer.entryId)
     : undefined;
-  const durationMs =
+  const exactMs =
     timer.accumulatedDurationMs +
     Math.max(0, factories.now() - timer.startedAt);
+  const time = roundEntryTime(state, exactMs);
   const entry = keepTimesheetEntryCommit(
     existingEntry,
     createTimesheetEntry(
@@ -219,7 +221,7 @@ export function saveTimer<State extends TimerState>(
         projectId: timer.projectId,
         taskId: timer.taskId,
         note: timer.note,
-        durationMs,
+        durationMs: time.durationMs,
         sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
         entryId: timer.entryId,
         // A new entry takes the running entry's time sync key, so the other
@@ -229,6 +231,9 @@ export function saveTimer<State extends TimerState>(
       factories,
     ),
   );
+  if (time.exactDurationMs !== undefined) {
+    entry.exactDurationMs = time.exactDurationMs;
+  }
   if (existingEntry) {
     entry.committedAt = existingEntry.committedAt;
     entry.usedAt = factories.now();
@@ -256,7 +261,7 @@ export function saveTimer<State extends TimerState>(
       workItemId: timer.workItemId,
       projectId: timer.projectId,
       taskId: timer.taskId,
-      durationMsDelta: durationMs,
+      durationMsDelta: entry.durationMs,
     }),
   };
 }
@@ -292,7 +297,8 @@ export function continueTimesheetEntry(
     state,
     {
       ...sharedFields,
-      accumulatedDurationMs: entry.durationMs,
+      // Counts on from the exact time, so rounding never adds up twice.
+      accumulatedDurationMs: getExactDuration(entry),
       entryId: entry._id,
       syncKey: entrySyncKey(entry),
     },

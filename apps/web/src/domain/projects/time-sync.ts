@@ -83,6 +83,10 @@ export function timeSyncStateOf(
     workItems: state.workItems,
     lockedWeeks: state.lockedWeeks,
     timeSyncs: state.timeSyncs ?? {},
+    // Entries the round saves round by the user's rule.
+    ...(state.userPreferences
+      ? { userPreferences: state.userPreferences }
+      : {}),
   };
 }
 

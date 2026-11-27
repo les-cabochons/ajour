@@ -11,6 +11,10 @@ import {
   normalizeTimesheetEntryCommit,
   toCommittedCopy,
 } from "@/domain/time/timesheet-commit";
+import {
+  getExactDuration,
+  type TimeRoundingState,
+} from "@/domain/time/time-rounding";
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
 import { findCommitTarget } from "@/domain/projects/commit-target";
 
@@ -57,7 +61,8 @@ export type TimesheetEntryState = Pick<
   | "timesheetTombstones"
   | "timers"
   | "workItems"
->;
+> &
+  TimeRoundingState;
 
 /**
  * The time sync key of a saved or running entry: the one rule. The other
@@ -216,6 +221,13 @@ export function updateTimesheetEntry<State extends TimesheetEntryState>(
   );
   nextEntry.committedAt = entry.committedAt;
   nextEntry.usedAt = factories.now();
+  // An unchanged time keeps the exact time it was rounded from.
+  if (values.durationMs === entry.durationMs) {
+    if (entry.exactDurationMs !== undefined) {
+      nextEntry.exactDurationMs = entry.exactDurationMs;
+    }
+    if (entry.durationTyped) nextEntry.durationTyped = true;
+  }
   const persistedEntry = keepTimesheetEntryCommit(
     entry,
     nextEntry.taskId
@@ -238,7 +250,9 @@ export function updateTimesheetEntry<State extends TimesheetEntryState>(
           projectId: persistedEntry.projectId,
           taskId: persistedEntry.taskId,
           note: persistedEntry.note,
-          accumulatedDurationMs: persistedEntry.durationMs,
+          // The running entry counts on from the exact time, so rounding
+          // never adds up twice.
+          accumulatedDurationMs: getExactDuration(persistedEntry),
           startedAt: factories.now(),
         }
       : timer,

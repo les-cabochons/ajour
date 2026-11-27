@@ -14,6 +14,7 @@ import {
   startTimer,
   type TimerFactories,
 } from "@/domain/time/timer-transitions";
+import { DEFAULT_TIME_ROUNDING } from "@/domain/time/time-rounding";
 
 const TODAY = "2026-07-30";
 
@@ -60,12 +61,16 @@ function createEntry(overrides: Partial<LocalTimesheetEntry> = {}) {
   } satisfies LocalTimesheetEntry;
 }
 
+/** These tests count milliseconds; Stop's rounding has tests of its own below. */
+const EXACT = { ...DEFAULT_TIME_ROUNDING, mode: "off" } as const;
+
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     projects: [createProject()],
     timers: [],
     timesheetEntries: [],
     workItems: [],
+    userPreferences: { timeRounding: EXACT },
     ...overrides,
   } as LocalAppState;
 }
@@ -355,6 +360,94 @@ describe("editing the running entry", () => {
       editRunningEntry(state, "timer-1", { countedDurationMs: -1 }, factories),
     ).toBe(state);
     expect(editRunningEntry(state, "missing", {}, factories)).toBe(state);
+  });
+});
+
+describe("Stop and Continue with rounding", () => {
+  const MINUTE = 60_000;
+  const up15 = {
+    userPreferences: {
+      timeRounding: { ...DEFAULT_TIME_ROUNDING, mode: "up", stepMinutes: 15 },
+    },
+  } as Partial<LocalAppState>;
+  /** A running entry that started at 0, and the time it stops at. */
+  const runFor = (ms: number, timer: Partial<LocalTimer> = {}) => ({
+    timer: createRunningTimer({
+      startedAt: 0,
+      accumulatedDurationMs: 0,
+      ...timer,
+    }),
+    now: ms,
+  });
+
+  it("saves the rounded time and keeps the exact one", () => {
+    const { timer, now } = runFor(7 * MINUTE);
+    const saved = saveTimer(
+      createState({ ...up15, timers: [timer] }),
+      "timer-1",
+      createFactories(now),
+    );
+
+    expect(saved.timesheetEntries[0]).toMatchObject({
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+    });
+  });
+
+  it("counts on from the exact time, so rounding never adds up twice", () => {
+    const { timer, now } = runFor(3 * MINUTE);
+    const first = saveTimer(
+      createState({ ...up15, timers: [timer] }),
+      "timer-1",
+      createFactories(now),
+    );
+    const entryId = first.timesheetEntries[0]!._id;
+    const continued = continueTimesheetEntry(
+      first,
+      entryId,
+      TODAY,
+      createFactories(10 * MINUTE),
+    );
+    expect(continued.timers[0]!.accumulatedDurationMs).toBe(3 * MINUTE);
+
+    const second = saveTimer(
+      continued,
+      continued.timers[0]!._id,
+      createFactories(14 * MINUTE),
+    );
+    expect(second.timesheetEntries).toEqual([
+      expect.objectContaining({
+        _id: entryId,
+        durationMs: 15 * MINUTE,
+        exactDurationMs: 7 * MINUTE,
+      }),
+    ]);
+  });
+
+  it("logs the rounded time on the backlog item", () => {
+    const { timer, now } = runFor(7 * MINUTE, { workItemId: "item-1" });
+    const saved = saveTimer(
+      createState({
+        ...up15,
+        timers: [timer],
+        workItems: [
+          {
+            _id: "item-1",
+            title: "Fix export",
+            status: "active",
+            remainingEstimateHours: 1,
+            completedEstimateHours: 0,
+          } as LocalAppState["workItems"][number],
+        ],
+      }),
+      "timer-1",
+      createFactories(now),
+    );
+
+    expect(saved.workItems[0]).toMatchObject({
+      remainingEstimateHours: 0.75,
+      completedEstimateHours: 0.25,
+    });
   });
 });
 
