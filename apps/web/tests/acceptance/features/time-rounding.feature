@@ -12,3 +12,10 @@ Feature: Time rounding
     And I open today's Day list
     Then today's "Long session" entry shows "0:15"
     And this week's Commit page shows "0:15" for the added "Long session"
+
+  Scenario: Hours typed in a Grid cell round too
+    Given I have a committed week of entries
+    When I pick "Up to 5 minutes" for Rounding in Settings
+    And I open the Week Grid
+    And I type "1:07" in the "Code review" cell on Tuesday and press Enter
+    Then the "Code review" cell on Tuesday shows "1:10"

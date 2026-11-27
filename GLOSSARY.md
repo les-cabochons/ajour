@@ -227,7 +227,7 @@ The state of a time entry that is not running.
 _Avoid_: Closed, stopped
 
 **Rounding**:
-The rule a saved time entry's time follows: exact, or to the nearest, the next or the last step of 1, 5, 10 or 15 minutes, then up to a minimum per entry. The user picks one in Settings. Only the rounded time is shown, committed and synced. A rule change re-rounds every entry of a week not yet submitted.
+The rule a saved time entry's time follows: exact, or to the nearest, the next or the last step of 1, 5, 10 or 15 minutes, then up to a minimum per entry. The user picks one in Settings, and whether typed hours follow it. Only the rounded time is shown, committed and synced. A rule change re-rounds every entry of a week not yet submitted.
 _Avoid_: Snapping, increment, billing rule
 
 **Exact time**:

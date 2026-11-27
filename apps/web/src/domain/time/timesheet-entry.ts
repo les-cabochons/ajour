@@ -13,6 +13,9 @@ import {
 } from "@/domain/time/timesheet-commit";
 import {
   getExactDuration,
+  roundEntryTime,
+  withEntryTime,
+  type EntryDurationFields,
   type TimeRoundingState,
 } from "@/domain/time/time-rounding";
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
@@ -77,6 +80,31 @@ export function entrySyncKey(
   entry: Pick<LocalTimesheetEntry | LocalTimer, "_id" | "syncKey">,
 ) {
   return entry.syncKey ?? entry._id;
+}
+
+/**
+ * The duration fields for a time written to an entry. The time of `from`,
+ * unchanged, keeps its exact time; any other is typed, or came from outside
+ * Ajour's timer, and rounds while Round typed hours too is on.
+ */
+export function writtenEntryTime(
+  state: TimeRoundingState,
+  durationMs: number,
+  from?: Pick<
+    LocalTimesheetEntry,
+    "durationMs" | "exactDurationMs" | "durationTyped"
+  >,
+): EntryDurationFields {
+  if (from && durationMs === from.durationMs) {
+    return {
+      durationMs,
+      ...(from.exactDurationMs !== undefined
+        ? { exactDurationMs: from.exactDurationMs }
+        : {}),
+      ...(from.durationTyped ? { durationTyped: true as const } : {}),
+    };
+  }
+  return roundEntryTime(state, durationMs, { typed: true });
 }
 
 function hasOwn<T extends object>(value: T, key: PropertyKey) {
@@ -169,24 +197,22 @@ export function saveManualTimesheetEntry<State extends TimesheetEntryState>(
   values: Omit<CreateTimesheetEntryValues, "sourceBlockIds" | "entryId">,
   factories: TimesheetEntryFactories,
 ): State {
+  const entry = withEntryTime(
+    createTimesheetEntry(
+      state.projects,
+      { ...values, sourceBlockIds: [] },
+      factories,
+    ),
+    writtenEntryTime(state, values.durationMs),
+  );
   return {
     ...state,
-    timesheetEntries: [
-      ...state.timesheetEntries,
-      createTimesheetEntry(
-        state.projects,
-        {
-          ...values,
-          sourceBlockIds: [],
-        },
-        factories,
-      ),
-    ],
+    timesheetEntries: [...state.timesheetEntries, entry],
     workItems: applyLoggedTimeToWorkItems(state.workItems, {
       workItemId: values.workItemId,
       projectId: values.projectId,
       taskId: values.taskId,
-      durationMsDelta: values.durationMs,
+      durationMsDelta: entry.durationMs,
     }),
   };
 }
@@ -221,19 +247,16 @@ export function updateTimesheetEntry<State extends TimesheetEntryState>(
   );
   nextEntry.committedAt = entry.committedAt;
   nextEntry.usedAt = factories.now();
-  // An unchanged time keeps the exact time it was rounded from.
-  if (values.durationMs === entry.durationMs) {
-    if (entry.exactDurationMs !== undefined) {
-      nextEntry.exactDurationMs = entry.exactDurationMs;
-    }
-    if (entry.durationTyped) nextEntry.durationTyped = true;
-  }
+  const timedEntry = withEntryTime(
+    nextEntry,
+    writtenEntryTime(state, values.durationMs, entry),
+  );
   const persistedEntry = keepTimesheetEntryCommit(
     entry,
-    nextEntry.taskId
-      ? nextEntry
+    timedEntry.taskId
+      ? timedEntry
       : {
-          ...nextEntry,
+          ...timedEntry,
           label: entry.taskId ? "" : entry.label,
         },
   );
@@ -268,7 +291,7 @@ export function updateTimesheetEntry<State extends TimesheetEntryState>(
       workItemId: entry.workItemId,
       projectId: persistedEntry.projectId,
       taskId: persistedEntry.taskId,
-      durationMsDelta: values.durationMs,
+      durationMsDelta: persistedEntry.durationMs,
     }),
   };
 }
@@ -338,10 +361,14 @@ export function duplicateTimesheetEntry(
     },
     factories,
   );
-  const duplicate = createdDuplicate.taskId
-    ? createdDuplicate
+  const timedDuplicate = withEntryTime(
+    createdDuplicate,
+    writtenEntryTime(state, values.durationMs, entry),
+  );
+  const duplicate = timedDuplicate.taskId
+    ? timedDuplicate
     : {
-        ...createdDuplicate,
+        ...timedDuplicate,
         label: entry.taskId ? "" : entry.label,
       };
 

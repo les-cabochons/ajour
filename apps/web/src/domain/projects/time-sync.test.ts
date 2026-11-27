@@ -1298,6 +1298,62 @@ function entriesOf(state: TimeSyncState) {
 }
 
 describe("taking the other system's changes", () => {
+  it("rounds an entry logged elsewhere, sends the rounded minutes once, then nothing", () => {
+    const rounded = {
+      ...stateWith([]),
+      userPreferences: {
+        timeRounding: {
+          mode: "up" as const,
+          stepMinutes: 15,
+          minimumMinutes: 0,
+          roundTypedHours: true,
+        },
+      },
+    };
+    const taken = runRound(
+      rounded,
+      listing(remoteEntry("logged", { minutes: 7 })),
+    ).state;
+
+    expect(entriesOf(taken)).toEqual([
+      expect.objectContaining({
+        durationMs: 15 * MINUTE,
+        exactDurationMs: 7 * MINUTE,
+        durationTyped: true,
+      }),
+    ]);
+    expect(plan(taken).request.changes).toEqual([
+      expect.objectContaining({
+        kind: "upsert",
+        values: expect.objectContaining({ minutes: 15 }),
+      }),
+    ]);
+
+    const settled = runRound(taken).state;
+    expect(plan(settled).request.changes).toEqual([]);
+    expect(entriesOf(settled)[0]).toMatchObject({ durationMs: 15 * MINUTE });
+  });
+
+  it("keeps an entry logged elsewhere as it is while Round typed hours too is off", () => {
+    const { state } = runRound(
+      {
+        ...stateWith([]),
+        userPreferences: {
+          timeRounding: {
+            mode: "up" as const,
+            stepMinutes: 15,
+            minimumMinutes: 0,
+            roundTypedHours: false,
+          },
+        },
+      },
+      listing(remoteEntry("logged", { minutes: 7 })),
+    );
+
+    expect(entriesOf(state)[0]).toMatchObject({ durationMs: 7 * MINUTE });
+    expect(plan(state).request.changes).toEqual([]);
+  });
+
   it("adds an entry logged elsewhere on the task it names, with a copy that sends nothing back", () => {
     const { state, result } = runRound(
       stateWith([]),

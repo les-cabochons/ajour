@@ -12,6 +12,7 @@ import type {
   TimelineMutationResult,
 } from "@/domain/local-state";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
+import { writtenEntryTime } from "@/domain/time/timesheet-entry";
 
 export interface TimelineFactories {
   createId: (prefix: string) => string;
@@ -376,7 +377,8 @@ export function commitActivityBlock(
         projectId: block.projectId,
         label: block.display.label,
         note: block.note,
-        durationMs: block.durationMs,
+        // Browser activity counts as time from outside Ajour's timer.
+        ...writtenEntryTime(state, block.durationMs),
         sourceBlockIds: [id],
         committedAt: factories.now(),
       },
@@ -439,7 +441,8 @@ export function commitImportedBrowserDraft(
             projectId: draft.projectId,
             label: draft.dominantLabel,
             note: draft.note,
-            durationMs: draft.durationMs,
+            // Browser activity counts as time from outside Ajour's timer.
+            ...writtenEntryTime(state, draft.durationMs),
             sourceBlockIds: [sourceBlockId],
             committedAt: factories.now(),
           },

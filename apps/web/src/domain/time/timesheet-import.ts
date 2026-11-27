@@ -16,7 +16,11 @@ import {
   formatTaskImportName,
   normalizeTaskImportName,
 } from "@/domain/projects/task-import";
-import { createTimesheetEntry } from "@/domain/time/timesheet-entry";
+import {
+  createTimesheetEntry,
+  writtenEntryTime,
+} from "@/domain/time/timesheet-entry";
+import { withEntryTime } from "@/domain/time/time-rounding";
 
 export type TimesheetImportFactories = ProjectFactories;
 
@@ -269,17 +273,21 @@ function commitDraft(
       ),
     };
   }
-  const timesheetEntry = createTimesheetEntry(
-    ensured.projects,
-    {
-      localDate: draft.localDate,
-      projectId: ensured.projectId,
-      taskId: ensured.taskId,
-      note: draft.note,
-      durationMs: draft.durationMs,
-      sourceBlockIds: [],
-    },
-    factories,
+  // Imported hours count as typed: they round while Round typed hours too is on.
+  const timesheetEntry = withEntryTime(
+    createTimesheetEntry(
+      ensured.projects,
+      {
+        localDate: draft.localDate,
+        projectId: ensured.projectId,
+        taskId: ensured.taskId,
+        note: draft.note,
+        durationMs: draft.durationMs,
+        sourceBlockIds: [],
+      },
+      factories,
+    ),
+    writtenEntryTime(state, draft.durationMs),
   );
 
   return {
@@ -289,7 +297,7 @@ function commitDraft(
     workItems: applyLoggedTimeToWorkItems(state.workItems, {
       projectId: ensured.projectId,
       taskId: ensured.taskId,
-      durationMsDelta: draft.durationMs,
+      durationMsDelta: timesheetEntry.durationMs,
     }),
   };
 }

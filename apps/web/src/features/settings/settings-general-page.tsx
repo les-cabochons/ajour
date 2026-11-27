@@ -450,6 +450,19 @@ export function SettingsGeneralPage() {
               onChange={(minimumMinutes) => setTimeRounding({ minimumMinutes })}
             />
           </SettingRow>
+          <SettingRow
+            label="Round typed hours too"
+            labelFor="round-typed-hours"
+            description="Hours typed in an entry, and those from agents, imports, calendar suggestions and time sync, round the same way. Off, they stay as given."
+          >
+            <Switch
+              id="round-typed-hours"
+              checked={timeRounding.roundTypedHours}
+              onCheckedChange={(roundTypedHours) =>
+                setTimeRounding({ roundTypedHours })
+              }
+            />
+          </SettingRow>
         </AppPanel>
       </section>
 
