@@ -70,3 +70,35 @@ Then(
     ).toContainText(hours);
   },
 );
+
+When(
+  "I open the {string} project page",
+  async ({ page }, projectId: string) => {
+    await page.goto(`/projects/${projectId}`);
+  },
+);
+
+When(
+  "I pick {string} for the project's Rounding",
+  async ({ page }, rule: string) => {
+    const select = page.getByRole("combobox", {
+      name: "Rounding",
+      exact: true,
+    });
+    await expect(select).toHaveText(/^Same as Settings · Nearest minute/);
+    await select.click();
+    await page.getByRole("option", { name: rule, exact: true }).click();
+  },
+);
+
+Then(
+  "the project's Rounding shows {string}",
+  async ({ page }, rule: string) => {
+    await expect(
+      page.getByRole("combobox", { name: "Rounding", exact: true }),
+    ).toHaveText(rule);
+    await page.screenshot({
+      path: "test-results/time-rounding-project.png",
+    });
+  },
+);

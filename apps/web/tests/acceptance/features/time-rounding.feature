@@ -19,3 +19,13 @@ Feature: Time rounding
     And I open the Week Grid
     And I type "1:07" in the "Code review" cell on Tuesday and press Enter
     Then the "Code review" cell on Tuesday shows "1:10"
+
+  Scenario: A project rounds by its own rule
+    Given I have a committed week of entries
+    And an entry has run for 7 minutes today
+    When I open the "project-atlas" project page
+    And I pick "Up to 15 minutes" for the project's Rounding
+    Then the project's Rounding shows "Up to 15 minutes"
+    When I stop the running entry
+    And I open today's Day list
+    Then today's "Long session" entry shows "0:15"

@@ -38,6 +38,12 @@ export interface LocalProject {
    * say. Personal, like plugin properties. See commit-target.ts.
    */
   localOnly?: boolean;
+  /**
+   * How this project's entries round, in place of the user's rule. Personal,
+   * like `localOnly`: team sync and source sync never send or change it.
+   * See domain/time/time-rounding.ts.
+   */
+  timeRounding?: TimeRoundingRule;
   color: string;
   icon: LocalProjectIcon;
   status: "active" | "archived";

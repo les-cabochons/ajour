@@ -1,6 +1,7 @@
 import {
   normalizeTimeRounding,
   reroundTimesheetEntries,
+  setProjectTimeRounding as setProjectTimeRoundingTransition,
 } from "@/domain/time/time-rounding";
 import {
   BUILT_IN_PROJECT_DATA_SHAPE_ID,
@@ -368,6 +369,7 @@ import type {
   PinnedTaskSlot,
   ThemeMode,
   TimelineMutationResult,
+  TimeRoundingRule,
   UserPreferences,
 } from "@/domain/local-state";
 import {
@@ -2435,6 +2437,19 @@ const store = {
       projects: applyUpdateProject(state.projects, projectId, patch),
     }));
   },
+  /**
+   * Gives a project its own rounding, or back the user's with undefined,
+   * and re-rounds its entries of the weeks not submitted. Returns an undo
+   * token, or null when nothing changed.
+   */
+  setProjectTimeRounding(
+    projectId: string,
+    rule: TimeRoundingRule | undefined,
+  ) {
+    return updateStateWithUndo((state) =>
+      setProjectTimeRoundingTransition(state, projectId, rule),
+    );
+  },
   reorderProjects(orderedIds: string[]) {
     if (orderedIds.length < 2) {
       return;
@@ -4256,6 +4271,15 @@ export const STORE_COMMANDS = {
       project: {
         id: ([projectId]) => projectId,
         changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  setProjectTimeRounding: {
+    name: "project.update",
+    fields: {
+      project: {
+        id: ([projectId]) => projectId,
+        changed_fields: () => ["timeRounding"],
       },
     },
   },

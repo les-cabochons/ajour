@@ -378,7 +378,7 @@ export function commitActivityBlock(
         label: block.display.label,
         note: block.note,
         // Browser activity counts as time from outside Ajour's timer.
-        ...writtenEntryTime(state, block.durationMs),
+        ...writtenEntryTime(state, block.durationMs, block.projectId),
         sourceBlockIds: [id],
         committedAt: factories.now(),
       },
@@ -442,7 +442,7 @@ export function commitImportedBrowserDraft(
             label: draft.dominantLabel,
             note: draft.note,
             // Browser activity counts as time from outside Ajour's timer.
-            ...writtenEntryTime(state, draft.durationMs),
+            ...writtenEntryTime(state, draft.durationMs, draft.projectId),
             sourceBlockIds: [sourceBlockId],
             committedAt: factories.now(),
           },

@@ -377,6 +377,33 @@ describe("syncProjectSource", () => {
     ).toBe("Acme");
   });
 
+  it("keeps the project's own rounding through a sync", () => {
+    const first = sync(stateWith([]));
+    const id = projectNamed(first, "Acme - Support")._id;
+    const timeRounding = {
+      mode: "up" as const,
+      stepMinutes: 15,
+      minimumMinutes: 30,
+    };
+    const rounded = {
+      ...first,
+      projects: first.projects.map((project) =>
+        project._id === id ? { ...project, timeRounding } : project,
+      ),
+    };
+
+    const again = sync(
+      rounded,
+      snapshot((copy) => {
+        copy.projects[0]!.name = "Acme - Support 2027";
+      }),
+    );
+
+    expect(
+      again.projects.find((project) => project._id === id)?.timeRounding,
+    ).toEqual(timeRounding);
+  });
+
   it("archives a project and a task the snapshot lacks, and restores them when they return", () => {
     const first = sync(stateWith([]));
     const acmeId = projectNamed(first, "Acme - Support")._id;

@@ -210,7 +210,9 @@ export function saveTimer<State extends TimerState>(
   const exactMs =
     timer.accumulatedDurationMs +
     Math.max(0, factories.now() - timer.startedAt);
-  const time = roundEntryTime(state, exactMs);
+  const time = roundEntryTime(state, exactMs, {
+    projectId: timer.projectId,
+  });
   const entry = keepTimesheetEntryCommit(
     existingEntry,
     createTimesheetEntry(

@@ -199,7 +199,7 @@ describe("planning a team sync", () => {
     ).toEqual([]);
   });
 
-  it("leaves personal fields out: pinned slots, adjustments, plugin properties, favorites", () => {
+  it("leaves personal fields out: pinned slots, adjustments, plugin properties, favorites, rounding", () => {
     const project = syncedProject("p1", {
       tasks: [localTask("t1", { favoritedAt: 7 })],
     });
@@ -207,6 +207,7 @@ describe("planning a team sync", () => {
       updateProject([project], "p1", {
         pluginProperties: { workday: { code: "CA004" } },
         favoritedAt: 8,
+        timeRounding: { mode: "up", stepMinutes: 15, minimumMinutes: 0 },
       }),
       "p1",
       "t1",

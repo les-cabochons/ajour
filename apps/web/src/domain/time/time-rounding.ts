@@ -176,9 +176,10 @@ export function getExactDuration(
   return entry.exactDurationMs ?? entry.durationMs;
 }
 
-/** What rounding reads: the user's preferences. */
+/** What rounding reads: the user's preferences and the projects' rules. */
 export type TimeRoundingState = {
   userPreferences?: Pick<UserPreferences, "timeRounding">;
+  projects?: readonly { _id: string; timeRounding?: TimeRoundingRule }[];
 };
 
 /** The duration fields an entry stores for a time. */
@@ -187,13 +188,15 @@ export type EntryDurationFields = Pick<
   "durationMs" | "exactDurationMs" | "durationTyped"
 >;
 
-/**
- * The rule an entry's time rounds by.
- */
+/** The rule an entry's time rounds by: its project's, else the user's. */
 export function getEntryRoundingRule(
   state: TimeRoundingState,
+  projectId: string | undefined,
 ): TimeRoundingRule {
-  return getTimeRounding(state.userPreferences);
+  const project = projectId
+    ? state.projects?.find((item) => item._id === projectId)
+    : undefined;
+  return project?.timeRounding ?? getTimeRounding(state.userPreferences);
 }
 
 /**
@@ -204,13 +207,16 @@ export function getEntryRoundingRule(
 export function roundEntryTime(
   state: TimeRoundingState,
   exactMs: number,
-  { typed = false }: { typed?: boolean } = {},
+  {
+    typed = false,
+    projectId,
+  }: { typed?: boolean; projectId: string | undefined },
 ): EntryDurationFields {
   const settings = getTimeRounding(state.userPreferences);
   const durationMs =
     typed && !settings.roundTypedHours
       ? exactMs
-      : roundEntryDuration(exactMs, getEntryRoundingRule(state));
+      : roundEntryDuration(exactMs, getEntryRoundingRule(state, projectId));
   return {
     durationMs,
     ...(durationMs !== exactMs ? { exactDurationMs: exactMs } : {}),
@@ -246,6 +252,7 @@ export function reroundTimesheetEntries<
     if (isDateLocked(state, entry.localDate)) return entry;
     const fields = roundEntryTime(state, getExactDuration(entry), {
       typed: entry.durationTyped === true,
+      projectId: entry.projectId,
     });
     if (
       fields.durationMs === entry.durationMs &&
@@ -257,4 +264,24 @@ export function reroundTimesheetEntries<
     return withEntryTime(entry, fields);
   });
   return changed ? { ...state, timesheetEntries } : state;
+}
+
+/**
+ * Gives a project its own rule, or back the user's with undefined, and
+ * re-rounds the entries it reaches.
+ */
+export function setProjectTimeRounding<
+  State extends Pick<
+    LocalAppState,
+    "projects" | "timesheetEntries" | "lockedWeeks" | "userPreferences"
+  >,
+>(state: State, projectId: string, rule: TimeRoundingRule | undefined): State {
+  let changed = false;
+  const projects = state.projects.map((project) => {
+    if (project._id !== projectId) return project;
+    changed = true;
+    const { timeRounding: _previous, ...rest } = project;
+    return rule ? { ...rest, timeRounding: rule } : rest;
+  });
+  return changed ? reroundTimesheetEntries({ ...state, projects }) : state;
 }

@@ -1501,6 +1501,53 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it("gives a project its own rounding with Undo, and keeps it through a reload", async () => {
+    const MINUTE = 60_000;
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        projects: [
+          {
+            _id: "atlas",
+            name: "Atlas",
+            color: "#1f7667",
+            icon: { kind: "preset", name: "dot" },
+            status: "active",
+            tasks: [],
+          },
+        ],
+        timesheetEntries: [
+          {
+            _id: "entry-1",
+            localDate: "2026-11-24",
+            projectId: "atlas",
+            label: "",
+            durationMs: 7 * MINUTE,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ],
+      }),
+    );
+    const { localStore } = await import("./local-store");
+    const rule = { mode: "up" as const, stepMinutes: 15, minimumMinutes: 0 };
+
+    const token = localStore.setProjectTimeRounding("atlas", rule);
+    expect(localStore.snapshot().timesheetEntries[0]!.durationMs).toBe(
+      15 * MINUTE,
+    );
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().timesheetEntries[0]!.durationMs).toBe(
+      7 * MINUTE,
+    );
+    expect(localStore.snapshot().projects[0]!.timeRounding).toBeUndefined();
+
+    localStore.setProjectTimeRounding("atlas", rule);
+    vi.resetModules();
+    const { localStore: reloadedStore } = await import("./local-store");
+    expect(reloadedStore.snapshot().projects[0]!.timeRounding).toEqual(rule);
+  });
+
   it("preserves the hide non-working days preference after reloading storage", async () => {
     const { localStore } = await import("./local-store");
     localStore.setUserPreferences({ hideNonWorkingDays: true });

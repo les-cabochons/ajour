@@ -2,6 +2,7 @@ import { useState } from "react";
 import { OptionSelect, type SelectOption } from "@/components/ui/option-select";
 import type { TimeRoundingMode, TimeRoundingRule } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
+import { cn } from "@/lib/utils";
 import {
   findTimeRoundingPreset,
   formatTimeRoundingMinimum,
@@ -41,6 +42,8 @@ export function TimeRoundingSelect({
   onChange,
   inheritLabel,
   disabled,
+  className,
+  inline = false,
 }: {
   id?: string;
   label?: string;
@@ -48,6 +51,10 @@ export function TimeRoundingSelect({
   onChange: (rule: StepRule | undefined) => void;
   inheritLabel?: string;
   disabled?: boolean;
+  /** The menu's trigger. */
+  className?: string;
+  /** In a properties card: the sentence starts at the value column's edge. */
+  inline?: boolean;
 }) {
   const preset = rule ? findTimeRoundingPreset(rule) : undefined;
   // Custom… stays open on a rule a preset also names, until another pick.
@@ -64,11 +71,16 @@ export function TimeRoundingSelect({
   ];
 
   return (
-    <div className="flex flex-col items-start gap-2 desktop:items-end">
+    <div
+      className={cn(
+        "flex min-w-0 flex-col items-start gap-2",
+        inline ? "w-full" : "desktop:items-end",
+      )}
+    >
       <OptionSelect
         id={id}
         label={label}
-        className="w-48"
+        className={className ?? "w-48"}
         disabled={disabled}
         value={value}
         options={options}
@@ -138,18 +150,20 @@ export function TimeRoundingMinimumSelect({
   minimumMinutes,
   onChange,
   disabled,
+  className,
 }: {
   id?: string;
   label?: string;
   minimumMinutes: number;
   onChange: (minimumMinutes: number) => void;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
     <OptionSelect
       id={id}
       label={label}
-      className="w-28"
+      className={className ?? "w-28"}
       disabled={disabled}
       value={String(minimumMinutes)}
       options={MINIMUM_OPTIONS}

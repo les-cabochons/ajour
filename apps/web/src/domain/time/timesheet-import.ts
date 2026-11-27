@@ -287,7 +287,11 @@ function commitDraft(
       },
       factories,
     ),
-    writtenEntryTime(state, draft.durationMs),
+    writtenEntryTime(
+      { ...state, projects: ensured.projects },
+      draft.durationMs,
+      ensured.projectId,
+    ),
   );
 
   return {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
+  LocalAppState,
   LocalTimesheetEntry,
   TimeRoundingRule,
   TimeRoundingSettings,
@@ -12,9 +13,11 @@ import {
   reroundTimesheetEntries,
   roundEntryDuration,
   roundEntryTime,
+  setProjectTimeRounding,
 } from "@/domain/time/time-rounding";
 
 const SECOND = 1_000;
+const NO_PROJECT = { projectId: undefined };
 const MINUTE = 60 * SECOND;
 const rule = (
   mode: TimeRoundingRule["mode"],
@@ -125,17 +128,19 @@ describe("roundEntryTime", () => {
   const up15 = { userPreferences: { timeRounding: settings(rule("up", 15)) } };
 
   it("stores the rounded time, and the exact time when they differ", () => {
-    expect(roundEntryTime(up15, 7 * MINUTE)).toEqual({
+    expect(roundEntryTime(up15, 7 * MINUTE, NO_PROJECT)).toEqual({
       durationMs: 15 * MINUTE,
       exactDurationMs: 7 * MINUTE,
     });
-    expect(roundEntryTime(up15, 15 * MINUTE)).toEqual({
+    expect(roundEntryTime(up15, 15 * MINUTE, NO_PROJECT)).toEqual({
       durationMs: 15 * MINUTE,
     });
   });
 
   it("rounds a typed time only while Round typed hours too is on", () => {
-    expect(roundEntryTime(up15, 7 * MINUTE, { typed: true })).toEqual({
+    expect(
+      roundEntryTime(up15, 7 * MINUTE, { typed: true, projectId: undefined }),
+    ).toEqual({
       durationMs: 15 * MINUTE,
       exactDurationMs: 7 * MINUTE,
       durationTyped: true,
@@ -145,16 +150,21 @@ describe("roundEntryTime", () => {
         timeRounding: settings({ ...rule("up", 15), roundTypedHours: false }),
       },
     };
-    expect(roundEntryTime(typedOff, 7 * MINUTE, { typed: true })).toEqual({
+    expect(
+      roundEntryTime(typedOff, 7 * MINUTE, {
+        typed: true,
+        projectId: undefined,
+      }),
+    ).toEqual({
       durationMs: 7 * MINUTE,
       durationTyped: true,
     });
   });
 
   it("rounds to the nearest minute without preferences", () => {
-    expect(roundEntryTime({}, 7 * MINUTE + 20 * SECOND).durationMs).toBe(
-      7 * MINUTE,
-    );
+    expect(
+      roundEntryTime({}, 7 * MINUTE + 20 * SECOND, NO_PROJECT).durationMs,
+    ).toBe(7 * MINUTE);
   });
 });
 
@@ -250,5 +260,69 @@ describe("re-rounding after a rule change", () => {
     });
 
     expect(next.timesheetEntries[0]!.durationMs).toBe(7 * MINUTE);
+  });
+});
+
+describe("a project's own rule", () => {
+  const atlasRule = rule("up", 15);
+  const projects = [
+    { _id: "atlas", timeRounding: atlasRule },
+    { _id: "globex" },
+  ];
+  const userNearest = {
+    userPreferences: { timeRounding: DEFAULT_TIME_ROUNDING },
+    projects,
+  };
+
+  it("rounds an entry by its project's rule, else the user's", () => {
+    expect(
+      roundEntryTime(userNearest, 7 * MINUTE, { projectId: "atlas" })
+        .durationMs,
+    ).toBe(15 * MINUTE);
+    expect(
+      roundEntryTime(userNearest, 7 * MINUTE, { projectId: "globex" })
+        .durationMs,
+    ).toBe(7 * MINUTE);
+    expect(roundEntryTime(userNearest, 7 * MINUTE, NO_PROJECT).durationMs).toBe(
+      7 * MINUTE,
+    );
+  });
+
+  it("re-rounds only the project's entries when its rule changes, and back with the user's", () => {
+    const entry = (id: string, projectId: string): LocalTimesheetEntry => ({
+      _id: id,
+      localDate: "2026-11-24",
+      projectId,
+      label: "",
+      durationMs: 7 * MINUTE,
+      sourceBlockIds: [],
+      committedAt: 1,
+    });
+    const state = {
+      userPreferences: {
+        ...({} as LocalAppState["userPreferences"]),
+        timeRounding: DEFAULT_TIME_ROUNDING,
+      },
+      lockedWeeks: [],
+      projects: [
+        { _id: "atlas" } as LocalAppState["projects"][number],
+        { _id: "globex" } as LocalAppState["projects"][number],
+      ],
+      timesheetEntries: [entry("a", "atlas"), entry("g", "globex")],
+    };
+
+    const rounded = setProjectTimeRounding(state, "atlas", atlasRule);
+    expect(rounded.projects[0]!.timeRounding).toEqual(atlasRule);
+    expect(rounded.timesheetEntries.map((item) => item.durationMs)).toEqual([
+      15 * MINUTE,
+      7 * MINUTE,
+    ]);
+
+    const back = setProjectTimeRounding(rounded, "atlas", undefined);
+    expect(back.projects[0]).not.toHaveProperty("timeRounding");
+    expect(back.timesheetEntries.map((item) => item.durationMs)).toEqual([
+      7 * MINUTE,
+      7 * MINUTE,
+    ]);
   });
 });

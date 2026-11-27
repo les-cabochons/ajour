@@ -413,7 +413,7 @@ export function acceptCalendarSuggestions(
         },
         factories,
       ),
-      writtenEntryTime(state, suggestion.durationMs),
+      writtenEntryTime(state, suggestion.durationMs, projectId),
     );
     entries.push(entry);
     entryIds.add(entry._id);

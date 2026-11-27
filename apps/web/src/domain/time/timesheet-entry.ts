@@ -83,19 +83,27 @@ export function entrySyncKey(
 }
 
 /**
- * The duration fields for a time written to an entry. The time of `from`,
- * unchanged, keeps its exact time; any other is typed, or came from outside
+ * The duration fields for a time written to an entry of `projectId`. The
+ * time of `from`, unchanged, keeps its exact time, re-rounded by the new
+ * project's rule after a move; any other is typed, or came from outside
  * Ajour's timer, and rounds while Round typed hours too is on.
  */
 export function writtenEntryTime(
   state: TimeRoundingState,
   durationMs: number,
+  projectId: string | undefined,
   from?: Pick<
     LocalTimesheetEntry,
-    "durationMs" | "exactDurationMs" | "durationTyped"
+    "durationMs" | "exactDurationMs" | "durationTyped" | "projectId"
   >,
 ): EntryDurationFields {
   if (from && durationMs === from.durationMs) {
+    if (from.projectId !== projectId) {
+      return roundEntryTime(state, getExactDuration(from), {
+        typed: from.durationTyped === true,
+        projectId,
+      });
+    }
     return {
       durationMs,
       ...(from.exactDurationMs !== undefined
@@ -104,7 +112,7 @@ export function writtenEntryTime(
       ...(from.durationTyped ? { durationTyped: true as const } : {}),
     };
   }
-  return roundEntryTime(state, durationMs, { typed: true });
+  return roundEntryTime(state, durationMs, { typed: true, projectId });
 }
 
 function hasOwn<T extends object>(value: T, key: PropertyKey) {
@@ -203,7 +211,7 @@ export function saveManualTimesheetEntry<State extends TimesheetEntryState>(
       { ...values, sourceBlockIds: [] },
       factories,
     ),
-    writtenEntryTime(state, values.durationMs),
+    writtenEntryTime(state, values.durationMs, values.projectId),
   );
   return {
     ...state,
@@ -249,7 +257,7 @@ export function updateTimesheetEntry<State extends TimesheetEntryState>(
   nextEntry.usedAt = factories.now();
   const timedEntry = withEntryTime(
     nextEntry,
-    writtenEntryTime(state, values.durationMs, entry),
+    writtenEntryTime(state, values.durationMs, nextEntry.projectId, entry),
   );
   const persistedEntry = keepTimesheetEntryCommit(
     entry,
@@ -363,7 +371,12 @@ export function duplicateTimesheetEntry(
   );
   const timedDuplicate = withEntryTime(
     createdDuplicate,
-    writtenEntryTime(state, values.durationMs, entry),
+    writtenEntryTime(
+      state,
+      values.durationMs,
+      createdDuplicate.projectId,
+      entry,
+    ),
   );
   const duplicate = timedDuplicate.taskId
     ? timedDuplicate

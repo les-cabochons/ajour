@@ -194,6 +194,54 @@ describe("typed hours and rounding", () => {
     });
   });
 
+  it("re-rounds an entry moved to a project with its own rule, from its exact time", () => {
+    const base = withRounding("nearest", 1, true);
+    const atlas = {
+      ...base.projects[0]!,
+      _id: "atlas",
+      name: "Atlas",
+      timeRounding: { mode: "up" as const, stepMinutes: 15, minimumMinutes: 0 },
+    };
+    const entry: LocalTimesheetEntry = {
+      _id: "timesheet-1",
+      localDate: "2026-07-30",
+      projectId: "atlas",
+      label: "",
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    const state = {
+      ...base,
+      projects: [...base.projects, atlas],
+      timesheetEntries: [entry],
+    };
+
+    const moved = updateTimesheetEntry(
+      state,
+      entry._id,
+      { projectId: "project-1", taskId: undefined, durationMs: 15 * MINUTE },
+      factories,
+    ).timesheetEntries[0]!;
+    expect(moved).toMatchObject({
+      projectId: "project-1",
+      durationMs: 7 * MINUTE,
+    });
+    expect(moved).not.toHaveProperty("exactDurationMs");
+
+    const back = updateTimesheetEntry(
+      { ...state, timesheetEntries: [moved] },
+      entry._id,
+      { projectId: "atlas", durationMs: 7 * MINUTE },
+      factories,
+    ).timesheetEntries[0]!;
+    expect(back).toMatchObject({
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+    });
+  });
+
   it("gives a duplicate the exact time of the entry it copies", () => {
     const entry: LocalTimesheetEntry = {
       _id: "source",
