@@ -28,6 +28,25 @@ function createFactories(): TimelineFactories {
   };
 }
 
+/** The state with a rule of at least an hour, and whether typed hours follow it. */
+function withHourMinimum(
+  state: LocalAppState,
+  roundTypedHours: boolean,
+): LocalAppState {
+  return {
+    ...state,
+    userPreferences: {
+      ...state.userPreferences,
+      timeRounding: {
+        mode: "nearest",
+        stepMinutes: 1,
+        minimumMinutes: 60,
+        roundTypedHours,
+      },
+    },
+  };
+}
+
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: {
@@ -60,6 +79,13 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       maxPathSegments: 4,
     },
     userPreferences: {
+      // These tests count milliseconds; rounding has tests of its own.
+      timeRounding: {
+        mode: "off",
+        stepMinutes: 1,
+        minimumMinutes: 0,
+        roundTypedHours: true,
+      },
       themeMode: "system",
       updateTrack: "stable",
       projectDataShapeId: "default",
@@ -197,6 +223,29 @@ describe("timeline commits", () => {
     expect(committed.editedBlocks).toEqual([]);
     expect(committed.dismissedSegmentIds).toEqual(["segment-1"]);
   });
+
+  it.each([
+    [true, 60 * 60_000],
+    [false, 300],
+  ])(
+    "rounds a committed activity block while Round typed hours too is %s",
+    (roundTypedHours, durationMs) => {
+      const block = createBlock();
+      const committed = commitActivityBlock(
+        withHourMinimum(
+          createState({ editedBlocks: [block] }),
+          roundTypedHours,
+        ),
+        block,
+        createFactories(),
+      );
+
+      expect(committed.timesheetEntries[0]).toMatchObject({
+        durationMs,
+        durationTyped: true,
+      });
+    },
+  );
 
   it("requires a project before committing an activity block", () => {
     expect(() =>

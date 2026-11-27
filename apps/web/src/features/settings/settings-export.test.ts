@@ -5,6 +5,7 @@ import type { LocalProject, LocalTimesheetEntry } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   buildTimesheetExportRows,
+  getTimesheetExportTotalHours,
   detectTimesheetImportConflicts,
   createTimesheetExportWorkbook,
   parseTimesheetImportWorkbook,
@@ -182,6 +183,31 @@ async function readWorkbookRows(
     rows,
   };
 }
+
+describe("getTimesheetExportTotalHours", () => {
+  it("adds the entries' times, then turns the total into hours once", () => {
+    const short = (id: string) => ({
+      ...entries[0]!,
+      _id: id,
+      localDate: "2026-04-10",
+      durationMs: 40_000,
+    });
+    const range = { startDate: "2026-04-10", endDate: "2026-04-10" };
+    const shortEntries = [short("a"), short("b"), short("c")];
+
+    // Each 0:00:40 row reads 0.02 h; together they are 0:02, 0.03 h.
+    expect(
+      buildTimesheetExportRows({
+        entries: shortEntries,
+        projects,
+        ...range,
+      }).map((row) => row.hours),
+    ).toEqual([0.02, 0.02, 0.02]);
+    expect(
+      getTimesheetExportTotalHours({ entries: shortEntries, ...range }),
+    ).toBe(0.03);
+  });
+});
 
 describe("buildTimesheetExportRows", () => {
   it("filters by date range and resolves project and task names", () => {

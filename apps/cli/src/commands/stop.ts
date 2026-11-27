@@ -1,6 +1,6 @@
 import { rememberUndo } from "../config.ts";
 import { localDate, type Context } from "../context.ts";
-import { entryRow } from "../format/rows.ts";
+import { entryRow, entrySeconds, totalMinutes } from "../format/rows.ts";
 import { formatClock } from "../format/text.ts";
 import { printJson, printRows, say } from "../output.ts";
 
@@ -21,9 +21,11 @@ export async function stop(ctx: Context): Promise<number> {
     to: today,
   });
   // An entry a running one continues counts in the running entry instead.
-  const minutes = entries
-    .filter((entry) => entry.state !== "running")
-    .reduce((total, entry) => total + entry.minutes, 0);
+  const minutes = totalMinutes(
+    entries
+      .filter((entry) => entry.state !== "running")
+      .reduce((total, entry) => total + entrySeconds(entry), 0),
+  );
   const target = targets?.find((day) => day.date === today)?.hours ?? 0;
   say(
     ctx,

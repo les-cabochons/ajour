@@ -5,6 +5,7 @@ import type {
 import { VERSION_MISMATCH, type AjourClient } from "../client.ts";
 import { localDate, type Context } from "../context.ts";
 import { UnreachableError } from "../errors.ts";
+import { entrySeconds, runningSeconds, totalMinutes } from "../format/rows.ts";
 import { painter, type Paint } from "../format/style.ts";
 import { formatClock, formatClockSeconds, truncate } from "../format/text.ts";
 
@@ -24,7 +25,7 @@ interface Snapshot {
   running: AgentRunningTimer | null;
   today: string;
   /** Today's saved time, without the part the running entry counts again. */
-  savedTodayMinutes: number;
+  savedTodaySeconds: number;
   /** Today's target in minutes, 0 without one. */
   todayTargetMinutes: number;
   /** The saved entry used last, on any day, for the idle line. */
@@ -130,7 +131,7 @@ async function readSnapshot(
   return {
     running,
     today,
-    savedTodayMinutes: savedMinutes(listed.entries),
+    savedTodaySeconds: savedSeconds(listed.entries),
     last: last ? describeLast(last) : undefined,
     todayTargetMinutes: Math.round(
       (listed.targets?.find((target) => target.date === today)?.hours ?? 0) *
@@ -164,10 +165,10 @@ async function readLastSaved(
  * The entry a running entry continues lists its saved part; the running
  * entry counts that part again. So it is left out here.
  */
-function savedMinutes(entries: readonly AgentTimeEntry[]): number {
+function savedSeconds(entries: readonly AgentTimeEntry[]): number {
   return entries
     .filter((entry) => entry.state !== "running")
-    .reduce((total, entry) => total + entry.minutes, 0);
+    .reduce((total, entry) => total + entrySeconds(entry), 0);
 }
 
 function describeLast(entry: AgentTimeEntry): Snapshot["last"] | undefined {
@@ -179,9 +180,11 @@ function describeLast(entry: AgentTimeEntry): Snapshot["last"] | undefined {
 
 function todayMinutes(snapshot: Snapshot): number {
   const { running } = snapshot;
-  return (
-    snapshot.savedTodayMinutes +
-    (running && running.date === snapshot.today ? running.countedMinutes : 0)
+  return totalMinutes(
+    snapshot.savedTodaySeconds +
+      (running && running.date === snapshot.today
+        ? runningSeconds(running)
+        : 0),
   );
 }
 

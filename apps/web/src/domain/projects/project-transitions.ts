@@ -1,3 +1,4 @@
+import { normalizeTimeRoundingRule } from "@/domain/time/time-rounding";
 import {
   isPinnedTaskSlot,
   type LocalProject,
@@ -123,6 +124,10 @@ export function normalizeProject(
     icon: normalizeProjectIcon(project.icon),
     pluginProperties: normalizePluginProperties(project.pluginProperties),
     localOnly: normalizeLocalOnly(project.localOnly),
+    timeRounding:
+      project.timeRounding === undefined
+        ? undefined
+        : normalizeTimeRoundingRule(project.timeRounding),
     favoritedAt: normalizeFavoritedAt(project.favoritedAt),
     team,
     source,

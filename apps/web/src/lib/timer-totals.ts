@@ -1,3 +1,4 @@
+import { getExactDuration } from "@/domain/time/time-rounding";
 import type { LocalTimer, LocalTimesheetEntry } from "@/domain/local-state";
 
 type TimerIdentity = Pick<LocalTimer, "entryId" | "localDate">;
@@ -9,7 +10,7 @@ type TimerDurationSource = Pick<
 
 type TimesheetEntryIdentity = Pick<
   LocalTimesheetEntry,
-  "_id" | "localDate" | "durationMs"
+  "_id" | "localDate" | "durationMs" | "exactDurationMs"
 >;
 
 export function getTimerDurationsMs(
@@ -54,7 +55,9 @@ export function getTimerContributionMs(values: {
       )
     : undefined;
 
+  // The running entry counts on from the exact time, and the saved entry's
+  // rounded time is already in the day: only the time since counts here.
   return linkedEntry
-    ? runningDurationMs - linkedEntry.durationMs
+    ? runningDurationMs - getExactDuration(linkedEntry)
     : runningDurationMs;
 }

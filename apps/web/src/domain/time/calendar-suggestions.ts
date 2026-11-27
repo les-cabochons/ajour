@@ -16,8 +16,10 @@ import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
 import { isDateLocked } from "@/domain/time/locked-weeks";
 import {
   createTimesheetEntry,
+  writtenEntryTime,
   type TimesheetEntryFactories,
 } from "@/domain/time/timesheet-entry";
+import { withEntryTime } from "@/domain/time/time-rounding";
 
 /*
  * Calendar suggestions: the calendar events a calendar plugin reports, shown
@@ -397,17 +399,21 @@ export function acceptCalendarSuggestions(
       continue;
     }
 
-    const entry = createTimesheetEntry(
-      state.projects,
-      {
-        localDate: suggestion.localDate,
-        projectId,
-        taskId,
-        note: suggestion.untitled ? undefined : suggestion.title,
-        durationMs: suggestion.durationMs,
-        sourceBlockIds: [],
-      },
-      factories,
+    // An event's span counts as typed: it rounds while Round typed hours too is on.
+    const entry = withEntryTime(
+      createTimesheetEntry(
+        state.projects,
+        {
+          localDate: suggestion.localDate,
+          projectId,
+          taskId,
+          note: suggestion.untitled ? undefined : suggestion.title,
+          durationMs: suggestion.durationMs,
+          sourceBlockIds: [],
+        },
+        factories,
+      ),
+      writtenEntryTime(state, suggestion.durationMs, projectId),
     );
     entries.push(entry);
     entryIds.add(entry._id);

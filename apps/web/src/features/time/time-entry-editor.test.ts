@@ -47,6 +47,17 @@ describe("time-entry editor", () => {
     expect(result.isTimerMode).toBe(false);
   });
 
+  it("saves a note on an entry whose short time rounded to 0:00", () => {
+    const original = { durationMs: 0, localDate: DAY };
+    const result = evaluateTimeEntryEditor(
+      { ...createTimeEntryEditorFields(DAY, original), note: "Call" },
+      { original },
+    );
+    expect(result.values).toMatchObject({ durationMs: 0, note: "Call" });
+    expect(result.canSave).toBe(true);
+    expect(result.durationError).toBeNull();
+  });
+
   it("prepares changed values for save, duplicate, and move through the same seam", () => {
     const original = {
       localDate: DAY,

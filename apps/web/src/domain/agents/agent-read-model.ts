@@ -44,6 +44,7 @@ import {
 } from "@/domain/time/timesheet-commit";
 import { getLockedWeek } from "@/domain/time/locked-weeks";
 import { toDecimalHours } from "@/domain/time/duration";
+import { getExactDuration } from "@/domain/time/time-rounding";
 import {
   buildCommitLines,
   getLineCommitTaskName,
@@ -70,7 +71,6 @@ import {
  */
 
 const MINUTE = 60_000;
-const HOUR = 3_600_000;
 const DAY = 86_400_000;
 const MAX_RANGE_DAYS = 62;
 
@@ -135,6 +135,7 @@ export function toAgentEntry(
         ? "committed"
         : "saved",
     minutes: Math.round(entry.durationMs / MINUTE),
+    seconds: entry.durationMs / 1000,
     savedAt: new Date(entry.usedAt ?? entry.committedAt).toISOString(),
     ...(entry.note ? { note: entry.note } : {}),
     ...(entry.workItemId ? { workItemId: entry.workItemId } : {}),
@@ -211,7 +212,7 @@ export function listTimeEntriesForAgent(
         : null,
     targets: datesBetween(from, to).map((date) => ({
       date,
-      hours: toHours(getDayTargetMs(capacityTargets, date)),
+      hours: toDecimalHours(getDayTargetMs(capacityTargets, date)),
     })),
   };
 }
@@ -468,9 +469,6 @@ export function getWorkItemForAgent(
   };
 }
 
-const toHours = (durationMs: number) =>
-  Math.round((durationMs / HOUR) * 100) / 100;
-
 /**
  * Non-empty values by plugin ID then field ID, or undefined when there are
  * none.
@@ -558,7 +556,7 @@ function toAgentChangeValues(
     date: values.localDate,
     ...describeTimesheetCommitValues(state.projects, values),
     ...resolveEntryProperties(state, values, plugins),
-    hours: toHours(values.durationMs),
+    hours: toDecimalHours(values.durationMs),
     ...(note ? { note } : {}),
   };
 }
@@ -765,7 +763,7 @@ export function getWeekStatusForAgent(
     uncommittedChanges,
     committedHoursByDay: weekDates.map((date, index) => ({
       date,
-      hours: toHours(committedMsByDay[index]!),
+      hours: toDecimalHours(committedMsByDay[index]!),
     })),
     committedEntries,
     pace: computeWeekPace({
@@ -943,7 +941,8 @@ function readUnsavedRunningTime(
     timerId: timer._id,
     date: timer.localDate,
     unsavedMinutes: Math.floor(
-      Math.max(0, countedMs - (saved?.durationMs ?? 0)) / MINUTE,
+      // The count goes on from the saved entry's exact time.
+      Math.max(0, countedMs - (saved ? getExactDuration(saved) : 0)) / MINUTE,
     ),
     ...(saved ? { entryId: saved._id } : {}),
     ...describeProjectTask(state, timer.projectId, timer.taskId),

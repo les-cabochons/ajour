@@ -4,6 +4,7 @@ import {
   formatTaskImportName,
   normalizeTaskImportName,
 } from "@/domain/projects/task-import";
+import { toDecimalHours } from "@/domain/time/duration";
 
 export interface TimesheetExportRow {
   date: string;
@@ -42,10 +43,6 @@ const expectedImportHeaders = [
   "hours",
 ] as const;
 
-function roundDecimalHours(durationMs: number) {
-  return Math.round((durationMs / (60 * 60 * 1000)) * 100) / 100;
-}
-
 function resolveProject(projects: LocalProject[], projectId?: string) {
   return projects.find((project) => project._id === projectId);
 }
@@ -66,6 +63,27 @@ function normalizeImportKey(values: {
   ].join("::");
 }
 
+function isInExportRange(
+  entry: LocalTimesheetEntry,
+  { startDate, endDate }: Pick<TimesheetExportOptions, "startDate" | "endDate">,
+) {
+  return entry.localDate >= startDate && entry.localDate <= endDate;
+}
+
+/**
+ * The hours of the range's entries, added before they turn into hours, as
+ * every total in Ajour is: see `toDecimalHours`.
+ */
+export function getTimesheetExportTotalHours(
+  options: Omit<TimesheetExportOptions, "projects">,
+): number {
+  return toDecimalHours(
+    options.entries
+      .filter((entry) => isInExportRange(entry, options))
+      .reduce((total, entry) => total + entry.durationMs, 0),
+  );
+}
+
 export function buildTimesheetExportRows({
   entries,
   projects,
@@ -73,9 +91,7 @@ export function buildTimesheetExportRows({
   endDate,
 }: TimesheetExportOptions): TimesheetExportRow[] {
   return [...entries]
-    .filter(
-      (entry) => entry.localDate >= startDate && entry.localDate <= endDate,
-    )
+    .filter((entry) => isInExportRange(entry, { startDate, endDate }))
     .sort((left, right) => {
       if (left.localDate !== right.localDate) {
         return left.localDate.localeCompare(right.localDate);
@@ -96,7 +112,7 @@ export function buildTimesheetExportRows({
         project: project?.name ?? "",
         task: task?.name ?? "",
         note: entry.note ?? "",
-        hours: roundDecimalHours(entry.durationMs),
+        hours: toDecimalHours(entry.durationMs),
       };
     });
 }

@@ -83,6 +83,10 @@ export function timeSyncStateOf(
     workItems: state.workItems,
     lockedWeeks: state.lockedWeeks,
     timeSyncs: state.timeSyncs ?? {},
+    // Entries the round saves round by the user's rule.
+    ...(state.userPreferences
+      ? { userPreferences: state.userPreferences }
+      : {}),
   };
 }
 
@@ -955,15 +959,24 @@ function takeListing(
   const puttingBack = new Set(record.puttingBack);
   let received = 0;
 
-  /** The copy of a taken entry: Ajour's values for it, so nothing goes back. */
+  /**
+   * The copy of a taken entry: Ajour's values for it, so nothing goes back,
+   * except minutes rounding changed, which the copy keeps as the other
+   * system's so the rounded time goes back once.
+   */
   const copyOf = (
     entryId: string,
     remote: TimeSyncRemoteEntry,
   ): LocalSyncedCopy => {
     const entry = current.timesheetEntries.find((item) => item._id === entryId);
+    const own = entry && values.valuesOf(entry);
     return {
       remoteId: remote.remoteId,
-      agreed: (entry && values.valuesOf(entry)) ?? remoteValuesOf(remote),
+      agreed: own
+        ? entry.exactDurationMs !== undefined
+          ? { ...own, minutes: remote.minutes }
+          : own
+        : remoteValuesOf(remote),
       remoteUpdatedAt: remote.updatedAt,
     };
   };

@@ -453,6 +453,24 @@ describe("agent read model", () => {
     propertyPlugins: NO_PROPERTY_PLUGINS,
   };
 
+  it("turns time into hours as the Commit page does: to the minute, then two decimals", () => {
+    const state = changesState();
+    const changes = getWeekChangesForAgent(
+      {
+        ...state,
+        timesheetEntries: state.timesheetEntries.map((item) =>
+          // 0:20:31 is 21 minutes, 0.35 h; its raw 0.342 h would read 0.34.
+          item._id === "e1" ? { ...item, durationMs: 1_231_000 } : item,
+        ),
+      },
+      allChecked,
+    ).changes;
+
+    expect(
+      changes.find((change) => change.entryId === "e1")?.current?.hours,
+    ).toBe(0.35);
+  });
+
   it("lists the week's changes with external ids, in decimal hours", () => {
     const acme = {
       projectName: "Acme",
@@ -941,6 +959,43 @@ describe("the Commit page's lines for agents", () => {
     projectCode: "ACME-1",
   };
 
+  it("gives a line's hours, and a day's committed hours, as the Commit page turns time into hours", () => {
+    // 0:20:31 is 21 minutes, 0.35 h; its raw 0.342 h would read 0.34.
+    const exact = 1_231_000;
+    const base = weekState();
+    const state = {
+      ...base,
+      timesheetEntries: base.timesheetEntries.map((item) =>
+        item._id === "a3"
+          ? {
+              ...item,
+              durationMs: exact,
+              commit: {
+                at: 1,
+                localDate: item.localDate,
+                projectId: item.projectId,
+                taskId: item.taskId,
+                note: item.note,
+                durationMs: exact,
+              },
+            }
+          : item,
+      ),
+    } as LocalAppState;
+    const review = read(state, "day-task")
+      .sections.flatMap((section) => section.lines)
+      .find((line) => line.entryIds.includes("a3"));
+
+    expect(review?.hours).toBe(0.35);
+    expect(
+      getWeekStatusForAgent(state, {
+        weekDates: WEEK,
+        today: "2026-10-18",
+        propertyPlugins: plugins,
+      }).committedHoursByDay.find((day) => day.date === "2026-10-12")?.hours,
+    ).toBe(0.35);
+  });
+
   it("returns the lines, with the time kept out of them beside them", () => {
     expect(read(weekState(), "day-task")).toEqual({
       weekOf: "2026-10-12",
@@ -1119,6 +1174,37 @@ describe("the Commit page's lines for agents", () => {
       taskId: "review",
       taskName: "Review",
     });
+  });
+
+  it("counts the unsaved time from a rounded entry's exact time", () => {
+    // Saved at 0:15 from an exact 0:07; Continue counts on from 0:07.
+    const state = {
+      ...weekState(),
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: NOW - 2 * 60_000,
+          localDate: "2026-10-14",
+          projectId: "acme",
+          taskId: "review",
+          accumulatedDurationMs: 7 * 60_000,
+          entryId: "today",
+        },
+      ],
+    } as LocalAppState;
+    state.timesheetEntries.push(
+      entry({
+        _id: "today",
+        localDate: "2026-10-14",
+        projectId: "acme",
+        taskId: "review",
+        durationMs: 15 * 60_000,
+        exactDurationMs: 7 * 60_000,
+        committedAt: 8,
+      }),
+    );
+
+    expect(read(state, "day-task").running?.unsavedMinutes).toBe(2);
   });
 
   it("groups the week by task in one section without a date", () => {

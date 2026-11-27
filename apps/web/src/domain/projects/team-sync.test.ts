@@ -199,7 +199,7 @@ describe("planning a team sync", () => {
     ).toEqual([]);
   });
 
-  it("leaves personal fields out: pinned slots, adjustments, plugin properties, favorites", () => {
+  it("leaves personal fields out: pinned slots, adjustments, plugin properties, favorites, rounding", () => {
     const project = syncedProject("p1", {
       tasks: [localTask("t1", { favoritedAt: 7 })],
     });
@@ -207,6 +207,7 @@ describe("planning a team sync", () => {
       updateProject([project], "p1", {
         pluginProperties: { workday: { code: "CA004" } },
         favoritedAt: 8,
+        timeRounding: { mode: "up", stepMinutes: 15, minimumMinutes: 0 },
       }),
       "p1",
       "t1",
@@ -392,6 +393,29 @@ describe("applying a team sync", () => {
         tasks: [{ localId: "t1", remoteId: "remote-t1", budgetMs: 7_200_000 }],
       },
     ]);
+  });
+
+  it("keeps the project's own rounding when a teammate renames it", () => {
+    const timeRounding = {
+      mode: "up" as const,
+      stepMinutes: 15,
+      minimumMinutes: 30,
+    };
+    const local = [{ ...syncedProject("p1"), timeRounding }];
+    const renamed = { ...localProject("p1"), name: "Renamed by Sam" };
+
+    const next = applyTeamSync(
+      stateOf(local),
+      CONNECTION,
+      [],
+      syncResult([teamProject(renamed, [])]),
+      createFactories(),
+    );
+
+    expect(next.projects[0]).toMatchObject({
+      name: "Renamed by Sam",
+      timeRounding,
+    });
   });
 
   it("keeps personal fields when the team changes a task", () => {
