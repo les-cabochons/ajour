@@ -400,6 +400,10 @@ function ReviewChanges({
     viewed,
     onToggleViewed,
   });
+  // Lines selected stay behind on Overview: their toolbar's keys go too.
+  useEffect(() => {
+    if (!active) lines.selection.settle(undefined);
+  }, [active, lines.selection]);
 
   const count = order === "guide" ? all.length : pullRequest.files.length;
   return (

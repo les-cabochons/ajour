@@ -504,6 +504,31 @@ it("shows an outdated thread on its line when the diff still has that line", asy
   );
 });
 
+it("unfolds a viewed hunk to show a thread chosen in Threads", async () => {
+  vi.mocked(api.openDeckPullRequest).mockResolvedValue(GUIDED);
+  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
+    ...CONVERSATION,
+    threads: [reviewThread("on-y", { line: 41 })],
+  });
+  vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+  await renderReviewPage();
+  await screen.findByRole("heading", { name: "Concern 1: Handle the request" });
+  const viewedButton = () =>
+    screen.getByRole("button", { name: "Viewed: src/api.ts, lines 40 to 42" });
+  fireEvent.click(viewedButton());
+  expect(viewedButton().getAttribute("aria-pressed")).toBe("true");
+
+  fireEvent.click(within(dock()).getByRole("button", { name: /^Threads, / }));
+  const peek = await screen.findByRole("dialog", { name: "Threads" });
+  fireEvent.click(
+    within(within(peek).getAllByRole("listitem")[0]!).getByRole("button"),
+  );
+  await waitFor(() =>
+    expect(viewedButton().getAttribute("aria-pressed")).toBe("false"),
+  );
+  expect(screen.getByText("Comment on on-y")).toBeTruthy();
+});
+
 it("moves to Changes when J is pressed on Overview", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(GUIDED);
   await renderReviewPage();

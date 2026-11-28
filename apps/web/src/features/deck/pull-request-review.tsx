@@ -777,12 +777,14 @@ export function PullRequestReview({
       if (at) {
         // Its card lights up, with its line, as a hovered one does.
         setHovered(entry.thread ? entry.thread.id : `draft:${entry.draft!.id}`);
+        // A viewed hunk is folded, its threads with it: it unfolds first.
+        if (viewed.has(at.hunkId)) viewing.setViewed([at.hunkId], false);
         onReach(at.hunkId);
       } else {
         setTab("overview");
       }
     },
-    [shown, placement, onReach],
+    [shown, placement, onReach, viewed, viewing],
   );
   const renderView = (view: DeckView) =>
     view === "status" ? (
