@@ -378,7 +378,8 @@ it("shows every hunk again when a summary line goes to one the filter hides", as
         .getAttribute("aria-selected"),
     ).toBe("true"),
   );
-  expect(since.getAttribute("aria-pressed")).toBe("false");
+  // Changes shows first; the hunk is reached on the next frame.
+  await waitFor(() => expect(since.getAttribute("aria-pressed")).toBe("false"));
   expect(hunkNames(changes)).toHaveLength(3);
   await waitFor(() =>
     expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(

@@ -132,6 +132,8 @@ Then("Status says it merges after #3", async ({ page }) => {
     status.getByRole("region", { name: "Requirements" }),
   ).toContainText("Merges after #3");
   await status.getByRole("button", { name: "Close Status" }).click();
+  // Until the peek has gone, a dialog holds focus and single keys wait.
+  await expect(status).toHaveCount(0);
 });
 
 Then("the full stack lists its layers in merge order", async ({ page }) => {
