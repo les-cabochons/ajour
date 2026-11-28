@@ -25,6 +25,7 @@ import {
 import {
   getLocalProjectDisplayName,
   type LocalProject,
+  type TimeRoundingRule,
 } from "@/domain/local-state";
 import {
   formatProjectDates,
@@ -56,11 +57,20 @@ import {
 } from "@/features/projects/project-source-ui";
 import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
 import {
+  TimeRoundingMinimumSelect,
+  TimeRoundingSelect,
+} from "@/features/time/time-rounding-fields";
+import {
+  describeTimeRoundingStep,
+  formatTimeRoundingMinimum,
+  getTimeRounding,
+} from "@/domain/time/time-rounding";
+import {
   ProjectTeamAction,
   ProjectTeamRow,
 } from "@/features/projects/project-team-ui";
 import { localStore } from "@/lib/local-store";
-import { useLocalState } from "@/lib/local-hooks";
+import { useLocalState, useUserPreferences } from "@/lib/local-hooks";
 import { useTodayIsoDate } from "@/lib/use-now";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { subscribePluginsOverview } from "@/lib/app-api";
@@ -335,6 +345,83 @@ const LOCAL_ONLY_OPTIONS: SelectOption<"commits" | "local">[] = [
   { value: "local", label: "Local only" },
 ];
 
+/** Gives the project its own rounding, or the user's again, with Undo. */
+function setProjectRounding(
+  project: LocalProject,
+  rule: TimeRoundingRule | undefined,
+) {
+  offerUndo(localStore.setProjectTimeRounding(project._id, rule), {
+    title: rule ? "Project rounding changed" : "Project rounds as in Settings",
+    subject: "project",
+  });
+}
+
+/**
+ * Rounding and Minimum (#977): the project's own rule, or "Same as
+ * Settings" while it follows the user's. A minimum picked while it follows
+ * gives it its own rule, with the user's step.
+ */
+function ProjectRoundingRows({
+  project,
+  readOnly,
+}: {
+  project: LocalProject;
+  readOnly: boolean;
+}) {
+  const preferences = useUserPreferences();
+  const userRule = getTimeRounding(preferences);
+  const own = project.timeRounding;
+  const rule = own ?? userRule;
+  return (
+    <>
+      <PropertyRow label="Rounding">
+        {readOnly ? (
+          own ? (
+            describeTimeRoundingStep(own)
+          ) : (
+            `Same as Settings · ${describeTimeRoundingStep(userRule)}`
+          )
+        ) : (
+          <TimeRoundingSelect
+            label="Rounding"
+            inline
+            className={PICKER_CLASS_NAME}
+            rule={own}
+            inheritLabel={`Same as Settings · ${describeTimeRoundingStep(userRule)}`}
+            onChange={(next) =>
+              setProjectRounding(
+                project,
+                next && {
+                  ...next,
+                  minimumMinutes: rule.minimumMinutes,
+                },
+              )
+            }
+          />
+        )}
+      </PropertyRow>
+      <PropertyRow label="Minimum">
+        {readOnly ? (
+          formatTimeRoundingMinimum(rule.minimumMinutes)
+        ) : (
+          <TimeRoundingMinimumSelect
+            label="Minimum per entry"
+            className={PICKER_CLASS_NAME}
+            minimumMinutes={rule.minimumMinutes}
+            onChange={(minimumMinutes) =>
+              setProjectRounding(project, {
+                mode: rule.mode,
+                stepMinutes: rule.stepMinutes,
+                minimumMinutes,
+              })
+            }
+          />
+        )}
+      </PropertyRow>
+    </>
+  );
+}
+
 /** Makes the project Local only, or commit again, with Undo. */
 function setLocalOnly(project: LocalProject, localOnly: boolean) {
   if (Boolean(project.localOnly) === localOnly) return;
@@ -594,6 +681,7 @@ export function ProjectPropertiesCard({
             </Popover>
           )}
         </PropertyRow>
+        <ProjectRoundingRows project={project} readOnly={isArchived} />
         <PropertyRow label="Status">
           {isArchived ? "Archived" : "Active"}
         </PropertyRow>

@@ -541,6 +541,10 @@ The tray panel reuses the sidebar's item selector and matcher, the dock's timer 
 
 `features/worktrees/worktree-clean-up-scheduler.tsx` is `WorktreeCleanUpScheduler`, mounted in the app shell beside `HandoffHost`. It draws nothing: in the desktop app it starts `startWorktreeCleanUp` (`lib/worktree-clean-up.ts`), a round at launch and one an hour.
 
+## Time rounding fields
+
+`features/time/time-rounding-fields.tsx` holds the rounding controls (#975), shared by Settings › General and a project's Properties card. `TimeRoundingSelect` is a 192px `OptionSelect` of `TIME_ROUNDING_PRESETS` (`domain/time/time-rounding.ts`) then Custom…, with an optional first choice that inherits, such as "Same as Settings · Nearest minute", selected while its `rule` is undefined. Custom…, or a rule no preset names, shows a `role="group"` sentence under it, "Round [up to] [10 min]", of two smaller `OptionSelect`s; it stays open on a preset's rule until another pick. `TimeRoundingMinimumSelect` is a 112px `OptionSelect` of None to 1 h. `describeTimeRoundingSamples` gives the line under the Settings menu, "0:07 saves as 0:15 · 0:52 as 1:00", in the 12px secondary text Pace tolerance's range uses, or nothing when the rule leaves both samples as they are.
+
 ## Handoff template editor
 
 `features/settings/handoff-template-editor.tsx` owns the handoff plugin's template section. It uses `Textarea` for plain template source, slot insertion buttons, an `Input` to search preview items, and preformatted output from the shared filler. Markdown styling would obscure source syntax, so it does not load the Markdown editor. Save errors have `role="alert"`; successful saves have `role="status"`. Drafts remain after a failed save.

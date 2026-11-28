@@ -12,6 +12,11 @@ import {
   type TimesheetEntryState,
 } from "@/domain/time/timesheet-entry";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
+import {
+  getExactDuration,
+  roundEntryTime,
+  withEntryTime,
+} from "@/domain/time/time-rounding";
 
 export type TimerFactories = TimesheetEntryFactories;
 
@@ -171,7 +176,9 @@ export function cancelTimer(
     ? state.timesheetEntries.find(
         (entry) =>
           entry._id === timer.entryId &&
-          entry.durationMs === 0 &&
+          // Its exact time, not its rounded one: a short time that rounds
+          // to 0:00 is still time the user saved.
+          getExactDuration(entry) === 0 &&
           // A committed entry stays: removing it silently would hide a
           // deletion the user never asked for from the Commit page.
           !entry.commit,
@@ -206,27 +213,33 @@ export function saveTimer<State extends TimerState>(
   const existingEntry = timer.entryId
     ? state.timesheetEntries.find((entry) => entry._id === timer.entryId)
     : undefined;
-  const durationMs =
+  const exactMs =
     timer.accumulatedDurationMs +
     Math.max(0, factories.now() - timer.startedAt);
+  const time = roundEntryTime(state, exactMs, {
+    projectId: timer.projectId,
+  });
   const entry = keepTimesheetEntryCommit(
     existingEntry,
-    createTimesheetEntry(
-      state.projects,
-      {
-        localDate: timer.localDate,
-        workItemId: timer.workItemId,
-        projectId: timer.projectId,
-        taskId: timer.taskId,
-        note: timer.note,
-        durationMs,
-        sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
-        entryId: timer.entryId,
-        // A new entry takes the running entry's time sync key, so the other
-        // system sees this save as a stop. A resumed entry keeps its own.
-        syncKey: existingEntry ? existingEntry.syncKey : entrySyncKey(timer),
-      },
-      factories,
+    withEntryTime(
+      createTimesheetEntry(
+        state.projects,
+        {
+          localDate: timer.localDate,
+          workItemId: timer.workItemId,
+          projectId: timer.projectId,
+          taskId: timer.taskId,
+          note: timer.note,
+          durationMs: time.durationMs,
+          sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
+          entryId: timer.entryId,
+          // A new entry takes the running entry's time sync key, so the other
+          // system sees this save as a stop. A resumed entry keeps its own.
+          syncKey: existingEntry ? existingEntry.syncKey : entrySyncKey(timer),
+        },
+        factories,
+      ),
+      time,
     ),
   );
   if (existingEntry) {
@@ -256,7 +269,7 @@ export function saveTimer<State extends TimerState>(
       workItemId: timer.workItemId,
       projectId: timer.projectId,
       taskId: timer.taskId,
-      durationMsDelta: durationMs,
+      durationMsDelta: entry.durationMs,
     }),
   };
 }
@@ -292,7 +305,8 @@ export function continueTimesheetEntry(
     state,
     {
       ...sharedFields,
-      accumulatedDurationMs: entry.durationMs,
+      // Counts on from the exact time, so rounding never adds up twice.
+      accumulatedDurationMs: getExactDuration(entry),
       entryId: entry._id,
       syncKey: entrySyncKey(entry),
     },

@@ -151,9 +151,11 @@ export function evaluateTimeEntryEditor(
   const dateError = !isValidLocalDate(fields.localDate)
     ? "Enter a date"
     : (options.lockReasonFor?.(fields.localDate) ?? null);
+  // Unchanged hours save as they are: a short time rounded to 0:00 keeps
+  // its note and task editable.
   const canSave =
     durationMs !== null &&
-    (durationMs > 0 || (isRunning && durationMs === 0)) &&
+    (durationMs > 0 || unchangedDuration || (isRunning && durationMs === 0)) &&
     dateError === null;
   return {
     isNew: !original,

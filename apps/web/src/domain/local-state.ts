@@ -38,6 +38,12 @@ export interface LocalProject {
    * say. Personal, like plugin properties. See commit-target.ts.
    */
   localOnly?: boolean;
+  /**
+   * How this project's entries round, in place of the user's rule. Personal,
+   * like `localOnly`: team sync and source sync never send or change it.
+   * See domain/time/time-rounding.ts.
+   */
+  timeRounding?: TimeRoundingRule;
   color: string;
   icon: LocalProjectIcon;
   status: "active" | "archived";
@@ -558,7 +564,23 @@ export interface LocalTimesheetEntry {
   taskId?: string;
   label: string;
   note?: string;
+  /**
+   * The entry's time, rounded by its rule: what every list, total, commit
+   * and sync reads. See domain/time/time-rounding.ts.
+   */
   durationMs: number;
+  /**
+   * The time as it was counted or typed, to the millisecond, when rounding
+   * changed it. Missing means `durationMs` is exact. Never shown: a rule
+   * change re-rounds from it, and Continue counts on from it.
+   */
+  exactDurationMs?: number;
+  /**
+   * The entry's last time was typed or came from outside Ajour's timer,
+   * such as an agent, an import or a time sync, so Round typed hours too
+   * decides whether it rounds.
+   */
+  durationTyped?: true;
   sourceBlockIds: string[];
   /**
    * When the entry was saved, such as from a running entry. The Day view
@@ -653,6 +675,27 @@ export interface CalendarSuggestionSettings {
   refreshMinutes: number;
 }
 
+/** Which way an entry's time rounds. Off keeps it to the second. */
+export type TimeRoundingMode = "off" | "nearest" | "up" | "down";
+
+/** How an entry's time rounds: the step first, then the minimum. See GLOSSARY.md, Rounding. */
+export interface TimeRoundingRule {
+  mode: TimeRoundingMode;
+  /** 1, 5, 10 or 15. */
+  stepMinutes: number;
+  /** 0, 5, 10, 15, 30 or 60. 0 is no minimum. */
+  minimumMinutes: number;
+}
+
+/** The user's rounding: the rule, and whether typed hours follow it. */
+export interface TimeRoundingSettings extends TimeRoundingRule {
+  /**
+   * Hours typed in an entry, and those from agents, imports, calendar
+   * suggestions and time sync, round too. Off, they stay as given.
+   */
+  roundTypedHours: boolean;
+}
+
 /** The Backlog page's ordering, which the sidebar shares. */
 export type BacklogSortMode =
   | "custom"
@@ -705,6 +748,8 @@ export interface UserPreferences {
    */
   commitLinesNameSource?: string;
   calendarSuggestions?: CalendarSuggestionSettings;
+  /** How entries' time rounds. Missing is the nearest minute. See domain/time/time-rounding.ts. */
+  timeRounding?: TimeRoundingSettings;
 }
 
 /** One step of the user's workflow. The workflow's order is the array order. */

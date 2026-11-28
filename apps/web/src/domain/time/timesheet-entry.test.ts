@@ -85,6 +85,13 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       maxPathSegments: 4,
     },
     userPreferences: {
+      // These tests count milliseconds; rounding has tests of its own.
+      timeRounding: {
+        mode: "off",
+        stepMinutes: 1,
+        minimumMinutes: 0,
+        roundTypedHours: true,
+      },
       themeMode: "system",
       updateTrack: "stable",
       projectDataShapeId: "default",
@@ -112,6 +119,158 @@ const factories = {
   now: () => 100,
 };
 
+describe("typed hours and rounding", () => {
+  const MINUTE = 60_000;
+  const withRounding = (
+    mode: "up" | "nearest",
+    stepMinutes: number,
+    roundTypedHours: boolean,
+    overrides: Partial<LocalAppState> = {},
+  ): LocalAppState => {
+    const state = createState(overrides);
+    return {
+      ...state,
+      userPreferences: {
+        ...state.userPreferences,
+        timeRounding: { mode, stepMinutes, minimumMinutes: 0, roundTypedHours },
+      },
+    };
+  };
+  const typed = (state: LocalAppState, durationMs: number) =>
+    saveManualTimesheetEntry(
+      state,
+      { localDate: "2026-07-30", projectId: "project-1", durationMs },
+      factories,
+    ).timesheetEntries[0]!;
+
+  it("rounds typed hours while Round typed hours too is on, and keeps them as typed while it is off", () => {
+    expect(typed(withRounding("up", 5, true), 67 * MINUTE)).toMatchObject({
+      durationMs: 70 * MINUTE,
+      exactDurationMs: 67 * MINUTE,
+      durationTyped: true,
+    });
+    const asTyped = typed(withRounding("up", 5, false), 67 * MINUTE);
+    expect(asTyped).toMatchObject({ durationMs: 67 * MINUTE });
+    expect(asTyped).not.toHaveProperty("exactDurationMs");
+  });
+
+  it("rounds hours typed over an entry, and keeps the exact time when they are unchanged", () => {
+    const entry: LocalTimesheetEntry = {
+      _id: "timesheet-1",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      label: "",
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    const state = withRounding("up", 5, true, { timesheetEntries: [entry] });
+
+    const unchanged = updateTimesheetEntry(
+      state,
+      entry._id,
+      { durationMs: 15 * MINUTE, note: "Renamed" },
+      factories,
+    ).timesheetEntries[0]!;
+    expect(unchanged).toMatchObject({
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+      note: "Renamed",
+    });
+    expect(unchanged).not.toHaveProperty("durationTyped");
+
+    expect(
+      updateTimesheetEntry(
+        state,
+        entry._id,
+        { durationMs: 67 * MINUTE },
+        factories,
+      ).timesheetEntries[0],
+    ).toMatchObject({
+      durationMs: 70 * MINUTE,
+      exactDurationMs: 67 * MINUTE,
+      durationTyped: true,
+    });
+  });
+
+  it("re-rounds an entry moved to a project with its own rule, from its exact time", () => {
+    const base = withRounding("nearest", 1, true);
+    const atlas = {
+      ...base.projects[0]!,
+      _id: "atlas",
+      name: "Atlas",
+      timeRounding: { mode: "up" as const, stepMinutes: 15, minimumMinutes: 0 },
+    };
+    const entry: LocalTimesheetEntry = {
+      _id: "timesheet-1",
+      localDate: "2026-07-30",
+      projectId: "atlas",
+      label: "",
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    const state = {
+      ...base,
+      projects: [...base.projects, atlas],
+      timesheetEntries: [entry],
+    };
+
+    const moved = updateTimesheetEntry(
+      state,
+      entry._id,
+      { projectId: "project-1", taskId: undefined, durationMs: 15 * MINUTE },
+      factories,
+    ).timesheetEntries[0]!;
+    expect(moved).toMatchObject({
+      projectId: "project-1",
+      durationMs: 7 * MINUTE,
+    });
+    expect(moved).not.toHaveProperty("exactDurationMs");
+
+    const back = updateTimesheetEntry(
+      { ...state, timesheetEntries: [moved] },
+      entry._id,
+      { projectId: "atlas", durationMs: 7 * MINUTE },
+      factories,
+    ).timesheetEntries[0]!;
+    expect(back).toMatchObject({
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+    });
+  });
+
+  it("gives a duplicate the exact time of the entry it copies", () => {
+    const entry: LocalTimesheetEntry = {
+      _id: "source",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      label: "",
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    const duplicated = duplicateTimesheetEntry(
+      withRounding("up", 15, true, { timesheetEntries: [entry] }),
+      entry._id,
+      {
+        localDate: "2026-07-31",
+        projectId: "project-1",
+        durationMs: 15 * MINUTE,
+      },
+      factories,
+    );
+
+    expect(duplicated.timesheetEntries[1]).toMatchObject({
+      durationMs: 15 * MINUTE,
+      exactDurationMs: 7 * MINUTE,
+    });
+  });
+});
+
 describe("timesheet entry lifecycle", () => {
   it("creates a labeled entry and applies logged time to mapped work", () => {
     const state = saveManualTimesheetEntry(
@@ -135,6 +294,7 @@ describe("timesheet entry lifecycle", () => {
       label: "Feature work",
       note: "Implementation",
       durationMs: 60 * 60 * 1000,
+      durationTyped: true,
       sourceBlockIds: [],
       committedAt: 100,
     });
@@ -179,6 +339,32 @@ describe("timesheet entry lifecycle", () => {
     });
     expect(entry).not.toHaveProperty("submittedAt");
     expect(entry).not.toHaveProperty("submittedFingerprint");
+  });
+
+  it("keeps a stored exact time and typed mark, and reads broken ones as none", () => {
+    const stored = {
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      label: "",
+      durationMs: 15 * 60_000,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    expect(
+      normalizeTimesheetEntry({
+        ...stored,
+        exactDurationMs: 7 * 60_000,
+        durationTyped: true,
+      }),
+    ).toMatchObject({ exactDurationMs: 7 * 60_000, durationTyped: true });
+
+    const broken = normalizeTimesheetEntry({
+      ...stored,
+      exactDurationMs: "7m",
+      durationTyped: "yes",
+    } as never);
+    expect(broken).not.toHaveProperty("exactDurationMs");
+    expect(broken).not.toHaveProperty("durationTyped");
   });
 
   it("gives an entry edited since its submission no copy, so it shows as added", () => {

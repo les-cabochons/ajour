@@ -110,7 +110,9 @@ Then(
         note: "Done flag fixture",
       }),
     ]);
-    expect(saved.timesheetEntries[0].durationMs).toBeGreaterThan(0);
+    // A few seconds round to 0:00; the exact time keeps them.
+    const entry = saved.timesheetEntries[0];
+    expect(entry.exactDurationMs ?? entry.durationMs).toBeGreaterThan(0);
     await page.reload();
     expect(
       (await readState()).workItems.every(

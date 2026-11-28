@@ -1,4 +1,9 @@
 import {
+  normalizeTimeRounding,
+  setProjectTimeRounding as setProjectTimeRoundingTransition,
+} from "@/domain/time/time-rounding";
+import { updateUserPreferences } from "@/domain/user-preferences";
+import {
   BUILT_IN_PROJECT_DATA_SHAPE_ID,
   type ActivityBlockRecord,
   type BrowserActivityBucket,
@@ -365,6 +370,7 @@ import type {
   PinnedTaskSlot,
   ThemeMode,
   TimelineMutationResult,
+  TimeRoundingRule,
   UserPreferences,
 } from "@/domain/local-state";
 import {
@@ -473,6 +479,7 @@ const defaultUserPreferences: UserPreferences = {
   changesEndSnoozeEarly: false,
   closeParentSubitems: "ask",
   calendarSuggestions: normalizeCalendarSuggestionSettings(undefined),
+  timeRounding: normalizeTimeRounding(undefined),
 };
 
 function normalizeCapacityTarget(value: unknown, fallback: number) {
@@ -811,6 +818,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
             : undefined,
         calendarSuggestions: normalizeCalendarSuggestionSettings(
           persistedState.userPreferences?.calendarSuggestions,
+        ),
+        timeRounding: normalizeTimeRounding(
+          persistedState.userPreferences?.timeRounding,
         ),
       },
     }),
@@ -2245,7 +2255,11 @@ const store = {
       return {
         state:
           applied.result.kind === "applied"
-            ? { ...state, ...applied.state }
+            ? {
+                ...state,
+                ...applied.state,
+                userPreferences: state.userPreferences,
+              }
             : state,
         result: applied.result,
       };
@@ -2429,6 +2443,19 @@ const store = {
       ...state,
       projects: applyUpdateProject(state.projects, projectId, patch),
     }));
+  },
+  /**
+   * Gives a project its own rounding, or back the user's with undefined,
+   * and re-rounds its entries of the weeks not submitted. Returns an undo
+   * token, or null when nothing changed.
+   */
+  setProjectTimeRounding(
+    projectId: string,
+    rule: TimeRoundingRule | undefined,
+  ) {
+    return updateStateWithUndo((state) =>
+      setProjectTimeRoundingTransition(state, projectId, rule),
+    );
   },
   reorderProjects(orderedIds: string[]) {
     if (orderedIds.length < 2) {
@@ -3994,12 +4021,9 @@ const store = {
   },
   setUserPreferences(preferences: Partial<UserPreferences>) {
     const before = readState().userPreferences;
-    const after = updateState((state) => {
-      const userPreferences = { ...state.userPreferences, ...preferences };
-      return recordsEqual(userPreferences, state.userPreferences)
-        ? state
-        : { ...state, userPreferences };
-    }).userPreferences;
+    const after = updateState((state) =>
+      updateUserPreferences(state, preferences),
+    ).userPreferences;
     describeUserPreferences(before, after);
   },
 };
@@ -4245,6 +4269,15 @@ export const STORE_COMMANDS = {
       project: {
         id: ([projectId]) => projectId,
         changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  setProjectTimeRounding: {
+    name: "project.update",
+    fields: {
+      project: {
+        id: ([projectId]) => projectId,
+        changed_fields: () => ["timeRounding"],
       },
     },
   },

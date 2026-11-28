@@ -96,6 +96,26 @@ describe("ajour log, the details", () => {
     expect(formatLogTable(continued, plain)).toContain("1:54 of 8:00");
   });
 
+  it("adds the entries' seconds and rounds the total once, as the Day view does", () => {
+    const short = (id: string) => ({
+      ...entry(TODAY, id, "review", 1, "Call"),
+      seconds: 40,
+    });
+    const seconds = logView({
+      range: parseRange("today", TODAY),
+      today: TODAY,
+      listed: {
+        entries: [short("a000001"), short("a000002"), short("a000003")],
+        running: null,
+        targets: [{ date: TODAY, hours: 8 }],
+      },
+    });
+
+    // Three 0:00:40 entries are 2:00 together: each reads 0:01, the day 0:02.
+    expect(formatLogTable(seconds, plain)).toContain("0:02 of 8:00");
+    expect(formatLogByTask(seconds, plain)).toContain("0:02");
+  });
+
   it("says a day without entries has none, with its target", () => {
     const empty = logView({
       range: parseRange("2026-11-05", TODAY),

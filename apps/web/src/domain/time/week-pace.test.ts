@@ -36,6 +36,19 @@ const pace = (today: string, loggedHours: number, tolerancePercent = 20) =>
   });
 
 describe("computeWeekPace", () => {
+  it("turns time into hours as the Commit page does: to the minute, then two decimals", () => {
+    // 0:20:31 is 21 minutes, 0.35 h; its raw 0.342 h would read 0.34.
+    expect(
+      computeWeekPace({
+        weekDates: WEEK,
+        today: "2026-10-12",
+        capacityTargets: TARGETS,
+        loggedMs: 1_231_000,
+        tolerancePercent: 20,
+      }).loggedHours,
+    ).toBe(0.35);
+  });
+
   it("is on pace at the end of a full week on target", () => {
     expect(pace("2026-10-16", 37.5)).toEqual({
       loggedHours: 37.5,

@@ -53,6 +53,25 @@ function createEntry(): LocalTimesheetEntry {
   };
 }
 
+/** The state with a rule of at least an hour, and whether typed hours follow it. */
+function withHourMinimum(
+  state: LocalAppState,
+  roundTypedHours: boolean,
+): LocalAppState {
+  return {
+    ...state,
+    userPreferences: {
+      ...state.userPreferences,
+      timeRounding: {
+        mode: "nearest",
+        stepMinutes: 1,
+        minimumMinutes: 60,
+        roundTypedHours,
+      },
+    },
+  };
+}
+
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     projects: [createProject()],
@@ -228,6 +247,30 @@ describe("timesheet import commits", () => {
     });
     expect(committed.timesheetImportDrafts).toEqual([]);
   });
+
+  it.each([
+    [true, 60 * 60_000],
+    [false, 6 * 60_000],
+  ])(
+    "rounds imported hours while Round typed hours too is %s",
+    (roundTypedHours, durationMs) => {
+      const staged = stageTimesheetImportRows(
+        withHourMinimum(createState(), roundTypedHours),
+        [{ date: "2026-07-30", project: "Mercury", task: "Build", hours: 0.1 }],
+        createFactories(),
+      );
+      const committed = commitTimesheetImportDraft(
+        staged,
+        staged.timesheetImportDrafts[0]!._id,
+        createFactories(),
+      );
+
+      expect(committed.timesheetEntries[0]).toMatchObject({
+        durationMs,
+        durationTyped: true,
+      });
+    },
+  );
 
   it("reactivates a matching archived task", () => {
     const project: LocalProject = createProject();

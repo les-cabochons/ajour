@@ -27,6 +27,25 @@ import {
 const at = (day: number, hour: number, minute = 0) =>
   new Date(2026, 9, day, hour, minute).getTime();
 
+/** The state with a rule of at least an hour, and whether typed hours follow it. */
+function withHourMinimum(
+  state: LocalAppState,
+  roundTypedHours: boolean,
+): LocalAppState {
+  return {
+    ...state,
+    userPreferences: {
+      ...state.userPreferences,
+      timeRounding: {
+        mode: "nearest",
+        stepMinutes: 1,
+        minimumMinutes: 60,
+        roundTypedHours,
+      },
+    },
+  };
+}
+
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: { _id: "local-user", name: "Local User", email: "local@example.com" },
@@ -508,6 +527,24 @@ describe("acting on suggestions", () => {
     ]);
     expect(suggestionsFor(next, [event()])).toEqual([]);
   });
+
+  it.each([true, false])(
+    "rounds an added event while Round typed hours too is %s",
+    (roundTypedHours) => {
+      const state = withHourMinimum(createState(), roundTypedHours);
+      const standup = only(suggestionsFor(state, [event()]));
+      expect(standup.durationMs).toBeLessThan(60 * 60_000);
+      const { state: next } = acceptCalendarSuggestions(
+        state,
+        [{ suggestion: standup, projectId: "internal" }],
+        factories,
+      );
+
+      expect(next.timesheetEntries.at(-1)!.durationMs).toBe(
+        roundTypedHours ? 60 * 60_000 : standup.durationMs,
+      );
+    },
+  );
 
   it("skips suggestions without an active project or already added", () => {
     const state = createState();
