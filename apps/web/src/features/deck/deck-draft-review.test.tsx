@@ -18,7 +18,6 @@ import type { DeckOpenedPullRequest } from "@ajour/shared/deck";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as api from "@/lib/app-api";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
-import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { localStore } from "@/lib/local-store";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
@@ -387,65 +386,47 @@ it("adds to the review with Ctrl+Enter, and edits and removes a draft comment", 
   expect(screen.getByRole("button", { name: "Finish review" })).toBeTruthy();
 });
 
-it("starts a composer of its own for other lines or another comment to edit, in the gutter too", async () => {
-  const original = window.matchMedia;
-  window.matchMedia = ((query: string) => ({
-    matches: query === DECK_GUTTER_QUERY,
-    media: query,
-    onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  })) as typeof window.matchMedia;
-  try {
-    for (const [line, body] of [
-      [2, "On B."],
-      [3, "On c."],
-    ] as const)
-      localStore.addDraftComment(REF, {
-        headSha: "one",
-        anchor: { path: "src/api.ts", side: "head", line },
-        body,
-        lineText: line === 2 ? "B" : "c",
-      });
-    await renderReviewPage();
-    const gutter = screen.getByRole("complementary", {
-      name: "Review threads",
+it("starts a composer of its own for other lines or another comment to edit", async () => {
+  for (const [line, body] of [
+    [2, "On B."],
+    [3, "On c."],
+  ] as const)
+    localStore.addDraftComment(REF, {
+      headSha: "one",
+      anchor: { path: "src/api.ts", side: "head", line },
+      body,
+      lineText: line === 2 ? "B" : "c",
     });
-    const editOn = (line: number) =>
-      fireEvent.click(
-        within(
-          within(gutter).getByRole("article", {
-            name: `Draft comment on src/api.ts, line ${line}`,
-          }),
-        ).getByRole("button", { name: "Edit" }),
-      );
-    const field = () =>
-      within(gutter).getByRole("textbox", {
-        name: "Comment",
-      }) as HTMLTextAreaElement;
+  await renderReviewPage();
+  const editOn = (line: number) =>
+    fireEvent.click(
+      within(
+        within(changes()).getByRole("article", {
+          name: `Draft comment on src/api.ts, line ${line}`,
+        }),
+      ).getByRole("button", { name: "Edit" }),
+    );
+  const field = () =>
+    within(changes()).getByRole("textbox", {
+      name: "Comment",
+    }) as HTMLTextAreaElement;
 
-    editOn(2);
-    expect(field().value).toBe("On B.");
-    fireEvent.change(field(), { target: { value: "Changed, not saved." } });
-    // Editing the other comment shows its own words, and Save keeps them there.
-    editOn(3);
-    expect(field().value).toBe("On c.");
-    fireEvent.click(within(gutter).getByRole("button", { name: "Save" }));
-    expect(draftComments()?.map((comment) => comment.body)).toEqual([
-      "On B.",
-      "On c.",
-    ]);
+  editOn(2);
+  expect(field().value).toBe("On B.");
+  fireEvent.change(field(), { target: { value: "Changed, not saved." } });
+  // Editing the other comment shows its own words, and Save keeps them there.
+  editOn(3);
+  expect(field().value).toBe("On c.");
+  fireEvent.click(within(changes()).getByRole("button", { name: "Save" }));
+  expect(draftComments()?.map((comment) => comment.body)).toEqual([
+    "On B.",
+    "On c.",
+  ]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
-    fireEvent.change(field(), { target: { value: "On a." } });
-    fireEvent.click(screen.getByRole("button", { name: "Gutter + line 2" }));
-    expect(field().value).toBe("");
-  } finally {
-    window.matchMedia = original;
-  }
+  fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
+  fireEvent.change(field(), { target: { value: "On a." } });
+  fireEvent.click(screen.getByRole("button", { name: "Gutter + line 2" }));
+  expect(field().value).toBe("");
 });
 
 it("posts a comment at once with Comment now, and keeps its words with Retry when it fails", async () => {
@@ -684,20 +665,6 @@ const HUGE: DeckOpenedPullRequest = {
   ],
 };
 
-/** Deck's gutter from 1,100px, or every note after its line. */
-function wideEnoughForTheGutter(wide: boolean) {
-  window.matchMedia = ((query: string) => ({
-    matches: query === DECK_GUTTER_QUERY ? wide : false,
-    media: query,
-    onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  })) as typeof window.matchMedia;
-}
-
 /**
  * The huge pull request's page in a 900px scroller whose rows are 100px
  * high, through the real virtualizer: about a dozen rows mount.
@@ -740,50 +707,36 @@ const composerField = () =>
     name: "Comment",
   }) as HTMLTextAreaElement | null;
 
-for (const [where, wide] of [
-  ["after its line", false],
-  ["in the gutter", true],
-] as const)
-  it(`keeps the composer's words on a huge pull request as its hunk scrolls away and back, ${where}`, async () => {
-    const original = window.matchMedia;
-    wideEnoughForTheGutter(wide);
-    try {
-      await renderHugeReviewPage(async (scroller) => {
-        fireEvent.click(
-          screen.getByRole("button", { name: "Gutter + line 1" }),
-        );
-        fireEvent.change(composerField()!, { target: { value: "Keep me." } });
-        expect(document.activeElement).toBe(composerField());
+it("keeps the composer's words on a huge pull request as its hunk scrolls away and back, after its line", async () => {
+  await renderHugeReviewPage(async (scroller) => {
+    fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
+    fireEvent.change(composerField()!, { target: { value: "Keep me." } });
+    expect(document.activeElement).toBe(composerField());
 
-        // While it holds the focus, its hunk stays mounted however far away.
-        scrollElement(scroller, { top: 61_000 });
-        await waitFor(() =>
-          expect(
-            document.querySelector('[data-hunk="src/big.ts#599"]'),
-          ).not.toBeNull(),
-        );
-        expect(composerField()?.value).toBe("Keep me.");
-        expect(document.activeElement).toBe(composerField());
+    // While it holds the focus, its hunk stays mounted however far away.
+    scrollElement(scroller, { top: 61_000 });
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-hunk="src/big.ts#599"]'),
+      ).not.toBeNull(),
+    );
+    expect(composerField()?.value).toBe("Keep me.");
+    expect(document.activeElement).toBe(composerField());
 
-        // Without the focus it unmounts, and comes back with its words.
-        act(() => composerField()!.blur());
-        await waitFor(() => expect(composerField()).toBeNull());
-        scrollElement(scroller, { top: 0 });
-        await waitFor(() => expect(composerField()?.value).toBe("Keep me."));
-        // It took the focus as it opened, once: back, it leaves it where it is.
-        expect(document.activeElement).not.toBe(composerField());
+    // Without the focus it unmounts, and comes back with its words.
+    act(() => composerField()!.blur());
+    await waitFor(() => expect(composerField()).toBeNull());
+    scrollElement(scroller, { top: 0 });
+    await waitFor(() => expect(composerField()?.value).toBe("Keep me."));
+    // It took the focus as it opened, once: back, it leaves it where it is.
+    expect(document.activeElement).not.toBe(composerField());
 
-        // A composer opened again starts empty.
-        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-        fireEvent.click(
-          screen.getByRole("button", { name: "Gutter + line 1" }),
-        );
-        expect(composerField()?.value).toBe("");
-      });
-    } finally {
-      window.matchMedia = original;
-    }
+    // A composer opened again starts empty.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Gutter + line 1" }));
+    expect(composerField()?.value).toBe("");
   });
+});
 
 it("sends the draft review with Finish review and its verdict, then clears it", async () => {
   await renderReviewPage();
@@ -1025,12 +978,14 @@ it("marks outdated a draft comment whose line a push changed, and keeps it out o
   });
   await renderReviewPage();
 
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
   const outdated = screen.getByRole("region", { name: "Draft comments" });
   const card = within(outdated).getByRole("article", {
     name: "Draft comment on src/api.ts, line 2",
   });
   expect(within(card).getByText("Outdated")).toBeTruthy();
   expect(within(card).getByText("src/api.ts, line 2")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: /^Changes/ }));
   expect(within(changes()).queryByRole("article")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "Finish review · 1" }));

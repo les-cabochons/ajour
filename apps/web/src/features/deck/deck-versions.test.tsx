@@ -362,14 +362,24 @@ it("shows every hunk again when a summary line goes to one the filter hides", as
   fireEvent.click(since);
   expect(hunkNames(changes)).toEqual(["src/api.ts, line 40"]);
 
+  // The summary is on Overview; its line brings Changes back.
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
   fireEvent.click(
-    within(screen.getByRole("region", { name: "Summary" })).getByRole(
+    within(await screen.findByRole("region", { name: "Summary" })).getByRole(
       "button",
       { name: /^TODO in src\/config\.ts/ },
     ),
   );
 
-  expect(since.getAttribute("aria-pressed")).toBe("false");
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("tab", { name: /^Changes/ })
+        .getAttribute("aria-selected"),
+    ).toBe("true"),
+  );
+  // Changes shows first; the hunk is reached on the next frame.
+  await waitFor(() => expect(since.getAttribute("aria-pressed")).toBe("false"));
   expect(hunkNames(changes)).toHaveLength(3);
   await waitFor(() =>
     expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(

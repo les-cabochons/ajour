@@ -218,6 +218,31 @@ async function renderAuthorPage(
   return id;
 }
 
+/**
+ * Opens the "More actions" menu beside the title and finds an item in it.
+ * Picking an item closes the menu again.
+ */
+async function moreActions() {
+  fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+  return await screen.findByRole("menu");
+}
+async function menuItem(name: string) {
+  const menu = await moreActions();
+  return await within(menu).findByRole("menuitem", { name });
+}
+/** Picks the draft action of that name from the "More actions" menu. */
+async function pickDraftAction(name: string) {
+  fireEvent.click(await menuItem(name));
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+}
+/** Waits until the "More actions" menu offers that action, then closes it. */
+async function expectMenuItem(name: string) {
+  const item = await menuItem(name);
+  fireEvent.keyDown(item, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  return item;
+}
+
 /** Opens the merge dialog once the methods are read. */
 async function openMerge() {
   const button = await screen.findByRole("button", { name: "Merge…" });
@@ -229,13 +254,26 @@ async function openMerge() {
 it("shows the author's actions to the author only", async () => {
   await renderAuthorPage({ viewerIsAuthor: false });
   expect(screen.queryByRole("button", { name: "Merge…" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Convert to draft" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Edit the title/ })).toBeNull();
+  const menu = await moreActions();
+  // The menu still offers the reviewer's own actions, but no draft toggle.
+  expect(
+    within(menu).getByRole("menuitem", { name: /^Open in GitHub/ }),
+  ).toBeTruthy();
+  expect(
+    within(menu).queryByRole("menuitem", { name: "Convert to draft" }),
+  ).toBeNull();
   cleanup();
 
   await renderAuthorPage();
-  expect(screen.getByRole("button", { name: "Merge…" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+  // Merge… sits in the dock at the bottom; the draft toggle in the menu.
+  expect(
+    within(screen.getByRole("toolbar", { name: "Pull request" })).getByRole(
+      "button",
+      { name: "Merge…" },
+    ),
+  ).toBeTruthy();
+  await expectMenuItem("Convert to draft");
   expect(screen.getByRole("button", { name: /Edit the title/ })).toBeTruthy();
 });
 
@@ -321,24 +359,27 @@ it("keeps the edited title after a failed save, and Retry sends it again", async
 it("converts the pull request to a draft and marks it ready again, in GitHub's words", async () => {
   const id = await renderAuthorPage();
 
-  fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
-  await screen.findByRole("button", { name: "Ready for review" });
+  await pickDraftAction("Convert to draft");
+  await expectMenuItem("Ready for review");
   expect(api.updatePullRequest).toHaveBeenLastCalledWith("github", "work", {
     repository: "acme/api",
     number,
     draft: true,
   });
   expect(facts(id).draft).toBe(true);
-  expect(screen.getByText(/^Draft/)).toBeTruthy();
+  // The dock's status names the draft as what holds the merge back.
+  expect(
+    screen.getByRole("button", { name: /^Status: Merge blocked, Draft,/ }),
+  ).toBeTruthy();
 
-  fireEvent.click(screen.getByRole("button", { name: "Ready for review" }));
-  await screen.findByRole("button", { name: "Convert to draft" });
+  await pickDraftAction("Ready for review");
+  await expectMenuItem("Convert to draft");
   expect(facts(id).draft).toBe(false);
 });
 
 it("names the draft actions as Azure DevOps does", async () => {
   await renderAuthorPage({ draft: true }, "azure_devops");
-  expect(screen.getByRole("button", { name: "Publish" })).toBeTruthy();
+  await expectMenuItem("Publish");
 });
 
 it("offers Retry when the draft state didn't change", async () => {
@@ -347,7 +388,7 @@ it("offers Retry when the draft state didn't change", async () => {
     new Error("GitHub: Resource not accessible by personal access token"),
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
+  await pickDraftAction("Convert to draft");
   await waitFor(() => expect(toasts.action).toHaveBeenCalledTimes(1));
   const [toast] = toasts.action.mock.calls[0]!;
   expect(toast).toMatchObject({
@@ -357,7 +398,7 @@ it("offers Retry when the draft state didn't change", async () => {
   });
   act(() => toast.onAction());
 
-  await screen.findByRole("button", { name: "Ready for review" });
+  await expectMenuItem("Ready for review");
   expect(api.updatePullRequest).toHaveBeenCalledTimes(2);
 });
 
@@ -673,13 +714,11 @@ it("sends nothing from an old toast's Retry once the draft state is what it aske
     new Error("GitHub request failed (502)."),
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
+  await pickDraftAction("Convert to draft");
   await waitFor(() => expect(toasts.action).toHaveBeenCalledTimes(1));
-  // The user tries again from the button, and it lands.
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Convert to draft" }),
-  );
-  await screen.findByRole("button", { name: "Ready for review" });
+  // The user tries again from the menu, and it lands.
+  await pickDraftAction("Convert to draft");
+  await expectMenuItem("Ready for review");
 
   act(() => toasts.action.mock.calls[0]![0].onAction());
   expect(api.updatePullRequest).toHaveBeenCalledTimes(2);

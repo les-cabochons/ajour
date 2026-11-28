@@ -21,7 +21,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import * as api from "@/lib/app-api";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
-import { DECK_GUTTER_QUERY } from "@/lib/breakpoints";
 import { localStore } from "@/lib/local-store";
 import { installDomShims, renderRoutes } from "@/test-support/dom";
 import {
@@ -99,20 +98,6 @@ beforeAll(() => {
   installDomShims();
   originalMatchMedia = window.matchMedia;
 });
-
-/** Makes the window as wide as Deck's gutter needs, or narrower. */
-function windowWideEnoughForTheGutter(wide: boolean) {
-  window.matchMedia = ((query: string) => ({
-    matches: query === DECK_GUTTER_QUERY ? wide : false,
-    media: query,
-    onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false,
-  })) as typeof window.matchMedia;
-}
 
 /** An IntersectionObserver whose elements the test brings on screen. */
 const observed = new Set<Element>();
@@ -295,6 +280,11 @@ async function renderReviewPage() {
     path: `/deck/${itemId}`,
     routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
   });
+}
+
+/** Shows the Overview tab: the summary, the description and the conversation. */
+async function showOverview() {
+  fireEvent.click(await screen.findByRole("tab", { name: "Overview" }));
 }
 
 it("opens the pull request and shows its title and every hunk, files A–Z, without a guide", async () => {
@@ -518,6 +508,7 @@ it("says to update a plugin that doesn't read the conversation, with Settings �
   );
 
   await renderReviewPage();
+  await showOverview();
 
   const conversation = await screen.findByRole("region", {
     name: "Conversation",
@@ -534,7 +525,7 @@ it("says to update a plugin that doesn't read the conversation, with Settings �
   ).toBeTruthy();
 });
 
-it("reads the status line, with the checks and the approvals each in a small menu", async () => {
+it("reads the merge state in the dock, and opens Status on each requirement, check and reviewer", async () => {
   syncFacts({
     checks: "pending",
     approvals: [
@@ -561,20 +552,33 @@ it("reads the status line, with the checks and the approvals each in a small men
 
   await renderReviewPage();
 
-  const checks = await screen.findByRole("button", {
-    name: "Checks: 2 checks pending",
-  });
-  const line = checks.closest("p")!;
-  expect(line.textContent).toBe("Open·2 checks pending·1 approval");
-  // Only the pending mark takes a color: the warning ring.
-  expect(line.querySelector(".deck-status-pending")).toBeTruthy();
+  const dock = screen.getByRole("toolbar", { name: "Pull request" });
+  const status = within(dock).getByRole("button", { name: /^Status: / });
+  await waitFor(() =>
+    expect(status.getAttribute("aria-label")).toBe(
+      "Status: Waiting, No conflicts with its base branch, 2 checks pending, Waiting for carol",
+    ),
+  );
+  // Pending marks are warning rings; nothing failed.
+  expect(status.querySelector(".deck-status-pending")).toBeTruthy();
   expect(api.readPullRequestChecks).toHaveBeenCalledWith("github", "work", {
     repository: "acme/api",
     number: 1,
   });
 
-  fireEvent.click(checks);
-  const checkItems = await screen.findAllByRole("menuitem");
+  fireEvent.click(status);
+  const peek = await screen.findByRole("dialog", { name: "Status" });
+  expect(
+    within(within(peek).getByRole("region", { name: "Requirements" }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual([
+    "No conflicts with its base branch",
+    "2 checks pending",
+    "Waiting for carol",
+  ]);
+  const checks = within(peek).getByRole("region", { name: "Checks" });
+  const checkItems = within(checks).getAllByRole("button");
   expect(checkItems.map((item) => item.textContent)).toEqual([
     "buildPassed",
     "testPending",
@@ -586,15 +590,11 @@ it("reads the status line, with the checks and the approvals each in a small men
     "_blank",
     "noopener,noreferrer",
   );
-
-  fireEvent.click(
-    screen.getByRole("button", { name: "Approvals: 1 approval" }),
-  );
-  await waitFor(() =>
-    expect(
-      screen.getAllByRole("menuitem").map((item) => item.textContent),
-    ).toEqual(["BobApproved", "carolNo vote yet · Required"]),
-  );
+  expect(
+    within(within(peek).getByRole("region", { name: "Reviewers" }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual(["BobApproved", "carolRequiredNo vote yet"]);
 });
 
 it("reads the synced checks until the code host lists each one, and says when it can't", async () => {
@@ -614,17 +614,17 @@ it("reads the synced checks until the code host lists each one, and says when it
 
   await renderReviewPage();
 
-  const checks = await screen.findByRole("button", {
-    name: "Checks: Checks passed",
-  });
-  fireEvent.click(checks);
+  const status = screen.getByRole("button", { name: /^Status: / });
+  expect(status.getAttribute("aria-label")).toContain("Checks passed");
+  fireEvent.click(status);
+  const peek = await screen.findByRole("dialog", { name: "Status" });
   expect(
-    await screen.findByText(
+    await within(peek).findByText(
       "Update the GitHub plugin in Settings › Plugins to see a pull request's checks in Deck.",
     ),
   ).toBeTruthy();
   expect(
-    screen.getByRole("menuitem", { name: "Open Settings › Plugins" }),
+    within(peek).getByRole("link", { name: "Open Settings › Plugins" }),
   ).toBeTruthy();
 });
 
@@ -636,10 +636,11 @@ it("keeps the description in a drawer, closed until the user opens it", async ()
   });
 
   await renderReviewPage();
+  await screen.findByRole("heading", { name: "src/api.ts" });
+  await showOverview();
 
   const toggle = screen.getByRole("button", { name: "Description" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  await screen.findByRole("heading", { name: "src/api.ts" });
   expect(screen.queryByText(/Retries stop on/)).toBeNull();
 
   fireEvent.click(toggle);
@@ -689,10 +690,11 @@ it("opens the next pull request with its drawer closed and nothing viewed, after
     },
   });
   await screen.findByRole("heading", { name: "Concern 1: Handle the request" });
-  fireEvent.click(screen.getByRole("button", { name: "Description" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Viewed: src/api.ts, lines 40 to 42" }),
   );
+  await showOverview();
+  fireEvent.click(screen.getByRole("button", { name: "Description" }));
   expect(await screen.findByText(/Retries stop on/)).toBeTruthy();
 
   await act(() =>
@@ -702,18 +704,20 @@ it("opens the next pull request with its drawer closed and nothing viewed, after
   expect(
     await screen.findByRole("heading", { level: 1, name: "Stop on 410" }),
   ).toBeTruthy();
+  // It opens on Changes, with nothing viewed.
   await screen.findByRole("heading", { name: "Concern 1: Handle the request" });
+  expect(
+    screen
+      .getByRole("button", { name: "Viewed: src/api.ts, lines 40 to 42" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  await showOverview();
   expect(
     screen
       .getByRole("button", { name: "Description" })
       .getAttribute("aria-expanded"),
   ).toBe("false");
   expect(screen.queryByText(/Retries stop on/)).toBeNull();
-  expect(
-    screen
-      .getByRole("button", { name: "Viewed: src/api.ts, lines 40 to 42" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
   expect(api.openDeckPullRequest).toHaveBeenLastCalledWith("github", "work", {
     repository: "acme/api",
     number: 2,
@@ -742,135 +746,7 @@ const reviewThread = (
   ...overrides,
 });
 
-/**
- * Lays the page out as a browser would, in the grid's coordinates: each hunk
- * box 100px below the last, from 100px, 600px wide, a drawn thread's anchor
- * at 160px, and each card 60px tall. Returns a log of the layout reads.
- */
-function layOut() {
-  const log: string[] = [];
-  const rect = (top: number, left = 0, width = 600, height = 40) =>
-    ({
-      top,
-      left,
-      width,
-      height,
-      right: left + width,
-      bottom: top + height,
-      x: left,
-      y: top,
-    }) as DOMRect;
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: Element) {
-      log.push("read");
-      if (this.matches("[data-thread-anchor]")) return rect(160);
-      if (this.matches("[data-hunk]")) {
-        const boxes = [...document.querySelectorAll("[data-hunk]")];
-        return rect(100 + boxes.indexOf(this) * 100);
-      }
-      if (this.matches(".deck-gutter")) return rect(0, 620, 272);
-      return rect(0, 0, 892);
-    },
-  );
-  vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (
-    this: Element,
-  ) {
-    log.push("read");
-    return (this.matches("[data-thread-anchor]")
-      ? [rect(160)]
-      : []) as unknown as DOMRectList;
-  });
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
-    () => {
-      log.push("read");
-      return 60;
-    },
-  );
-  return log;
-}
-
-it("floats each thread in the gutter beside its line from 1,100px, and places it again once its hunk mounts", async () => {
-  windowWideEnoughForTheGutter(true);
-  const log = layOut();
-  // Each card's connector is written in the write pass, beside its top.
-  const setAttribute = Element.prototype.setAttribute;
-  vi.spyOn(Element.prototype, "setAttribute").mockImplementation(function (
-    this: Element,
-    name: string,
-    value: string,
-  ) {
-    if (name === "d" && this.hasAttribute("data-connector")) log.push("write");
-    setAttribute.call(this, name, value);
-  });
-  vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
-  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
-    ...CONVERSATION,
-    threads: [
-      reviewThread("on-b", { line: 2 }),
-      reviewThread("on-y", { line: 41 }),
-      reviewThread("outdated", { line: undefined, outdated: true }),
-    ],
-  });
-
-  await renderReviewPage();
-
-  const gutter = await screen.findByRole("complementary", {
-    name: "Review threads",
-  });
-  const cards = within(gutter).getAllByRole("article");
-  expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
-    "Thread on src/api.ts, line 2",
-    "Thread on src/api.ts, line 41",
-  ]);
-  const card = (id: string) =>
-    gutter.querySelector<HTMLElement>(`[data-card="${id}"]`)!;
-  // Before the hunks mount, each card is level with its row: the first
-  // hunk's box at 100px, line 2 (+B) on its row 2 of 20px, inside the 1px
-  // border, its middle at 151px and the card 14px above.
-  expect(card("on-b").style.top).toBe("137px");
-  // The second hunk's box is at 200px, line 41 (+y) on its row 1, its middle
-  // at 231px. The first card ends at 197px, so this one is level too.
-  expect(card("on-y").style.top).toBe("217px");
-  // A placement measures everything, then moves everything: one read pass,
-  // then one write pass.
-  expect(log.join(" ")).toMatch(/^(read )+write write$/);
-  const connector = document.querySelector("[data-connector='on-b']");
-  expect(connector?.getAttribute("d")).toBe("M600 151 H610 V151 H620");
-  // The thread the diff can't show is in the conversation instead.
-  const conversation = screen.getByRole("heading", {
-    name: "Conversation",
-  }).parentElement!;
-  expect(
-    within(conversation).getByRole("article", {
-      name: "Thread on src/api.ts",
-    }),
-  ).toBeTruthy();
-
-  // Drawn, the first hunk marks the line its thread follows, at 160px, and
-  // the card moves level with the line above it: its middle at 150px.
-  log.length = 0;
-  const hunks = within(
-    screen.getByRole("region", { name: "Changes" }),
-  ).getAllByRole("group");
-  bringOnScreen(hunks[0]!);
-  await waitFor(() => expect(card("on-b").style.top).toBe("136px"));
-  expect(hunks[0]!.querySelector("[data-thread-anchor='on-b']")).toBeTruthy();
-  expect(within(hunks[0]!).queryByRole("article")).toBeNull();
-  // Only the connector that moved is written again: the other card stays.
-  expect(log.join(" ")).toMatch(/^((read )+write ?)+$/);
-
-  // Hovering a card highlights its line, and its connector.
-  fireEvent.mouseEnter(within(card("on-b")).getByRole("article"));
-  expect(
-    hunks[0]!.querySelector("[data-selected]")?.getAttribute("data-selected"),
-  ).toBe("additions 2-2");
-  expect(connector?.hasAttribute("data-hot")).toBe(true);
-  fireEvent.mouseLeave(within(card("on-b")).getByRole("article"));
-  expect(hunks[0]!.querySelector("[data-selected]")).toBeNull();
-});
-
-it("puts each thread after its line below 1,100px, with no gutter", async () => {
-  windowWideEnoughForTheGutter(false);
+it("puts each thread after its line, inside its hunk", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
   vi.mocked(api.readPullRequestConversation).mockResolvedValue({
     ...CONVERSATION,
@@ -881,9 +757,6 @@ it("puts each thread after its line below 1,100px, with no gutter", async () => 
 
   const changes = screen.getByRole("region", { name: "Changes" });
   await within(changes).findByRole("heading", { name: "src/api.ts" });
-  expect(
-    screen.queryByRole("complementary", { name: "Review threads" }),
-  ).toBeNull();
   const hunks = within(changes).getAllByRole("group");
   bringOnScreen(hunks[0]!);
 
@@ -910,7 +783,7 @@ it("puts each thread after its line below 1,100px, with no gutter", async () => 
   ).toBe("deletions 2-2");
 });
 
-it("ends with the conversation: the timeline in time order", async () => {
+it("shows the conversation on Overview: the timeline in time order", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
   vi.mocked(api.readPullRequestConversation).mockResolvedValue({
     ...CONVERSATION,
@@ -941,6 +814,7 @@ it("ends with the conversation: the timeline in time order", async () => {
   });
 
   await renderReviewPage();
+  await showOverview();
 
   const heading = await screen.findByRole("heading", { name: "Conversation" });
   const conversation = heading.parentElement!;
@@ -956,12 +830,8 @@ it("ends with the conversation: the timeline in time order", async () => {
   expect(lines[1]).toMatch(/^Authorcommitted abc1234 Stop on 410/);
   expect(lines[2]).toMatch(/^Bobapproved/);
   expect(within(conversation).getByText("Looks right.")).toBeTruthy();
-  // The conversation comes after the changes.
-  const changes = screen.getByRole("region", { name: "Changes" });
-  expect(
-    changes.compareDocumentPosition(conversation) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  // The changes are out of sight while Overview shows.
+  expect(screen.queryByRole("region", { name: "Changes" })).toBeNull();
 });
 
 it("says calmly that the connection was removed, with nothing to retry", async () => {
@@ -1098,21 +968,9 @@ it("moves to the next and previous concern with J and K", async () => {
   expect(reached()).toBe(0);
 });
 
-it("opens the guide tree's titles with F, and closes them again", async () => {
+it("opens the guide tree on its titles, folds them to ticks with F, and opens them again", async () => {
   const changes = await openGuided();
   const tree = within(changes).getByRole("navigation", { name: "Guide tree" });
-  expect(
-    within(tree)
-      .getAllByRole("button")
-      .map((button) => button.getAttribute("aria-label")),
-  ).toEqual([
-    "Show the guide tree",
-    "1. Handle the request · 0 of 2 viewed",
-    "2. Mechanical changes · 0 of 2 viewed",
-  ]);
-
-  press("f");
-
   expect(
     within(tree)
       .getByRole("button", { name: "Hide the guide tree" })
@@ -1125,13 +983,25 @@ it("opens the guide tree's titles with F, and closes them again", async () => {
 
   expect(within(tree).queryByText("Handle the request")).toBeNull();
   expect(
-    within(tree).getByRole("button", { name: "Show the guide tree" }),
-  ).toBeTruthy();
+    within(tree)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label")),
+  ).toEqual([
+    "Show the guide tree",
+    "1. Handle the request · 0 of 2 viewed",
+    "2. Mechanical changes · 0 of 2 viewed",
+  ]);
+
+  press("f");
+
+  expect(within(tree).getByText("Handle the request")).toBeTruthy();
 });
 
 it("fills a concern's tick as its hunks are marked viewed, and folds them", async () => {
   const changes = await openGuided();
   const tree = within(changes).getByRole("navigation", { name: "Guide tree" });
+  // F folds the tree to its ticks.
+  press("f");
 
   fireEvent.click(
     within(changes).getByRole("button", {
@@ -1175,6 +1045,7 @@ it("scrolls to a concern from its tick", async () => {
   const changes = await openGuided();
   const reached = layOutSections(changes);
   const tree = within(changes).getByRole("navigation", { name: "Guide tree" });
+  press("f");
 
   fireEvent.click(
     within(tree).getByRole("button", {
@@ -1185,9 +1056,7 @@ it("scrolls to a concern from its tick", async () => {
   expect(reached()).toBe(1);
 });
 
-it("floats each thread beside its line in its concern, and hides it while its hunk is folded as viewed", async () => {
-  windowWideEnoughForTheGutter(true);
-  layOut();
+it("shows each thread after its line in its concern, and hides it while its hunk is folded as viewed", async () => {
   vi.mocked(api.readPullRequestConversation).mockResolvedValue({
     ...CONVERSATION,
     threads: [
@@ -1196,34 +1065,30 @@ it("floats each thread beside its line in its concern, and hides it while its hu
     ],
   });
   const changes = await openGuided();
+  const hunkNamed = (name: string) =>
+    within(changes).getByRole("group", { name });
 
-  const gutter = await screen.findByRole("complementary", {
-    name: "Review threads",
-  });
-  const card = (id: string) =>
-    gutter.querySelector<HTMLElement>(`[data-card="${id}"]`)!;
-  // In reading order, concern 1's src/api.ts, lines 40 to 42 is the first
-  // box, at 100px: line 41 on its row 1, its middle at 131px. Concern 2's
-  // src/api.ts, lines 1 to 3 is the third, at 300px: line 2 on its row 2.
-  expect(card("on-y").style.top).toBe("117px");
-  expect(card("on-b").style.top).toBe("337px");
-  expect(card("on-y").hasAttribute("data-placed")).toBe(true);
+  // In reading order, concern 1 holds src/api.ts, lines 40 to 42, and its
+  // thread on line 41 sits after that line.
+  bringOnScreen(hunkNamed("src/api.ts, lines 40 to 42"));
+  const thread = await within(
+    hunkNamed("src/api.ts, lines 40 to 42"),
+  ).findByRole("article", { name: "Thread on src/api.ts, line 41" });
+  expect(thread.closest("[data-after]")?.getAttribute("data-after")).toBe(
+    "additions 41",
+  );
 
+  // Folded as viewed, the hunk hides its thread with its lines.
   fireEvent.click(
     within(changes).getByRole("button", {
       name: "Viewed: src/api.ts, lines 40 to 42",
     }),
   );
-
-  // Its line is folded away, so its card hides; the other moves up with
-  // its box, now the second, at 200px.
-  await waitFor(() =>
-    expect(card("on-y").hasAttribute("data-placed")).toBe(false),
-  );
-  expect(card("on-b").style.top).toBe("237px");
   expect(
-    document.querySelector("[data-connector='on-y']")?.hasAttribute("d"),
-  ).toBe(false);
+    within(changes).queryByRole("article", {
+      name: "Thread on src/api.ts, line 41",
+    }),
+  ).toBeNull();
 
   // In Files A–Z the same threads follow their file's hunks.
   fireEvent.click(
@@ -1232,8 +1097,12 @@ it("floats each thread beside its line in its concern, and hides it while its hu
     }),
   );
   fireEvent.click(within(changes).getByRole("button", { name: "Files A–Z" }));
-  await waitFor(() => expect(card("on-b").style.top).toBe("137px"));
-  expect(card("on-y").style.top).toBe("217px");
+  bringOnScreen(hunkNamed("src/api.ts, lines 1 to 3"));
+  expect(
+    await within(hunkNamed("src/api.ts, lines 1 to 3")).findByRole("article", {
+      name: "Thread on src/api.ts, line 2",
+    }),
+  ).toBeTruthy();
 });
 
 /** The guided pull request with a summary every section of which has a line. */
@@ -1305,20 +1174,16 @@ const SUMMARIZED: DeckOpenedPullRequest = {
 async function openSummarized(pullRequest = SUMMARIZED) {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(pullRequest);
   await renderReviewPage();
+  await showOverview();
   return await screen.findByRole("region", { name: "Summary" });
 }
 
-it("opens on the summary, above the description and the guide: the ticket, the kinds and each section's lines", async () => {
+it("opens Overview on the summary, above the description: the ticket, the kinds and each section's lines", async () => {
   const summary = await openSummarized();
 
   const description = screen.getByRole("region", { name: "Description" });
-  const changes = screen.getByRole("region", { name: "Changes" });
   expect(
     summary.compareDocumentPosition(description) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    description.compareDocumentPosition(changes) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(within(summary).getByText("Retries never stop on 410")).toBeTruthy();
@@ -1348,7 +1213,8 @@ it("opens on the summary, above the description and the guide: the ticket, the k
     }),
   ).toBeTruthy();
   expect(within(summary).getAllByText("2 hunks")).toHaveLength(2);
-  // Each concern shows its own kinds.
+  // Each concern shows its own kinds, on Changes.
+  fireEvent.click(screen.getByRole("tab", { name: /^Changes/ }));
   const mechanical = screen.getByRole("region", {
     name: "Concern 2: Mechanical changes",
   });
@@ -1377,19 +1243,22 @@ it("scrolls to a line's first hunk below the versions bar and focuses it, in the
     .mockImplementation(() => undefined);
   try {
     const summary = await openSummarized();
-    const changes = screen.getByRole("region", { name: "Changes" });
 
     fireEvent.click(
       within(summary).getByRole("button", { name: /^TODO in src\/new\.ts/ }),
     );
-    // Its top lands 16px below the bar, as a section's does.
-    expect(scrolled).toHaveBeenLastCalledWith({
-      top: 500 - 60 - 16,
-      behavior: "instant",
-    });
+    // Changes shows, and the hunk's top lands 16px below the bar, as a
+    // section's does.
+    await waitFor(() =>
+      expect(scrolled).toHaveBeenLastCalledWith({
+        top: 500 - 60 - 16,
+        behavior: "instant",
+      }),
+    );
     expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
       "src/new.ts#0",
     );
+    const changes = screen.getByRole("region", { name: "Changes" });
 
     fireEvent.click(
       within(within(changes).getByRole("group", { name: "Order" })).getByRole(
@@ -1397,16 +1266,22 @@ it("scrolls to a line's first hunk below the versions bar and focuses it, in the
         { name: "Files A–Z" },
       ),
     );
+    await showOverview();
     scrolled.mockClear();
     fireEvent.click(
-      within(summary).getByRole("button", {
-        name: "Auth and security: src/api.ts",
+      within(await screen.findByRole("region", { name: "Summary" })).getByRole(
+        "button",
+        {
+          name: "Auth and security: src/api.ts",
+        },
+      ),
+    );
+    await waitFor(() =>
+      expect(scrolled).toHaveBeenCalledExactlyOnceWith({
+        top: 500 - 60 - 16,
+        behavior: "instant",
       }),
     );
-    expect(scrolled).toHaveBeenCalledExactlyOnceWith({
-      top: 500 - 60 - 16,
-      behavior: "instant",
-    });
     expect((document.activeElement as HTMLElement).dataset.hunkId).toBe(
       "src/api.ts#0",
     );
@@ -1440,6 +1315,7 @@ it("shows no summary while the guide couldn't be built", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
   await renderReviewPage();
   await screen.findByRole("heading", { name: "src/api.ts" });
+  await showOverview();
 
   expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
 });
@@ -1463,87 +1339,6 @@ const HUGE: DeckOpenedPullRequest = {
     },
   ],
 };
-
-it("shows a huge pull request's threads only while their hunks are mounted, and places them again as they come back", async () => {
-  windowWideEnoughForTheGutter(true);
-  vi.mocked(api.openDeckPullRequest).mockResolvedValue(HUGE);
-  vi.mocked(api.readPullRequestConversation).mockResolvedValue({
-    ...CONVERSATION,
-    threads: [
-      reviewThread("first", { path: "src/big.ts", line: 1 }),
-      reviewThread("last", { path: "src/big.ts", line: 600 }),
-    ],
-  });
-  // A 900px scroller whose rows are 100px high: about a dozen mount.
-  const restore = sizeElements([
-    { selector: "[data-testid=scroller]", width: 1440, height: 900 },
-    { selector: ".deck-review-row", width: 1000, height: 100 },
-  ]);
-  try {
-    await renderRoutes({
-      shell: ({ children }) => (
-        <Shell>
-          <div
-            data-testid="scroller"
-            style={{ overflowY: "auto" }}
-            ref={(element) => {
-              if (element) makeScrollable(element);
-            }}
-          >
-            {children}
-          </div>
-        </Shell>
-      ),
-      path: `/deck/${itemId}`,
-      routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
-    });
-    const scroller = screen.getByTestId("scroller");
-    const gutter = await screen.findByRole("complementary", {
-      name: "Review threads",
-    });
-    // The gutter holds only the cards of mounted hunks: one off screen
-    // isn't there at all.
-    const placed = (id: string) =>
-      gutter
-        .querySelector<HTMLElement>(`[data-card="${id}"]`)
-        ?.hasAttribute("data-placed") ?? false;
-    const connected = (id: string) =>
-      document.querySelector(`[data-connector="${id}"]`)?.hasAttribute("d") ??
-      false;
-    const cards = () =>
-      [...gutter.querySelectorAll<HTMLElement>("[data-card]")].map(
-        (card) => card.dataset.card,
-      );
-    const mounted = (index: number) =>
-      document.querySelector(`[data-hunk="src/big.ts#${index}"]`) !== null;
-
-    // The first hunk is on screen and the last isn't: only the first
-    // thread shows, joined to its line.
-    await waitFor(() => expect(placed("first")).toBe(true));
-    expect(mounted(599)).toBe(false);
-    expect(placed("last")).toBe(false);
-    expect(connected("first")).toBe(true);
-    expect(connected("last")).toBe(false);
-    expect(cards()).toEqual(["first"]);
-
-    // Scrolled to the end, the first hunk unmounts and the last mounts.
-    scrollElement(scroller, { top: 61_000 });
-    await waitFor(() => expect(placed("last")).toBe(true));
-    expect(mounted(0)).toBe(false);
-    expect(placed("first")).toBe(false);
-    expect(connected("first")).toBe(false);
-    expect(connected("last")).toBe(true);
-    expect(cards()).toEqual(["last"]);
-
-    // Back at the top, the first thread shows again.
-    scrollElement(scroller, { top: 0 });
-    await waitFor(() => expect(placed("first")).toBe(true));
-    expect(placed("last")).toBe(false);
-    expect(connected("last")).toBe(false);
-  } finally {
-    restore();
-  }
-});
 
 it("scrolls a huge pull request to a summary line's hunk, mounting it below the versions bar", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue({
@@ -1613,8 +1408,12 @@ it("scrolls a huge pull request to a summary line's hunk, mounting it below the 
       path: `/deck/${itemId}`,
       routes: { "/deck/$itemId": () => <DeckPage itemId={itemId} /> },
     });
+    await showOverview();
     const summary = await screen.findByRole("region", { name: "Summary" });
-    const changes = screen.getByRole("region", { name: "Changes" });
+    // Kept mounted while Overview shows, out of sight.
+    const changes = document.querySelector<HTMLElement>(
+      'section[aria-label="Changes"]',
+    )!;
     const hunkElement = () =>
       changes.querySelector<HTMLElement>('[data-hunk-id="src/big.ts#550"]');
     await waitFor(() =>

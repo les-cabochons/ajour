@@ -154,8 +154,22 @@ function ReviewComposer({ target }: { target: ComposerTarget }) {
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (!focus) return;
-    field.current?.focus({ preventScroll: true });
-    composer.update(target, { focus: false });
+    const element = field.current;
+    if (!element) return;
+    const take = () => {
+      element.focus({ preventScroll: true });
+      if (document.activeElement !== element) return false;
+      composer.update(target, { focus: false });
+      return true;
+    };
+    if (take()) return;
+    // The diff library shows its line's annotation once it has placed it:
+    // the field takes focus as it gets a size.
+    const sized = new ResizeObserver(() => {
+      if (take()) sized.disconnect();
+    });
+    sized.observe(element);
+    return () => sized.disconnect();
   }, [focus, composer, target]);
   const empty = !body.trim();
   const add = () => {

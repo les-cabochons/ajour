@@ -1,12 +1,12 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type Ref,
   type RefObject,
 } from "react";
@@ -48,7 +48,6 @@ import {
 } from "./review-scroll";
 import { useReviewLinesValue } from "./review-lines";
 import { ReviewLinesContext } from "./review-lines-context";
-import { ReviewNotesContext } from "./review-notes";
 import { fileIsViewed } from "@/domain/deck/viewed-marks";
 import {
   HUNK_ATTRIBUTE,
@@ -57,7 +56,6 @@ import {
   type AddComment,
   type ToggleFileViewed,
 } from "./review-sections";
-import { ThreadGutter } from "./thread-gutter";
 import type {
   PullRequestReadState,
   SinceReviewState,
@@ -76,10 +74,8 @@ function MountedReviewSections({
   navigator,
   listRef,
   bySection,
-  floating,
   hovered,
   hoveredSection,
-  onAnchor,
   onAddComment,
   changed,
 }: {
@@ -89,15 +85,13 @@ function MountedReviewSections({
   onToggleViewed: (hunkId: string) => void;
   onToggleFileViewed: ToggleFileViewed;
   navigator: Ref<SectionNavigator>;
-  /** The sections' column, which the gutter beside it follows. */
+  /** The sections' column. */
   listRef: RefObject<HTMLDivElement | null>;
   /** Each section's threads, draft comments and composer, by its key. */
   bySection: ReadonlyMap<string, readonly ReviewNote[]>;
-  floating: boolean;
   hovered: string | undefined;
   /** The key of the section holding the hovered note. */
   hoveredSection: string | undefined;
-  onAnchor: (element: HTMLElement | null) => void;
   onAddComment: AddComment | undefined;
   /** The hunks changed since the review, with the version each last changed in. */
   changed: ReadonlyMap<string, number> | undefined;
@@ -145,9 +139,7 @@ function MountedReviewSections({
           onToggleViewed={onToggleViewed}
           onToggleFileViewed={onToggleFileViewed}
           notes={bySection.get(section.key)}
-          floating={floating}
           hovered={hoveredSection === section.key ? hovered : undefined}
-          onAnchor={onAnchor}
           onAddComment={onAddComment}
           changed={changed}
         />
@@ -160,8 +152,6 @@ function MountedReviewSections({
 export interface ReviewNotesView {
   /** The threads, draft comments and composer on lines of the diff, in its order. */
   notes: readonly ReviewNote[];
-  /** From 1,100px, the notes float in a gutter beside the sections. */
-  floating: boolean;
   /** The key of the note hovered. */
   hovered: string | undefined;
   /** Opens the composer; undefined when the pull request takes no comments. */
@@ -230,19 +220,21 @@ export interface ReviewVersionsView {
 
 /**
  * The guide, or the files A–Z, of an opened pull request, with the guide
- * tree beside it, and each review thread, draft comment and the composer
- * beside its line in the gutter or after it. J and K move between its
- * sections and F opens the tree's titles, while the page is mounted
- * (`deck` shortcuts). Lines selected in a hunk show the toolbar above
- * them, whose keys work only then (#793).
+ * tree on its left, and each review thread, draft comment and the composer
+ * after its line. J and K move between its sections and F opens or folds
+ * the tree's titles, while the page is mounted (`deck` shortcuts); on
+ * Overview they bring Changes back first. Lines selected in a hunk show
+ * the toolbar above them, whose keys work only then (#793).
  */
 function ReviewChanges({
   pullRequest,
   onGuide,
-  notes: { notes: allNotes, floating, hovered, onAddComment },
+  notes: { notes: allNotes, hovered, onAddComment },
   reachHunkRef,
   versions,
   viewing: { viewed, setViewed },
+  banner,
+  layout,
 }: {
   pullRequest: DeckOpenedPullRequest;
   /** Shows another guide of this diff: the agent's, or the built one again (#794). */
@@ -251,8 +243,10 @@ function ReviewChanges({
   reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
   viewing: ReviewViewedView;
+  /** The new pushes banner, above the versions bar. */
+  banner: ReactNode;
+  layout: ChangesLayout;
 }) {
-  const onHover = useContext(ReviewNotesContext)?.onHover;
   const regroup = useRegroup(onGuide);
   const theme = useResolvedTheme();
   const [chosen, setChosen] = useState<ReviewOrder>("guide");
@@ -301,7 +295,8 @@ function ReviewChanges({
       !fileIsViewed(file, now),
     );
   }, []);
-  const [treeOpen, setTreeOpen] = useState(false);
+  // The tree opens on its titles, and F folds it to its ticks.
+  const [treeOpen, setTreeOpen] = useState(true);
   const review = useRef<HTMLDivElement>(null);
   const navigator = useRef<SectionNavigator>(null);
   // A huge pull request mounts only the rows near the screen (#790).
@@ -349,7 +344,7 @@ function ReviewChanges({
         setFiltering(false);
       }
       // A few frames while the list shows it: after the filter's change,
-      // or while a huge list finds its scroller.
+      // the tab's, or while a huge list finds its scroller.
       let tries = 0;
       const attempt = () => {
         if (navigator.current?.reachHunk(hunkId) || (tries += 1) > 10) return;
@@ -362,29 +357,17 @@ function ReviewChanges({
       reachHunkRef.current = undefined;
     };
   }, [reachHunkRef]);
-  useShortcut("deck.next-concern", () => step(1));
-  useShortcut("deck.previous-concern", () => step(-1));
-  useShortcut("deck.guide-tree", () => setTreeOpen((open) => !open));
+  // On Overview, a key brings Changes back first.
+  const { active, onActivate } = layout;
+  useShortcut("deck.next-concern", () => (active ? step(1) : onActivate()));
+  useShortcut("deck.previous-concern", () =>
+    active ? step(-1) : onActivate(),
+  );
+  useShortcut("deck.guide-tree", () =>
+    active ? setTreeOpen((open) => !open) : onActivate(),
+  );
 
   const list = useRef<HTMLDivElement>(null);
-  const scheduleRef = useRef<(() => void) | undefined>(undefined);
-  const onAnchor = useCallback((element: HTMLElement | null) => {
-    if (element) scheduleRef.current?.();
-  }, []);
-  // A huge pull request's hunks mount and unmount as the page scrolls, and
-  // the gutter holds the cards of the mounted ones only: thousands of hidden
-  // cards would cost every style and layout pass.
-  const [mountedNoteHunks, setMountedNoteHunks] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const onNoteRowsChange = useCallback(
-    (hunkIds: ReadonlySet<string>) => setMountedNoteHunks(hunkIds),
-    [],
-  );
-  // The hunk of the gutter's card holding the focus, such as the composer
-  // being typed in: its row stays mounted however far it scrolls away, as
-  // the row holding the focus does.
-  const [focusedCardHunk, setFocusedCardHunk] = useState<string>();
   const sectionOfHunk = useMemo(() => {
     const map = new Map<string, string>();
     for (const section of sections)
@@ -409,35 +392,6 @@ function ReviewChanges({
   const hoveredSection = hoveredHunk
     ? sectionOfHunk.get(hoveredHunk)
     : undefined;
-  const gutter = floating && notes.length > 0;
-  const gutterNotes = useMemo(
-    () =>
-      huge
-        ? notes.filter((entry) => mountedNoteHunks.has(entry.hunkId))
-        : notes,
-    [huge, notes, mountedNoteHunks],
-  );
-  // A hovered card whose hunk scrolled away is no longer under the pointer.
-  useEffect(() => {
-    if (
-      hovered !== undefined &&
-      gutter &&
-      !gutterNotes.some((entry) => entry.key === hovered)
-    )
-      onHover?.(undefined);
-  }, [gutter, gutterNotes, hovered, onHover]);
-  // Folding a hunk or changing the order moves the lines, even where the
-  // column keeps its height. The gutter places its cards itself as it mounts.
-  const laidOut = useRef({ sections, viewed });
-  useEffect(() => {
-    if (
-      laidOut.current.sections === sections &&
-      laidOut.current.viewed === viewed
-    )
-      return;
-    laidOut.current = { sections, viewed };
-    scheduleRef.current?.();
-  }, [sections, viewed]);
 
   const lines = useReviewLinesValue({
     diff: pullRequest,
@@ -446,73 +400,75 @@ function ReviewChanges({
     viewed,
     onToggleViewed,
   });
+  // Lines selected stay behind on Overview: their toolbar's keys go too.
+  useEffect(() => {
+    if (!active) lines.selection.settle(undefined);
+  }, [active, lines.selection]);
 
   const count = order === "guide" ? all.length : pullRequest.files.length;
   return (
-    <>
-      <VersionsBar
-        versions={versions.state}
-        retryVersions={versions.retry}
-        shownHead={pullRequest.headSha}
-        reviewed={versions.reviewed}
-        since={versions.since}
-        retrySince={versions.retrySince}
-        changed={changed}
-        filtering={filtering}
-        onFilter={setFiltering}
-        hunkCount={hunkCount}
-        shownCount={shownCount}
-        baseRef={versions.baseRef}
-      />
-      <div className="deck-guide-header">
-        <SectionHeading trailing={count} className="deck-guide-heading">
-          {order === "guide" ? "Guide" : "Files"}
-        </SectionHeading>
-        {order === "guide" && pullRequest.guide ? (
-          <>
-            <GuideSource guide={pullRequest.guide} regroup={regroup} />
-            <RegroupAction regroup={regroup} />
-          </>
+    <ReviewLinesContext.Provider value={lines}>
+      <div className="deck-changes-split">
+        {sections.length ? (
+          <GuideTree
+            sections={sections}
+            viewed={viewed}
+            open={treeOpen && !layout.foldTree}
+            heading={order === "guide" ? "Guide" : "Files"}
+            onToggle={() => setTreeOpen((open) => !open)}
+            onReach={reach}
+          />
         ) : null}
-        {pullRequest.guide ? (
-          <ToggleGroup
-            aria-label="Order"
-            variant="outline"
-            size="sm"
-            className="deck-guide-order"
-            value={[order]}
-            onValueChange={(values) => {
-              const next = values[0];
-              if (next === "guide" || next === "files") setChosen(next);
-            }}
-          >
-            <ToggleGroupItem value="guide">Guide</ToggleGroupItem>
-            <ToggleGroupItem value="files">Files A–Z</ToggleGroupItem>
-          </ToggleGroup>
-        ) : pullRequest.files.length ? (
-          <span className="deck-guide-source">{noGuideNote(pullRequest)}</span>
-        ) : null}
-      </div>
-      {pullRequest.guide ? <RegroupPanel regroup={regroup} /> : null}
-      {sections.length ? (
-        <ReviewLinesContext.Provider value={lines}>
-          <div ref={review} className="deck-review">
-            <div
-              className="deck-review-grid"
-              data-gutter={gutter || undefined}
-              onFocus={(event) => {
-                const key = (event.target as Element).closest<HTMLElement>(
-                  "[data-card]",
-                )?.dataset.card;
-                const hunkId = notes.find((entry) => entry.key === key)?.hunkId;
-                setFocusedCardHunk(hunkId);
-              }}
-              onBlur={(event) => {
-                const next = event.relatedTarget as Element | null;
-                if (!next?.closest("[data-card]"))
-                  setFocusedCardHunk(undefined);
-              }}
-            >
+        <div className="deck-diff-scroll">
+          {banner}
+          <VersionsBar
+            versions={versions.state}
+            retryVersions={versions.retry}
+            shownHead={pullRequest.headSha}
+            reviewed={versions.reviewed}
+            since={versions.since}
+            retrySince={versions.retrySince}
+            changed={changed}
+            filtering={filtering}
+            onFilter={setFiltering}
+            hunkCount={hunkCount}
+            shownCount={shownCount}
+            baseRef={versions.baseRef}
+          />
+          <div className="deck-guide-header">
+            <SectionHeading trailing={count} className="deck-guide-heading">
+              {order === "guide" ? "Guide" : "Files"}
+            </SectionHeading>
+            {order === "guide" && pullRequest.guide ? (
+              <>
+                <GuideSource guide={pullRequest.guide} regroup={regroup} />
+                <RegroupAction regroup={regroup} />
+              </>
+            ) : null}
+            {pullRequest.guide ? (
+              <ToggleGroup
+                aria-label="Order"
+                variant="outline"
+                size="sm"
+                className="deck-guide-order"
+                value={[order]}
+                onValueChange={(values) => {
+                  const next = values[0];
+                  if (next === "guide" || next === "files") setChosen(next);
+                }}
+              >
+                <ToggleGroupItem value="guide">Guide</ToggleGroupItem>
+                <ToggleGroupItem value="files">Files A–Z</ToggleGroupItem>
+              </ToggleGroup>
+            ) : pullRequest.files.length ? (
+              <span className="deck-guide-source">
+                {noGuideNote(pullRequest)}
+              </span>
+            ) : null}
+          </div>
+          {pullRequest.guide ? <RegroupPanel regroup={regroup} /> : null}
+          {sections.length ? (
+            <div ref={review} className="deck-review">
               {huge ? (
                 <VirtualReviewSections
                   sections={sections}
@@ -523,12 +479,8 @@ function ReviewChanges({
                   navigator={navigator}
                   listRef={list}
                   notes={notes}
-                  floating={gutter}
                   hovered={hovered}
-                  onAnchor={onAnchor}
                   onAddComment={onAddComment}
-                  onNoteRowsChange={onNoteRowsChange}
-                  focusedHunk={focusedCardHunk}
                   changed={changed}
                 />
               ) : (
@@ -541,68 +493,65 @@ function ReviewChanges({
                   navigator={navigator}
                   listRef={list}
                   bySection={bySection}
-                  floating={gutter}
                   hovered={hovered}
                   hoveredSection={hoveredSection}
-                  onAnchor={onAnchor}
                   onAddComment={onAddComment}
                   changed={changed}
                 />
               )}
-              {gutter ? (
-                <ThreadGutter
-                  notes={gutterNotes}
-                  columnRef={list}
-                  hovered={hovered}
-                  scheduleRef={scheduleRef}
-                />
-              ) : null}
             </div>
-            <GuideTree
-              sections={sections}
-              viewed={viewed}
-              open={treeOpen}
-              heading={order === "guide" ? "Guide" : "Files"}
-              onToggle={() => setTreeOpen((open) => !open)}
-              onReach={reach}
-            />
-          </div>
-        </ReviewLinesContext.Provider>
-      ) : since ? (
-        <p className="deck-file-empty">
-          {`Nothing changed since your review of v${versions.reviewed?.number ?? ""}.`}{" "}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFiltering(false)}
-          >
-            {shownVersion ? `Show all of v${shownVersion.number}` : "Show all"}
-          </Button>
-        </p>
-      ) : (
-        <p className="deck-file-empty">This pull request changes no files.</p>
-      )}
-      {sections.length && since?.folded.length ? (
-        <p className="deck-unchanged">
-          <span>Unchanged since your review:</span>
-          {since.folded.map((section) => (
-            <span key={section.key} className="deck-unchanged-item">
-              {section.number ? (
-                <span className="deck-unchanged-number">{section.number}</span>
-              ) : null}
-              {section.title}
-            </span>
-          ))}
-        </p>
-      ) : null}
-    </>
+          ) : since ? (
+            <p className="deck-file-empty">
+              {`Nothing changed since your review of v${versions.reviewed?.number ?? ""}.`}{" "}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFiltering(false)}
+              >
+                {shownVersion
+                  ? `Show all of v${shownVersion.number}`
+                  : "Show all"}
+              </Button>
+            </p>
+          ) : (
+            <p className="deck-file-empty">
+              This pull request changes no files.
+            </p>
+          )}
+          {sections.length && since?.folded.length ? (
+            <p className="deck-unchanged">
+              <span>Unchanged since your review:</span>
+              {since.folded.map((section) => (
+                <span key={section.key} className="deck-unchanged-item">
+                  {section.number ? (
+                    <span className="deck-unchanged-number">
+                      {section.number}
+                    </span>
+                  ) : null}
+                  {section.title}
+                </span>
+              ))}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </ReviewLinesContext.Provider>
   );
+}
+
+/** How the Changes tab sits on the review page. */
+export interface ChangesLayout {
+  /** The Changes tab shows: J, K and F act on it. */
+  active: boolean;
+  /** Shows the Changes tab, for J, K or F pressed on Overview. */
+  onActivate: () => void;
+  /** The side panel takes the room: the guide tree folds to its ticks. */
+  foldTree: boolean;
 }
 
 /**
  * The pull request's changes: its guide, or its files A–Z, once the local
- * API built them, with each note beside its line when `floating`, or
- * after it.
+ * API built them, beside the guide tree, with each note after its line.
  */
 export function PullRequestChanges({
   state,
@@ -612,6 +561,7 @@ export function PullRequestChanges({
   reachHunkRef,
   versions,
   viewing,
+  layout,
 }: {
   state: PullRequestReadState<DeckOpenedPullRequest>;
   retry: () => void;
@@ -621,58 +571,62 @@ export function PullRequestChanges({
   reachHunkRef: RefObject<ReachHunk | undefined>;
   versions: ReviewVersionsView;
   viewing: ReviewViewedView;
+  layout: ChangesLayout;
 }) {
   return (
     // Named outright: the heading's count would join its name.
     <section className="deck-changes" aria-label="Changes">
-      {state.status === "ready" ? null : (
-        <SectionHeading>Changes</SectionHeading>
-      )}
-      {state.status === "loading" ? (
-        <p role="status" className="deck-file-empty">
-          Loading the changes…
-        </p>
-      ) : state.status === "unavailable" ? (
-        <p className="deck-file-empty">
-          {state.message}
-          {state.update ? (
-            <>
-              {" "}
-              <PluginUpdateLink />
-            </>
-          ) : null}
-        </p>
-      ) : state.status === "error" ? (
-        <MessagePanel role="alert" className="flex items-center gap-3">
-          <span className="flex-1">{state.message}</span>
-          <Button variant="outline" size="sm" onClick={retry}>
-            Retry
-          </Button>
-        </MessagePanel>
+      {state.status === "ready" ? (
+        // A new diff, or another head, starts with the latest version shown; its viewed marks are the page's.
+        <ReviewChanges
+          key={`${state.value.baseSha}..${state.value.headSha}`}
+          pullRequest={state.value}
+          onGuide={onGuide}
+          notes={notes}
+          reachHunkRef={reachHunkRef}
+          versions={versions}
+          viewing={viewing}
+          layout={layout}
+          banner={
+            versions.pushes ? (
+              <NewPushesBanner
+                count={versions.pushes}
+                names={versionNames(
+                  versions.state.status === "ready"
+                    ? versions.state.value.versionName
+                    : undefined,
+                )}
+                onRefresh={versions.refresh}
+              />
+            ) : null
+          }
+        />
       ) : (
-        <>
-          {versions.pushes ? (
-            <NewPushesBanner
-              count={versions.pushes}
-              names={versionNames(
-                versions.state.status === "ready"
-                  ? versions.state.value.versionName
-                  : undefined,
-              )}
-              onRefresh={versions.refresh}
-            />
-          ) : null}
-          {/* A new diff, or another head, starts with the latest version shown; its viewed marks are the page's. */}
-          <ReviewChanges
-            key={`${state.value.baseSha}..${state.value.headSha}`}
-            pullRequest={state.value}
-            onGuide={onGuide}
-            notes={notes}
-            reachHunkRef={reachHunkRef}
-            versions={versions}
-            viewing={viewing}
-          />
-        </>
+        <div className="deck-diff-scroll">
+          <SectionHeading>Changes</SectionHeading>
+          {state.status === "loading" ? (
+            <p role="status" className="deck-file-empty">
+              Loading the changes…
+            </p>
+          ) : state.status === "unavailable" ? (
+            <p className="deck-file-empty">
+              {state.message}
+              {state.update ? (
+                <>
+                  {" "}
+                  <PluginUpdateLink />
+                </>
+              ) : null}
+            </p>
+          ) : (
+            <MessagePanel role="alert" className="flex items-center gap-3">
+              <span className="flex-1">{state.message}</span>
+              <Button variant="outline" size="sm" onClick={retry}>
+                Retry
+              </Button>
+            </MessagePanel>
+          )}
+        </div>
       )}
     </section>
   );

@@ -327,10 +327,15 @@ const threadCard = () =>
   });
 const viewedMark = (name: string) =>
   within(changes()).getByRole("button", { name }).getAttribute("aria-pressed");
-const tick = (name: string) =>
-  within(
+/** A tick of the guide tree, folded to its ticks first: it opens on its titles. */
+function tick(name: string) {
+  const tree = within(
     within(changes()).getByRole("navigation", { name: "Guide tree" }),
-  ).getByRole("button", { name });
+  );
+  const hide = tree.queryByRole("button", { name: "Hide the guide tree" });
+  if (hide) fireEvent.click(hide);
+  return tree.getByRole("button", { name });
+}
 
 /** The thread's card, once its hunk drew it. */
 const findThread = () =>
@@ -783,12 +788,7 @@ it("keeps a reply's words on a huge pull request as its thread scrolls away and 
         .getByRole("button", { name: "Viewed file: src/big.ts" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(
-      within(screen.getByRole("navigation", { name: "Guide tree" })).getByRole(
-        "button",
-        { name: "src/big.ts · 600 of 600 viewed" },
-      ),
-    ).toBeTruthy();
+    expect(tick("src/big.ts · 600 of 600 viewed")).toBeTruthy();
     await waitFor(() =>
       expect(api.setPullRequestFileViewed).toHaveBeenCalledWith(
         "github",

@@ -473,6 +473,24 @@ it("opens the composer on the selected lines with C, and Escape leaves them", as
   expect(toolbar()).toBeNull();
 });
 
+it("leaves the selected lines on Overview, so C opens no hidden composer", async () => {
+  await renderReviewPage();
+
+  drag(FIRST, { start: 1, side: "additions", end: 2, endSide: "additions" });
+  expect(toolbar()).not.toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+  // Changes stays mounted, hidden: look there too.
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("toolbar", { name: /selected/, hidden: true }),
+    ).toBeNull(),
+  );
+  press("c");
+  expect(
+    screen.queryByRole("form", { name: "New comment", hidden: true }),
+  ).toBeNull();
+});
+
 it("selects the lines between two tapped line numbers in the narrow view", async () => {
   stubNarrowView(true);
   onTestFinished(() => stubNarrowView(false));

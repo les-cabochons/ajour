@@ -370,6 +370,7 @@ export const rendererEvents = {
         | "side_panel_width"
         | "app_sidebar"
         | "commit_changes_section"
+        | "deck_panel"
       >(),
       changed_keys: operational<string[]>(),
       /**

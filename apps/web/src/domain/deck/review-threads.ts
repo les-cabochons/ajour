@@ -8,8 +8,7 @@ import type { DeckHunk, DeckPullRequestDiff } from "@ajour/shared/deck";
 /*
  * Where the review page shows a pull request's review threads: each one
  * after the line it is on, and the ones the diff can't show in the
- * conversation at the end. In the gutter, cards stack top-down beside their
- * lines; a connector joins each card to its line.
+ * conversation on Overview.
  */
 
 /** The side of a unified diff a line annotation follows, as `@pierre/diffs` names it. */
@@ -132,53 +131,6 @@ export function placeThreads(
     else elsewhere.push(thread);
   }
   return { placed: inDiffOrder(diff, found), elsewhere };
-}
-
-/** A card to place in the gutter: the height of its line's middle, and its own height. */
-export interface CardAnchor {
-  key: string;
-  y: number;
-  height: number;
-}
-
-/**
- * Cards top-down in their lines' order: each as level with its line as the
- * card above allows, `gap` below it, its top `lift` above the line so the
- * connector meets the card's header.
- */
-export function stackCards(
-  anchors: readonly CardAnchor[],
-  { gap, lift }: { gap: number; lift: number },
-) {
-  let floor = 0;
-  return [...anchors]
-    .sort((a, b) => a.y - b.y)
-    .map((anchor) => {
-      const top = Math.max(Math.round(anchor.y - lift), floor);
-      floor = top + anchor.height + gap;
-      return { key: anchor.key, top };
-    });
-}
-
-/**
- * A connector from a line's right end out to an elbow, down or up to its
- * card's header, then across to the gutter. Cards pushed below their line
- * show it as a step.
- */
-export function connectorPath({
-  fromX,
-  lineY,
-  elbowX,
-  cardY,
-  toX,
-}: {
-  fromX: number;
-  lineY: number;
-  elbowX: number;
-  cardY: number;
-  toX: number;
-}) {
-  return `M${fromX} ${lineY} H${elbowX} V${cardY} H${toX}`;
 }
 
 /** One entry of the conversation at the end of the page. */

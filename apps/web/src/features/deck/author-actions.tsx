@@ -183,13 +183,10 @@ export function PullRequestTitle({
 
 /**
  * Converts the pull request to a draft, or marks it ready, at once. A
- * failure shows the reason in a toast with Retry.
+ * failure shows the reason in a toast with Retry. The review page offers
+ * it in its "…" menu, as the action this returns.
  */
-export function DraftToggle({
-  pullRequest,
-}: {
-  pullRequest: LocalPullRequest;
-}) {
+export function useDraftToggle(pullRequest: LocalPullRequest) {
   const [sending, setSending] = useState(false);
   // Read when a toast's Retry runs, which may be long after it showed.
   const sendingRef = useRef(false);
@@ -229,15 +226,11 @@ export function DraftToggle({
     }
   }
 
-  return (
-    <Button
-      variant="outline"
-      disabled={sending}
-      onClick={() => void toggle(!draft)}
-    >
-      {draftActionLabel(pullRequest.pluginId, draft)}
-    </Button>
-  );
+  return {
+    label: draftActionLabel(pullRequest.pluginId, draft),
+    sending,
+    run: () => void toggle(!draft),
+  };
 }
 
 /**
@@ -255,6 +248,7 @@ export function MergePullRequest({
   pushes,
   versionName,
   onFailed,
+  primary = false,
 }: {
   pullRequest: LocalPullRequest;
   /** The head the page shows. Undefined until the page read the diff. */
@@ -266,6 +260,8 @@ export function MergePullRequest({
   versionName?: CodeHostVersionsResult["versionName"];
   /** A merge failed: the page reads the versions again, so a push since shows. */
   onFailed?: () => void;
+  /** Nothing is left before the merge: the button is the primary one. */
+  primary?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<CodeHostMergeMethod | undefined>();
@@ -352,7 +348,7 @@ export function MergePullRequest({
   return (
     <>
       <Button
-        variant="outline"
+        variant={primary ? "default" : "outline"}
         disabled={!ready}
         onClick={() => {
           setFailure(undefined);

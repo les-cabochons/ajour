@@ -7,10 +7,10 @@ import type {
 } from "@ajour/shared";
 
 /*
- * The review page's status line: the pull request's state, its checks and
- * its approvals, as `Open · 2 checks pending · 1 approval`. Pending checks
- * read in the warning tone and passed ones in the success tone; nothing
- * else is colored.
+ * The review page's status words: its checks and its approvals, as
+ * `2 checks pending` and `1 approval`, which Status and the stack strip
+ * read. Pending checks read in the warning tone and passed ones in the
+ * success tone; nothing else is colored.
  */
 
 /** A summary's color: only pending and passed checks have one. */
@@ -23,12 +23,6 @@ export interface StatusSummary {
 
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`;
-
-export function pullRequestStateLabel(facts: CodeHostPullRequestFacts) {
-  if (facts.state === "merged") return "Merged";
-  if (facts.state === "closed") return "Closed";
-  return facts.draft ? "Draft" : "Open";
-}
 
 /** The checks on the head, a failure first, then what's pending, then what passed. */
 export function checksSummary(checks: readonly CodeHostCheck[]): StatusSummary {

@@ -102,7 +102,7 @@ Feature: Deck lists the pull requests on your plate
     When I mark the second concern's first hunk viewed
     Then the guide tree shows the second concern half viewed
     When I press the "f" key
-    Then the guide tree lists the concerns' titles
+    Then the guide tree folds to its ticks
     When I switch to Files A–Z
     Then the changed files show in path order
 
@@ -188,8 +188,10 @@ Feature: Deck lists the pull requests on your plate
     When I open Deck
     And I open the requested pull request summary
     And I press the "a" key
-    Then the chat is docked on the right, 360px wide, beside the review
+    Then the chat opens above the dock
     And the chat's header reads "#1 · Claude Code · PR"
+    When I pin the chat
+    Then the chat is docked on the right, 360px wide, beside the review
     When I close the chat
     And I drag over the line numbers from line 12 to line 14
     And I press the "e" key
@@ -294,7 +296,7 @@ Feature: Deck lists the pull requests on your plate
     When I open the requested pull request summary
     Then the stack strip reads "Stack 2 of 3 · main ← #3 ← #1 this ← #4"
     And the strip warns that #3 changed since this layer was based on it
-    And the status line says it merges after #3
+    And Status says it merges after #3
     When I press the "l" key
     Then the full stack lists its layers in merge order
     When I open #4 from the full stack

@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CodeHostReviewThread } from "@ajour/shared";
 import type { DeckFile, DeckPullRequestDiff } from "@ajour/shared/deck";
-import {
-  conversationEntries,
-  placeThreads,
-  stackCards,
-  connectorPath,
-} from "./review-threads";
+import { conversationEntries, placeThreads } from "./review-threads";
 
 /** A hunk as the local API sends it: its patch is its file's header, the `@@` line and its rows. */
 function hunk(path: string, index: number, header: string, rows: string[]) {
@@ -131,44 +126,6 @@ describe("placing review threads on the diff", () => {
     expect(placement.placed.map((entry) => [entry.hunkId, entry.row])).toEqual([
       ["src/new.ts#0", 0],
     ]);
-  });
-});
-
-describe("stacking cards in the gutter", () => {
-  it("puts each card level with its line, below the card above when they'd overlap", () => {
-    expect(
-      stackCards(
-        [
-          { key: "c", y: 400, height: 50 },
-          { key: "a", y: 100, height: 120 },
-          { key: "b", y: 150, height: 40 },
-        ],
-        { gap: 8, lift: 14 },
-      ),
-    ).toEqual([
-      { key: "a", top: 86 },
-      // a ends at 206, so b waits below it, 8px apart.
-      { key: "b", top: 214 },
-      { key: "c", top: 386 },
-    ]);
-  });
-
-  it("never lifts a card above the gutter's top", () => {
-    expect(
-      stackCards([{ key: "a", y: 4, height: 10 }], { gap: 8, lift: 14 }),
-    ).toEqual([{ key: "a", top: 0 }]);
-  });
-
-  it("draws a connector from the line out to an elbow, down to its card, then to the gutter", () => {
-    expect(
-      connectorPath({
-        fromX: 600,
-        lineY: 150,
-        elbowX: 610,
-        cardY: 228,
-        toX: 620,
-      }),
-    ).toBe("M600 150 H610 V228 H620");
   });
 });
 

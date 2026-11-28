@@ -244,6 +244,9 @@ async function renderPage() {
 
 const changes = () => screen.getByRole("region", { name: "Changes" });
 const summary = () => screen.getByRole("region", { name: "Summary" });
+/** The summary sits on Overview; the page opens on Changes. */
+const openOverview = () =>
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
 
 it("regroups with the instruction typed in its prefilled field, then shows the agent's guide and names it", async () => {
   vi.mocked(api.regroupDeckGuide).mockResolvedValue({ turn: turnOf("r1") });
@@ -292,6 +295,7 @@ it("regroups with the instruction typed in its prefilled field, then shows the a
   );
   expect(within(changes()).queryByRole("status")).toBeNull();
   // The summary is the agent's, with its kinds.
+  openOverview();
   expect(within(summary()).getByText("Breaking changes")).toBeTruthy();
   expect(within(summary()).getByText("Fix")).toBeTruthy();
 });
@@ -421,6 +425,7 @@ it("labels the agent's guide, and its link goes back to the guide built from the
 it("labels the agent's problem as inferred when no ticket is linked", async () => {
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(opened(AGENT));
   await renderPage();
+  openOverview();
 
   const problem = within(summary()).getByText(
     /Unauthenticated calls reach the handler\./,
@@ -437,6 +442,7 @@ it("ends each summary line with more ›, which asks about that line", async () 
     head: HEAD,
   });
   await renderPage();
+  openOverview();
   const line = within(summary())
     .getByRole("button", { name: "Auth and security: src/api.ts" })
     .closest("li")!;

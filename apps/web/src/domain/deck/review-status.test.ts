@@ -4,7 +4,6 @@ import {
   approvalsOf,
   approvalsSummary,
   checksSummary,
-  pullRequestStateLabel,
   rollupSummary,
 } from "./review-status";
 
@@ -38,13 +37,6 @@ const check = (state: CodeHostCheck["state"], name = state): CodeHostCheck => ({
 });
 
 describe("the status line", () => {
-  it("names the pull request's state", () => {
-    expect(pullRequestStateLabel(facts())).toBe("Open");
-    expect(pullRequestStateLabel(facts({ draft: true }))).toBe("Draft");
-    expect(pullRequestStateLabel(facts({ state: "merged" }))).toBe("Merged");
-    expect(pullRequestStateLabel(facts({ state: "closed" }))).toBe("Closed");
-  });
-
   it("counts pending checks in the warning tone, and passed ones in the success tone", () => {
     expect(
       checksSummary([check("success"), check("pending"), check("pending")]),

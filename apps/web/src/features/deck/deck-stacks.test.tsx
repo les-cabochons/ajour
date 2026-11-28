@@ -43,7 +43,7 @@ import { DeckPage } from "./deck-page";
 
 /*
  * Stacks in Deck (#788): the strip under the title, with ‹ › and the stale
- * base warning, "Merges after" on the status line, L for the full stack,
+ * base warning, "Merges after" in the Status view, L for the full stack,
  * the narrow fold, the list's grouping and Next in stack after a review.
  * Three layers, main ← #479 ← #482 ← #485, where #482 was based on an older
  * head of #479, and a lone #12. The local API and the diff library are
@@ -237,13 +237,28 @@ it("says nothing of the base when this layer is on the head below", async () => 
   expect(within(strip()).queryByText(/changed since this layer/)).toBeNull();
 });
 
-it("puts the merge order on the status line", async () => {
+/** The requirements the Status peek lists, opened from the dock. */
+async function requirements() {
+  fireEvent.click(screen.getByRole("button", { name: /^Status: / }));
+  const peek = await screen.findByRole("dialog", { name: "Status" });
+  return within(within(peek).getByRole("region", { name: "Requirements" }))
+    .getAllByRole("listitem")
+    .map((item) => item.textContent);
+}
+
+it("puts the merge order among the Status view's requirements", async () => {
   await renderReviewPage(482);
-  expect(screen.getByText("Merges after #479")).toBeTruthy();
+  expect(await requirements()).toContain("Merges after #479");
+  // The dock leaves it to the view.
+  expect(
+    screen
+      .getByRole("button", { name: /^Status: / })
+      .getAttribute("aria-label"),
+  ).not.toContain("Merges after");
   cleanup();
 
   await renderReviewPage(479);
-  expect(screen.queryByText(/Merges after/)).toBeNull();
+  expect((await requirements()).join(" ")).not.toContain("Merges after");
 });
 
 it("shows no strip for a pull request that's alone", async () => {
