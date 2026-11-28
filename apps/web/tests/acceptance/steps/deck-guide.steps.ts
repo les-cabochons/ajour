@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
 /*
@@ -7,6 +7,12 @@ import { createBdd } from "playwright-bdd";
  */
 
 const { Given, When, Then } = createBdd();
+
+/** The summary, on the Overview tab. */
+async function summaryOf(page: Page) {
+  await page.getByRole("tab", { name: "Overview" }).click();
+  return page.getByRole("region", { name: "Summary" });
+}
 const apiUrl = "http://127.0.0.1:8787";
 
 const lines = (count: number, from: number, text: (line: number) => string) =>
@@ -200,11 +206,12 @@ When("I mark the second concern's first hunk viewed", async ({ page }) => {
 Then(
   "the guide tree shows the second concern half viewed",
   async ({ page }) => {
+    // The tree opens on its titles, each with its viewed count.
     await expect(
-      page.getByRole("navigation", { name: "Guide tree" }).getByRole("button", {
-        name: "2. Back off between retries · 1 of 2 viewed",
-      }),
-    ).toBeVisible();
+      page
+        .getByRole("navigation", { name: "Guide tree" })
+        .getByRole("button", { name: /Back off between retries/ }),
+    ).toContainText("1/2");
     await expect(
       changes(page).getByRole("group", {
         name: "src/client/retry.ts, lines 10 to 16",
@@ -213,10 +220,14 @@ Then(
   },
 );
 
-Then("the guide tree lists the concerns' titles", async ({ page }) => {
+Then("the guide tree folds to its ticks", async ({ page }) => {
   const tree = page.getByRole("navigation", { name: "Guide tree" });
-  await expect(tree.getByText("Sign each webhook payload")).toBeVisible();
-  await expect(tree.getByText("Back off between retries")).toBeVisible();
+  await expect(tree.getByText("Sign each webhook payload")).toHaveCount(0);
+  await expect(
+    tree.getByRole("button", {
+      name: "2. Back off between retries · 1 of 2 viewed",
+    }),
+  ).toBeVisible();
   await page.screenshot({ path: "test-results/deck-guide-tree.png" });
 });
 
@@ -247,7 +258,7 @@ Then("the guide fits the narrow viewport", async ({ page }) => {
 Then(
   "the summary names the linked ticket, the kinds and each section's lines",
   async ({ page }) => {
-    const summary = page.getByRole("region", { name: "Summary" });
+    const summary = await summaryOf(page);
     await expect(
       summary.getByText("Webhook retries hammer the receiver"),
     ).toBeVisible();
@@ -268,8 +279,9 @@ Then(
 );
 
 When("I follow the summary's line about the test", async ({ page }) => {
-  await page
-    .getByRole("region", { name: "Summary" })
+  await (
+    await summaryOf(page)
+  )
     .getByRole("button", {
       name: "Concern 2: Tested in src/client/retry.test.ts",
     })
@@ -367,7 +379,7 @@ Then("the guide says it was grouped by Claude Code", async ({ page }) => {
 Then(
   "the summary shows the agent's inferred problem and breaking change",
   async ({ page }) => {
-    const summary = page.getByRole("region", { name: "Summary" });
+    const summary = await summaryOf(page);
     await expect(summary.getByText("Inferred, no linked ticket")).toBeVisible();
     await expect(
       summary.getByRole("button", {
@@ -382,6 +394,8 @@ Then(
       summary.getByRole("button", { name: "More detail" }),
     ).toHaveCount(2);
     await page.screenshot({ path: "test-results/deck-agent-summary.png" });
+    // Back to Changes, where the guide is.
+    await page.getByRole("tab", { name: /^Changes/ }).click();
   },
 );
 

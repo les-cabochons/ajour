@@ -1,8 +1,8 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
-  RiLayoutRight2Line as ShowTree,
-  RiLayoutRightLine as HideTree,
+  RiLayoutLeft2Line as ShowTree,
+  RiLayoutLeftLine as HideTree,
 } from "@remixicon/react";
 import {
   defaultRangeExtractor,
@@ -20,10 +20,11 @@ import {
 } from "@/domain/deck/guide";
 
 /*
- * The quiet guide tree on the right of Deck's review page (#782). Closed,
- * it is a strip of ticks, one per concern (or file, in Files A–Z), each as
- * long as its hunks and filled as they are marked viewed. Open, with F or
- * its button, it lists their titles. A tick or a title scrolls to its
+ * The guide tree on the left of Deck's changes (#782). Open, as it starts,
+ * it lists the titles of the concerns (or files, in Files A–Z) with their
+ * viewed counts. Folded, with F or its button, or while the side panel
+ * takes the room, it is a strip of ticks, each as long as its hunks and
+ * filled as they are marked viewed. A tick or a title scrolls to its
  * section. In the narrow view the ticks run across, above the changes, and
  * never open. A tick names itself to assistive technology but mounts no
  * tooltip: there is one per concern, and the open tree shows the titles.
@@ -259,7 +260,7 @@ export const GuideTree = memo(function GuideTree({
     <TooltipButton
       label={showTitles ? "Hide the guide tree" : "Show the guide tree"}
       shortcut="deck.guide-tree"
-      side="left"
+      side="right"
       className="deck-tree-toggle"
       aria-expanded={showTitles}
       onClick={onToggle}

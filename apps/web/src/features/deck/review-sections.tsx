@@ -45,8 +45,7 @@ import { renderNoteCard } from "./review-notes";
  * Each hunk has a Viewed mark, kept on this computer (#785), which folds it
  * and fills its concern's tick in the guide tree; in Files A–Z each file
  * has one too, which marks all its hunks. A hunk's review threads
- * (#783), draft comments and the composer (#784) sit after their lines, or
- * only mark them when the gutter beside the sections holds the cards. A
+ * (#783), draft comments and the composer (#784) sit after their lines. A
  * "+" beside a line opens the composer on it. Lines selected in a hunk
  * (#793) show the toolbar above them, and the answers about them follow
  * the hunk's lines.
@@ -333,25 +332,15 @@ export function ReviewSectionHeader({
 export interface NoteMarksInput {
   /** The threads, draft comments and composer on these hunks' lines, or none. */
   notes: readonly ReviewNote[] | undefined;
-  /** Notes float in the gutter, so a line only marks where its note is. */
-  floating: boolean;
   /** The hovered note's key, when it's on these hunks. */
   hovered: string | undefined;
-  /** Called with each mark after a note's line as it's drawn, so the gutter can place its card. */
-  onAnchor: (element: HTMLElement | null) => void;
 }
 
 /**
  * What the hunks draw after their notes' lines: each hunk's annotations,
- * the mark or card for each, and the hovered note's entry, or else the
- * composer's.
+ * the card for each, and the hovered note's entry, or else the composer's.
  */
-export function useNoteMarks({
-  notes,
-  floating,
-  hovered,
-  onAnchor,
-}: NoteMarksInput) {
+export function useNoteMarks({ notes, hovered }: NoteMarksInput) {
   const byHunk = useMemo(() => {
     const map = new Map<string, DiffHunkAnnotation[]>();
     for (const entry of notes ?? []) {
@@ -366,27 +355,16 @@ export function useNoteMarks({
     [notes],
   );
   const composer = notes?.find((entry) => entry.kind === "composer");
-  // In the gutter a line's mark doesn't change with the hover, so the
-  // section's hunks don't draw again as it moves.
-  const hot = floating ? undefined : hovered;
   const renderAnnotation = useCallback(
     (key: string) => {
-      if (floating)
-        return (
-          <span
-            ref={onAnchor}
-            className="deck-thread-anchor"
-            data-thread-anchor={key}
-          />
-        );
       const entry = byId.get(key);
       return entry ? (
         <div className="deck-inline-thread">
-          {renderNoteCard(entry, hot === key)}
+          {renderNoteCard(entry, hovered === key)}
         </div>
       ) : null;
     },
-    [byId, floating, hot, onAnchor],
+    [byId, hovered],
   );
   // The composer's lines stay highlighted while nothing else is hovered.
   const hoveredEntry = (hovered ? byId.get(hovered) : undefined) ?? composer;
@@ -401,9 +379,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   onToggleViewed,
   onToggleFileViewed,
   notes,
-  floating,
   hovered,
-  onAnchor,
   onAddComment,
   changed,
 }: {
@@ -414,12 +390,8 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   onToggleFileViewed: ToggleFileViewed;
   /** The section's threads, draft comments and composer on its lines, or none. */
   notes: readonly ReviewNote[] | undefined;
-  /** Notes float in the gutter, so a line only marks where its note is. */
-  floating: boolean;
   /** The hovered note's key, when it's in this section. */
   hovered: string | undefined;
-  /** Called with each mark after a note's line as it's drawn, so the gutter can place its card. */
-  onAnchor: (element: HTMLElement | null) => void;
   /** Opens the composer; undefined when the pull request takes no comments. */
   onAddComment: AddComment | undefined;
   /** The hunks changed since the review, with the version each last changed in. */
@@ -428,9 +400,7 @@ export const ReviewSectionView = memo(function ReviewSectionView({
   const headingId = useId();
   const { byHunk, renderAnnotation, hoveredEntry } = useNoteMarks({
     notes,
-    floating,
     hovered,
-    onAnchor,
   });
   const attribute = { [SECTION_ATTRIBUTE]: "" };
   return (

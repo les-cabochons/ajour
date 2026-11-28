@@ -6,7 +6,6 @@ import {
   type DeckAskAnchor,
 } from "@ajour/shared/deck";
 import { Markdown } from "@/components/markdown";
-import { SidePanel } from "@/components/side-panel";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -21,7 +20,6 @@ import { askText } from "@/domain/deck/ask";
 import { chatGoing, chatHeader, type ChatEntry } from "@/domain/deck/chat";
 import { useAgentRunner } from "@/lib/agent-runner";
 import { getDeckClones } from "@/lib/app-api";
-import { useIsNarrowView } from "@/lib/use-narrow-view";
 import {
   useChatState,
   type DeckChatSession,
@@ -30,8 +28,8 @@ import {
 
 /*
  * Deck's chat (#796), the fallback for what the asks don't cover. **Chat**
- * in the top bar, or A, opens it: a 360px panel docked on the right of the
- * review page, or a full-height sheet in the narrow view. Its header is the
+ * in the review page's dock, or A, opens it: as a peek above the dock, in
+ * the side panel once pinned, or a full-height sheet in the narrow view. Its header is the
  * one place that names the agent and what it reads. Continue in chat on an
  * answer carries the answer's anchor into the composer as a chip. Each
  * write the chat makes in the user's name shows as one action line, with
@@ -100,39 +98,32 @@ export interface DeckChatPanelProps {
   pullRequestUrl: string;
 }
 
-/** The chat panel, or the full-height sheet in the narrow view. Nothing mounts while it's closed. */
-export function DeckChatPanel(props: DeckChatPanelProps) {
+/**
+ * The chat in the narrow view: a full-height sheet over the page, with its
+ * own title and Close. In a wide window the chat is one of the review
+ * page's views (`ChatView`), in a peek or the side panel.
+ */
+export function DeckChatSheet(props: DeckChatPanelProps) {
   const { open, onOpenChange } = props;
-  const narrow = useIsNarrowView();
-  if (narrow) {
-    return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="right"
-          // Full width and full height, over the Sheet's 3/4 default.
-          className="deck-chat-sheet data-[side=right]:w-full data-[side=right]:sm:max-w-none"
-          showCloseButton={false}
-        >
-          <ChatBody {...props} titled={false} />
-        </SheetContent>
-      </Sheet>
-    );
-  }
-  if (!open) return null;
   return (
-    <SidePanel
-      contentKey="deck-chat"
-      widthKey="deck"
-      aria-label="Chat"
-      className="deck-chat-panel"
-      contentClassName="deck-chat-scroll"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onOpenChange(false);
-      }}
-    >
-      <ChatBody {...props} titled />
-    </SidePanel>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        // Full width and full height, over the Sheet's 3/4 default.
+        className="deck-chat-sheet data-[side=right]:w-full data-[side=right]:sm:max-w-none"
+        showCloseButton={false}
+      >
+        <ChatBody {...props} framed={false} />
+      </SheetContent>
+    </Sheet>
   );
+}
+
+/** The chat as a view of the review page, under the title its peek or tab gives it. */
+export function ChatView(
+  props: Omit<DeckChatPanelProps, "open" | "onOpenChange">,
+) {
+  return <ChatBody {...props} open onOpenChange={() => undefined} framed />;
 }
 
 function ChatBody({
@@ -143,8 +134,8 @@ function ChatBody({
   onShow,
   onShowGuide,
   pullRequestUrl,
-  titled,
-}: DeckChatPanelProps & { titled: boolean }) {
+  framed,
+}: DeckChatPanelProps & { framed: boolean }) {
   const state = useChatState(session);
   const provider = useProviderLabel();
   const chosen = useCloneChosen(target);
@@ -164,32 +155,40 @@ function ChatBody({
     field.current?.focus();
   }, [state.chip]);
   const send = () => void session.send(target);
-  const Title = titled ? "h2" : SheetTitle;
   return (
-    <div className="deck-chat">
-      <SheetHeaderOrDiv titled={titled}>
+    <div className="deck-chat" data-framed={framed || undefined}>
+      {framed ? (
         <div className="deck-chat-header">
-          <div className="min-w-0">
-            <Title className="text-base font-semibold">Chat</Title>
-            <p className="deck-chat-reads">{header.text}</p>
-          </div>
-          <TooltipButton
-            label="Close chat"
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onOpenChange(false)}
-              />
-            }
-          >
-            <RiCloseLine />
-          </TooltipButton>
+          <p className="deck-chat-reads">{header.text}</p>
+          {header.cloneReason ? (
+            <p className="deck-chat-reads">{header.cloneReason}</p>
+          ) : null}
         </div>
-        {header.cloneReason ? (
-          <p className="deck-chat-reads">{header.cloneReason}</p>
-        ) : null}
-      </SheetHeaderOrDiv>
+      ) : (
+        <SheetHeader className="p-0">
+          <div className="deck-chat-header">
+            <div className="min-w-0">
+              <SheetTitle className="text-base font-semibold">Chat</SheetTitle>
+              <p className="deck-chat-reads">{header.text}</p>
+            </div>
+            <TooltipButton
+              label="Close chat"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onOpenChange(false)}
+                />
+              }
+            >
+              <RiCloseLine />
+            </TooltipButton>
+          </div>
+          {header.cloneReason ? (
+            <p className="deck-chat-reads">{header.cloneReason}</p>
+          ) : null}
+        </SheetHeader>
+      )}
       <ol className="deck-chat-log" role="log" aria-label="Messages">
         {state.entries.length === 0 ? (
           <li className="deck-chat-empty">
@@ -268,20 +267,6 @@ function ChatBody({
         </div>
       </form>
     </div>
-  );
-}
-
-function SheetHeaderOrDiv({
-  titled,
-  children,
-}: {
-  titled: boolean;
-  children: React.ReactNode;
-}) {
-  return titled ? (
-    <header>{children}</header>
-  ) : (
-    <SheetHeader className="p-0">{children}</SheetHeader>
   );
 }
 

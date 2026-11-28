@@ -2,8 +2,9 @@ import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
 /*
- * Deck's chat (#796): A opens it docked beside the review, Continue in
- * chat on an explanation carries its lines in as a chip, and a message
+ * Deck's chat (#796): A opens it as a peek above the dock, Pin docks it
+ * beside the review, Continue in chat on an explanation carries its lines
+ * in as a chip, and a message
  * goes to the local API with them. In the narrow view it is a full-height
  * sheet. The local API is mocked: a message starts a turn that never
  * streams here, since the page tests follow a reply's events.
@@ -16,7 +17,11 @@ const cors = { "access-control-allow-origin": "*" };
 /** What the page sent to the chat, per test. */
 let sent: unknown[] = [];
 
-const chat = (page: Page) => page.getByRole("complementary", { name: "Chat" });
+/** The chat's peek, or its tab of the side panel once pinned. */
+const chat = (page: Page) =>
+  page
+    .getByRole("dialog", { name: "Chat" })
+    .or(page.getByRole("complementary", { name: "Chat panel" }));
 
 Given("the chat answers with Claude Code", async ({ page }) => {
   sent = [];
@@ -64,18 +69,42 @@ Given("the chat answers with Claude Code", async ({ page }) => {
 });
 
 When("I open the chat", async ({ page }) => {
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page
+    .getByRole("toolbar", { name: "Pull request" })
+    .getByRole("button", { name: "Chat", exact: true })
+    .click();
+});
+
+Then("the chat opens above the dock", async ({ page }) => {
+  const peek = page.getByRole("dialog", { name: "Chat" });
+  await expect(peek).toBeVisible();
+  const dock = (await page
+    .getByRole("toolbar", { name: "Pull request" })
+    .boundingBox())!;
+  const box = (await peek.boundingBox())!;
+  // Within a pixel, for the popup's ring.
+  expect(box.y + box.height).toBeLessThanOrEqual(dock.y + 1);
+});
+
+When("I pin the chat", async ({ page }) => {
+  await page
+    .getByRole("dialog", { name: "Chat" })
+    .getByRole("button", { name: "Pin" })
+    .click();
 });
 
 When("I close the chat", async ({ page }) => {
-  await chat(page).getByRole("button", { name: "Close chat" }).click();
+  await page
+    .getByRole("complementary", { name: "Chat panel" })
+    .getByRole("button", { name: "Unpin Chat" })
+    .click();
   await expect(chat(page)).toHaveCount(0);
 });
 
 Then(
   "the chat is docked on the right, 360px wide, beside the review",
   async ({ page }) => {
-    const panel = chat(page);
+    const panel = page.getByRole("complementary", { name: "Chat panel" });
     await expect(panel).toBeVisible();
     const box = (await panel.boundingBox())!;
     const viewport = page.viewportSize()!;

@@ -4,7 +4,7 @@
  *
  * - Below DESKTOP_MIN_WIDTH: the narrow view, with no sidebars.
  * - From DESKTOP_MIN_WIDTH: the sidebar the user chose, beside the page.
- * - From DECK_GUTTER_MIN_WIDTH: Deck's review threads float beside their lines.
+ * - From DECK_ROOMY_MIN_WIDTH: Deck's guide tree keeps its titles beside the side panel.
  *
  * This module is the only place these numbers live. Scripts use the media
  * queries below, and `tailwind-breakpoints.ts` turns them into the `narrow`
@@ -22,10 +22,11 @@ export const DESKTOP_MIN_WIDTH = 768;
 export const PHONE_MAX_WIDTH = 400;
 
 /**
- * From this width, Deck's review page floats review threads in a gutter
- * beside their lines. Below it they sit after their lines.
+ * From this width, Deck's review page keeps the guide tree's titles open
+ * beside its side panel. Below it, the tree folds to its ticks while the
+ * panel is open.
  */
-export const DECK_GUTTER_MIN_WIDTH = 1100;
+export const DECK_ROOMY_MIN_WIDTH = 1400;
 
 /** Matches the narrow view. */
 export const NARROW_VIEW_QUERY = `(width < ${DESKTOP_MIN_WIDTH}px)`;
@@ -33,8 +34,8 @@ export const NARROW_VIEW_QUERY = `(width < ${DESKTOP_MIN_WIDTH}px)`;
 /** Matches a phone in portrait, below 400px. */
 export const PHONE_QUERY = `(width < ${PHONE_MAX_WIDTH}px)`;
 
-/** Matches the widths where Deck's review threads float beside their lines. */
-export const DECK_GUTTER_QUERY = `(width >= ${DECK_GUTTER_MIN_WIDTH}px)`;
+/** Matches the widths where Deck's guide tree keeps its titles beside the side panel. */
+export const DECK_ROOMY_QUERY = `(width >= ${DECK_ROOMY_MIN_WIDTH}px)`;
 
 /** Matches every desktop width. */
 export const DESKTOP_QUERY = `(width >= ${DESKTOP_MIN_WIDTH}px)`;

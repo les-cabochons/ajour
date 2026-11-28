@@ -37,7 +37,11 @@ async function dragOver(page: Page, from: number, to: number, path?: string) {
     // A hunk draws its line numbers once it's on screen, and the summary
     // above the changes can leave it below.
     await hunkOf(page, path).scrollIntoViewIfNeeded({ timeout: 2_000 });
-    await start.scrollIntoViewIfNeeded({ timeout: 2_000 });
+    // In the middle of the screen, clear of the narrow view's floating
+    // switcher at its bottom.
+    await start.evaluate((element) =>
+      element.scrollIntoView({ block: "center", behavior: "instant" }),
+    );
     a = (await start.boundingBox({ timeout: 2_000 }))!;
     b = (await end.boundingBox({ timeout: 2_000 }))!;
     expect(a && b).toBeTruthy();

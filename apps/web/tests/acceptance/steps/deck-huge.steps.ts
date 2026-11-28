@@ -202,6 +202,7 @@ Given(
 );
 
 When("I follow the summary's line about the leftover", async ({ page }) => {
+  await page.getByRole("tab", { name: "Overview" }).click();
   await page
     .getByRole("region", { name: "Summary" })
     .getByRole("button", { name: new RegExp(`^TODO in ${LEFTOVER_PATH}`) })
@@ -263,9 +264,10 @@ Then("only the rows near the screen are mounted", async ({ page }) => {
   const hunks = await changes(page).locator(".deck-hunk").count();
   expect(hunks).toBeGreaterThan(0);
   expect(hunks).toBeLessThan(40);
+  // Its titles, or its ticks once folded.
   const ticks = await page
     .getByRole("navigation", { name: "Guide tree" })
-    .locator(".deck-tick")
+    .locator(".deck-tick, .deck-tree-row")
     .count();
   expect(ticks).toBeGreaterThan(0);
   expect(ticks).toBeLessThan(FILE_COUNT);
@@ -293,9 +295,7 @@ When("I scroll the guide tree to its end", async ({ page }) => {
 When("I go to the last file from its tick", async ({ page }) => {
   await page
     .getByRole("navigation", { name: "Guide tree" })
-    .getByRole("button", {
-      name: `${pathOf(FILE_COUNT - 1)} · 0 of ${HUNKS_PER_FILE} viewed`,
-    })
+    .getByRole("button", { name: pathOf(FILE_COUNT - 1) })
     .click();
 });
 
@@ -309,8 +309,8 @@ When("I mark the last file's first hunk viewed", async ({ page }) => {
 
 Then("the last file's tick counts it viewed", async ({ page }) => {
   await expect(
-    page.getByRole("navigation", { name: "Guide tree" }).getByRole("button", {
-      name: `${pathOf(FILE_COUNT - 1)} · 1 of ${HUNKS_PER_FILE} viewed`,
-    }),
-  ).toBeVisible();
+    page
+      .getByRole("navigation", { name: "Guide tree" })
+      .getByRole("button", { name: pathOf(FILE_COUNT - 1) }),
+  ).toContainText(`1/${HUNKS_PER_FILE}`);
 });

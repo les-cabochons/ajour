@@ -31,6 +31,10 @@ import { receiveAgentTurnEvent } from "@/lib/agent-turns";
 import { refreshAgentRunner } from "@/lib/agent-runner";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { AppApiError, cachePluginsOverview } from "@/lib/app-api";
+import {
+  DECK_PANEL_STORAGE_KEY,
+  resetDeckPanelForTests,
+} from "@/lib/deck-panel";
 import { localStore } from "@/lib/local-store";
 import {
   installDomShims,
@@ -44,8 +48,9 @@ import {
 import { DeckPage } from "./deck-page";
 
 /*
- * Deck's chat (#796): Chat in the top bar or A opens it beside the review
- * page, a full-height sheet in the narrow view. Its header names the agent
+ * Deck's chat (#796): Chat in the dock or A opens it as a peek above the
+ * dock, or as the side panel's tab once pinned, and a full-height sheet in
+ * the narrow view. Its header names the agent
  * and what it reads; Continue in chat on an answer carries its anchor in as
  * a chip; each write the chat makes shows as an action line with its link,
  * and Delete removes what it posted. The local API module is mocked, and
@@ -203,7 +208,13 @@ function sync(viewerIsAuthor = false) {
   itemId = localStore.snapshot().pullRequests![0]!._id;
 }
 
+function resetDeckPanel() {
+  window.localStorage.removeItem(DECK_PANEL_STORAGE_KEY);
+  resetDeckPanelForTests();
+}
+
 beforeEach(async () => {
+  resetDeckPanel();
   cachePluginsOverview(codeHostOverview);
   sync();
   vi.mocked(api.openDeckPullRequest).mockResolvedValue(DIFF);
@@ -221,6 +232,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  resetDeckPanel();
   localStore.discardDraftReview(REF);
   localStore.removeConnectionPullRequests("github", "work");
   vi.mocked(api.openDeckPullRequest).mockReset();
@@ -242,7 +254,10 @@ async function renderReview() {
   await screen.findByRole("region", { name: "Concern 1: Handle the request" });
 }
 
-const chatPanel = () => screen.queryByRole("complementary", { name: "Chat" });
+/** The open chat: its peek above the dock, or the side panel on its tab. */
+const chatPanel = () =>
+  screen.queryByRole("dialog", { name: "Chat" }) ??
+  screen.queryByRole("complementary", { name: "Chat panel" });
 
 /** Types `message` in the open chat and sends it with Enter. */
 function sendMessage(message: string) {
@@ -267,21 +282,64 @@ it("opens and closes with A and with Chat, its header naming the pull request, t
   // A in the composer types: Escape or Close leave it.
   fireEvent.keyDown(document.activeElement!, { key: "a" });
   expect(chatPanel()).not.toBeNull();
-  fireEvent.click(within(panel).getByRole("button", { name: "Close chat" }));
-  expect(chatPanel()).toBeNull();
+  fireEvent.click(within(panel).getByRole("button", { name: "Close Chat" }));
+  await waitFor(() => expect(chatPanel()).toBeNull());
 
-  const chat = screen.getByRole("button", { name: "Chat" });
+  const dock = screen.getByRole("toolbar", { name: "Pull request" });
+  const chat = within(dock).getByRole("button", { name: "Chat" });
+  expect(chat.getAttribute("aria-keyshortcuts")).toBe("A");
   fireEvent.click(chat);
-  expect(chat.getAttribute("aria-pressed")).toBe("true");
+  expect(chat.getAttribute("aria-expanded")).toBe("true");
   fireEvent.keyDown(chatPanel()!, { key: "Escape" });
-  expect(chatPanel()).toBeNull();
+  await waitFor(() => expect(chatPanel()).toBeNull());
 
   // A away from a text field closes it too.
   press("a");
   expect(chatPanel()).not.toBeNull();
   act(() => (document.activeElement as HTMLElement).blur());
   press("a");
+  await waitFor(() => expect(chatPanel()).toBeNull());
+});
+
+it("pins into the side panel, where A and Chat collapse and open its tab", async () => {
+  await renderReview();
+  press("a");
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Chat" })).getByRole("button", {
+      name: "Pin",
+    }),
+  );
+
+  const panel = await screen.findByRole("complementary", {
+    name: "Chat panel",
+  });
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Chat" })).toBeNull(),
+  );
+  expect(within(panel).getByText("#1 · Claude Code · PR")).toBeTruthy();
+  expect(
+    within(panel).getByRole("button", { name: "Unpin Chat" }),
+  ).toBeTruthy();
+
+  // A in the composer types; away from it, A collapses the panel.
+  act(() => (document.activeElement as HTMLElement).blur());
+  press("a");
   expect(chatPanel()).toBeNull();
+  const chat = within(
+    screen.getByRole("toolbar", { name: "Pull request" }),
+  ).getByRole("button", { name: "Chat" });
+  fireEvent.click(chat);
+  expect(chat.getAttribute("aria-pressed")).toBe("true");
+  expect(
+    screen.getByRole("complementary", { name: "Chat panel" }),
+  ).toBeTruthy();
+  // Escape inside the panel collapses it, keeping the pin.
+  fireEvent.keyDown(
+    within(chatPanel()!).getByRole("textbox", { name: "Message" }),
+    { key: "Escape" },
+  );
+  expect(chatPanel()).toBeNull();
+  expect(chat.getAttribute("aria-pressed")).toBe("false");
 });
 
 it("says it reads the local clone too when the user chose one", async () => {
@@ -678,13 +736,22 @@ it("is a full-height sheet in the narrow view", async () => {
   onTestFinished(() => stubNarrowView(false));
   await renderReview();
 
-  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  fireEvent.click(
+    within(screen.getByRole("toolbar", { name: "Pull request" })).getByRole(
+      "button",
+      { name: "Chat" },
+    ),
+  );
 
   const sheet = await screen.findByRole("dialog", { name: "Chat" });
   expect(sheet.getAttribute("data-side")).toBe("right");
   expect(sheet.className).toContain("deck-chat-sheet");
   expect(within(sheet).getByText("#1 · Claude Code · PR")).toBeTruthy();
-  expect(chatPanel()).toBeNull();
+  // Its own Close, and no peek to pin.
+  expect(
+    within(sheet).getByRole("button", { name: "Close chat" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
 });
 
 it("stops a reply whose conversation closed, so the next message can go", async () => {

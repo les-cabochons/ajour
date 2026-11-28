@@ -122,8 +122,16 @@ Then(
   },
 );
 
-Then("the status line says it merges after #3", async ({ page }) => {
-  await expect(page.getByText("Merges after #3")).toBeVisible();
+Then("Status says it merges after #3", async ({ page }) => {
+  await page
+    .getByRole("toolbar", { name: "Pull request" })
+    .getByRole("button", { name: /^Status: / })
+    .click();
+  const status = page.getByRole("dialog", { name: "Status" });
+  await expect(
+    status.getByRole("region", { name: "Requirements" }),
+  ).toContainText("Merges after #3");
+  await status.getByRole("button", { name: "Close Status" }).click();
 });
 
 Then("the full stack lists its layers in merge order", async ({ page }) => {
